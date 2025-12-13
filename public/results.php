@@ -1,18 +1,9 @@
 <?php
 require_once __DIR__ . '/../src/config/database.php';
 if (session_status() === PHP_SESSION_NONE) session_start();
-
-$eventId = $_GET['event_id'] ?? 0;
-$cat = $_GET['cat'] ?? '';
+$eventId = $_GET['event_id'] ?? 0; $cat = $_GET['cat'] ?? '';
 $events = $pdo->query("SELECT id, nama_lengkap, location, event_start_date FROM users WHERE role = 'admin' ORDER BY event_start_date DESC")->fetchAll();
-
-$files = [];
-if($eventId && $cat) {
-    $st = $pdo->prepare("SELECT * FROM event_results WHERE event_id = ? AND category = ? ORDER BY created_at DESC");
-    $st->execute([$eventId, $cat]);
-    $files = $st->fetchAll();
-    $evName = $pdo->query("SELECT nama_lengkap FROM users WHERE id = $eventId")->fetchColumn();
-}
+$files = []; if($eventId && $cat) { $st = $pdo->prepare("SELECT * FROM event_results WHERE event_id = ? AND category = ? ORDER BY created_at DESC"); $st->execute([$eventId, $cat]); $files = $st->fetchAll(); $evName = $pdo->query("SELECT nama_lengkap FROM users WHERE id = $eventId")->fetchColumn(); }
 ?>
 <!DOCTYPE html>
 <html lang="id">
@@ -26,9 +17,16 @@ if($eventId && $cat) {
         #navbar { background-color: #0F172A; height: 90px; display: flex; align-items: center; border-bottom: 1px solid #1e293b; }
         .nav-link { position: relative; color: white; transition: 0.3s; font-size: 0.95rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; }
         .nav-link:hover, .nav-link.active { color: #3b82f6; }
+        #preloader { position: fixed; inset: 0; z-index: 9999; background-color: #0F172A; display: flex; flex-direction: column; align-items: center; justify-content: center; transition: opacity 0.5s ease, visibility 0.5s; }
+        .loader-container { position: relative; width: 120px; height: 120px; }
+        .circle-loader { position: relative; width: 100%; height: 100%; border: 4px solid #1e293b; border-radius: 50%; overflow: hidden; background: #161e31; }
+        .liquid { position: absolute; top: 100%; left: -50%; width: 200%; height: 200%; background-color: #3b82f6; border-radius: 40%; animation: wave 4s infinite linear; }
+        @keyframes wave { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .loader-finish { opacity: 0; visibility: hidden; }
     </style>
 </head>
 <body class="bg-slate-50 pt-32">
+    <div id="preloader"><div class="loader-container"><div class="circle-loader"><div class="liquid" id="liquid-level"></div></div></div><div class="load-text mt-6 text-white font-black tracking-widest text-xs uppercase">LOADING <span id="load-perc">0%</span></div></div>
 
     <nav id="navbar" class="fixed w-full z-50 top-0 start-0 px-10">
         <div class="max-w-screen-2xl flex items-center justify-between mx-auto w-full">
@@ -41,11 +39,7 @@ if($eventId && $cat) {
                     <a href="index.php#instruction" class="nav-link text-yellow-400">Panduan</a>
                 </div>
                 <div class="flex items-center border-l border-white/20 pl-12">
-                    <?php if(isset($_SESSION['user_id'])): ?>
-                        <a href="../src/user/dashboard.php" class="bg-blue-600 text-white px-10 py-3 rounded-full font-black text-xs uppercase tracking-widest">Dashboard</a>
-                    <?php else: ?>
-                        <a href="login.php" class="bg-blue-600 text-white px-10 py-3 rounded-full font-black text-xs uppercase tracking-widest">Login</a>
-                    <?php endif; ?>
+                    <?php if(isset($_SESSION['user_id'])): ?><a href="../src/user/dashboard.php" class="bg-blue-600 text-white px-10 py-3 rounded-full font-black text-xs uppercase tracking-widest">Dashboard</a><?php else: ?><a href="login.php" class="bg-blue-600 text-white px-10 py-3 rounded-full font-black text-xs uppercase tracking-widest">Login</a><?php endif; ?>
                 </div>
             </div>
         </div>
@@ -58,44 +52,25 @@ if($eventId && $cat) {
                 <?php foreach($events as $ev): ?>
                 <div class="bg-white p-8 rounded-[2.5rem] border border-slate-200 flex flex-col md:flex-row items-center gap-8 shadow-sm hover:border-blue-500 transition-all">
                     <div class="w-20 h-20 bg-blue-50 rounded-2xl flex items-center justify-center text-4xl shrink-0">🏆</div>
-                    <div class="flex-1 text-center md:text-left">
-                        <h3 class="text-2xl font-black uppercase text-slate-800 leading-tight"><?= $ev['nama_lengkap'] ?></h3>
-                        <p class="text-slate-400 font-bold text-[10px] uppercase tracking-widest mt-2">Silakan pilih kategori dokumen:</p>
-                    </div>
-                    <div class="flex gap-3 w-full md:w-auto min-w-[380px]">
-                        <a href="results.php?event_id=<?= $ev['id'] ?>&cat=StartList" class="flex-1 text-center border-2 border-blue-600 text-blue-600 py-4 rounded-2xl font-black text-[10px] uppercase hover:bg-blue-600 hover:text-white transition tracking-widest">📖 Buku Acara</a>
-                        <a href="results.php?event_id=<?= $ev['id'] ?>&cat=Result" class="flex-1 text-center bg-blue-600 text-white py-4 rounded-2xl font-black text-[10px] uppercase hover:bg-blue-700 shadow-lg tracking-widest">🏆 Hasil Lomba</a>
-                    </div>
+                    <div class="flex-1 text-center md:text-left"><h3 class="text-2xl font-black uppercase text-slate-800 leading-tight"><?= $ev['nama_lengkap'] ?></h3><p class="text-slate-400 font-bold text-[10px] uppercase tracking-widest mt-2">Silakan pilih kategori dokumen:</p></div>
+                    <div class="flex gap-3 w-full md:w-auto min-w-[380px]"><a href="results.php?event_id=<?= $ev['id'] ?>&cat=StartList" class="flex-1 text-center border-2 border-blue-600 text-blue-600 py-4 rounded-2xl font-black text-[10px] uppercase hover:bg-blue-600 hover:text-white transition tracking-widest">📖 Buku Acara</a><a href="results.php?event_id=<?= $ev['id'] ?>&cat=Result" class="flex-1 text-center bg-blue-600 text-white py-4 rounded-2xl font-black text-[10px] uppercase hover:bg-blue-700 shadow-lg tracking-widest">🏆 Hasil Lomba</a></div>
                 </div>
                 <?php endforeach; ?>
             </div>
         <?php else: ?>
-            <div class="max-w-3xl mx-auto">
-                <a href="results.php" class="text-blue-600 font-black text-xs uppercase underline mb-8 inline-block tracking-[0.2em]">&larr; Kembali ke Daftar Event</a>
-                <div class="bg-slate-900 rounded-[3rem] p-12 text-white mb-10 shadow-2xl relative overflow-hidden">
-                    <span class="bg-blue-600 text-[10px] font-black px-4 py-1.5 rounded-full uppercase tracking-widest"><?= $cat ?></span>
-                    <h2 class="text-4xl font-black uppercase mt-6 leading-tight"><?= $evName ?></h2>
-                    <div class="absolute -right-10 -bottom-10 opacity-10 text-[10rem]">🏊</div>
-                </div>
+            <div class="max-w-3xl mx-auto"><a href="results.php" class="text-blue-600 font-black text-xs uppercase underline mb-8 inline-block tracking-[0.2em]">&larr; Kembali ke Daftar Event</a><div class="bg-slate-900 rounded-[3rem] p-12 text-white mb-10 shadow-2xl relative overflow-hidden"><span class="bg-blue-600 text-[10px] font-black px-4 py-1.5 rounded-full uppercase tracking-widest"><?= $cat ?></span><h2 class="text-4xl font-black uppercase mt-6 leading-tight"><?= $evName ?></h2><div class="absolute -right-10 -bottom-10 opacity-10 text-[10rem]">🏊</div></div>
                 <div class="space-y-4">
-                    <?php if(empty($files)): ?>
-                        <div class="bg-white p-24 text-center rounded-[2rem] border-2 border-dashed text-slate-400 font-bold uppercase tracking-widest">Belum ada file di kategori ini.</div>
-                    <?php else: ?>
-                        <?php foreach($files as $f): ?>
-                        <div class="bg-white p-7 rounded-2xl border border-slate-200 flex justify-between items-center group hover:border-blue-500 transition-all">
-                            <span class="font-black text-slate-800 uppercase text-sm tracking-tight leading-none flex items-center gap-4"><span class="text-2xl">📄</span> <?= htmlspecialchars($f['file_name']) ?></span>
-                            <a href="<?= $f['file_path'] ?>" download class="bg-blue-600 text-white px-8 py-3 rounded-xl font-black text-[10px] uppercase hover:scale-105 transition shadow-lg tracking-widest">Download</a>
-                        </div>
-                        <?php endforeach; ?>
-                    <?php endif; ?>
+                    <?php if(empty($files)): ?><div class="bg-white p-24 text-center rounded-[2rem] border-2 border-dashed text-slate-400 font-bold uppercase tracking-widest">Belum ada file di kategori ini.</div><?php else: foreach($files as $f): ?>
+                        <div class="bg-white p-7 rounded-2xl border border-slate-200 flex justify-between items-center group hover:border-blue-500 transition-all"><span class="font-black text-slate-800 uppercase text-sm tracking-tight leading-none flex items-center gap-4"><span class="text-2xl">📄</span> <?= htmlspecialchars($f['file_name']) ?></span><a href="<?= $f['file_path'] ?>" download class="bg-blue-600 text-white px-8 py-3 rounded-xl font-black text-[10px] uppercase hover:scale-105 transition shadow-lg tracking-widest">Download</a></div>
+                    <?php endforeach; endif; ?>
                 </div>
             </div>
         <?php endif; ?>
     </main>
 
-    <footer class="bg-[#0F172A] text-white pt-24 pb-12 border-t-4 border-blue-600 text-center">
-        <img src="img/logo.png" class="h-24 mx-auto mb-8 grayscale opacity-50">
-        <p class="text-slate-500 text-[11px] font-black tracking-[0.5em] uppercase">&copy; 2025 SWIMMEET MANAGER</p>
-    </footer>
+    <footer class="bg-[#0F172A] text-white pt-24 pb-12 border-t-4 border-blue-600 text-center"><div class="max-w-screen-xl mx-auto px-10"><img src="img/logo.png" class="h-24 mx-auto mb-8 grayscale opacity-50"><p class="text-slate-500 text-[11px] font-black tracking-[0.5em] uppercase tracking-widest">&copy; 2025 SWIMMEET MANAGER</p></div></footer>
+    <script>
+        window.addEventListener('load', () => { const liquid = document.getElementById('liquid-level'); const textPerc = document.getElementById('load-perc'); const preloader = document.getElementById('preloader'); let progress = 0; const interval = setInterval(() => { progress += 10; if (progress >= 100) { progress = 100; clearInterval(interval); setTimeout(() => { preloader.classList.add('loader-finish'); }, 400); } liquid.style.top = (100 - progress) + '%'; textPerc.innerText = progress + '%'; }, 80); });
+    </script>
 </body>
 </html>

@@ -1,79 +1,47 @@
 <?php
 session_start();
-require_once __DIR__ . '/../../../src/config/database.php';
+require_once __DIR__ . '/../../config/database.php';
 
+// Proteksi Master Admin
 if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'master') {
     header("Location: ../../../public/login.php"); exit;
 }
 
-$roleFilter = $_GET['role'] ?? 'user'; 
-$roleTitle = ($roleFilter == 'admin') ? 'Event Organizer (Admin)' : 'Klub Renang (User)';
+// --- HANDLE SIMPAN (TAMBAH/EDIT) ---
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['save_user'])) {
+    $nama     = $_POST['nama_lengkap'];
+    $email    = $_POST['email'];
+    $pass     = $_POST['password'];
+    $mode     = $_POST['event_type']; 
+    $userId   = $_POST['user_id'] ?? '';
 
-// --- 1. HANDLE EDIT DATA ---
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_id'])) {
     try {
-        $id = $_POST['edit_id'];
-        $nama = $_POST['nama_lengkap'];
-        $user = $_POST['username'];
-        $email = $_POST['email'];
-        
-        $pdo->beginTransaction();
-
-        // Update Tabel Users
-        $sqlUser = "UPDATE users SET nama_lengkap = ?, username = ?, email = ? WHERE id = ?";
-        $pdo->prepare($sqlUser)->execute([$nama, $user, $email, $id]);
-
-        // Jika Role User (Klub), Update juga tabel Clubs
-        if ($roleFilter == 'user') {
-            $klub = $_POST['nama_klub'];
-            $kota = $_POST['kota'];
-            // Cek apakah data klub sudah ada
-            $check = $pdo->prepare("SELECT id FROM clubs WHERE user_id = ?");
-            $check->execute([$id]);
-            if ($check->rowCount() > 0) {
-                $sqlClub = "UPDATE clubs SET nama_klub = ?, kota = ? WHERE user_id = ?";
-                $pdo->prepare($sqlClub)->execute([$klub, $kota, $id]);
+        if ($userId) {
+            // MODE EDIT
+            if (!empty($pass)) {
+                $sql = "UPDATE users SET nama_lengkap=?, email=?, password=?, event_type=? WHERE id=?";
+                $pdo->prepare($sql)->execute([$nama, $email, password_hash($pass, PASSWORD_DEFAULT), $mode, $userId]);
             } else {
-                // Jika belum ada (kasus jarang), insert baru
-                $sqlClub = "INSERT INTO clubs (user_id, nama_klub, kota) VALUES (?, ?, ?)";
-                $pdo->prepare($sqlClub)->execute([$id, $klub, $kota]);
+                $sql = "UPDATE users SET nama_lengkap=?, email=?, event_type=? WHERE id=?";
+                $pdo->prepare($sql)->execute([$nama, $email, $mode, $userId]);
             }
+        } else {
+            // MODE TAMBAH BARU
+            $sql = "INSERT INTO users (nama_lengkap, email, password, role, event_type) VALUES (?, ?, ?, 'admin', ?)";
+            $pdo->prepare($sql)->execute([$nama, $email, password_hash($pass, PASSWORD_DEFAULT), $mode]);
         }
-
-        $pdo->commit();
-        $_SESSION['toast_type'] = 'success'; $_SESSION['toast_message'] = 'Data berhasil diperbarui!';
-        
-    } catch (Exception $e) {
-        $pdo->rollBack();
-        $_SESSION['toast_type'] = 'error'; $_SESSION['toast_message'] = 'Gagal: ' . $e->getMessage();
-    }
-    header("Location: index.php?role=$roleFilter"); exit;
+        header("Location: index.php?role=admin"); exit;
+    } catch (Exception $e) { die("Gagal: " . $e->getMessage()); }
 }
 
-// --- 2. HANDLE DELETE USER ---
-if (isset($_POST['delete_id'])) {
-    $delId = $_POST['delete_id'];
-    $pdo->prepare("DELETE FROM users WHERE id = ?")->execute([$delId]);
-    $_SESSION['toast_type'] = 'success'; $_SESSION['toast_message'] = 'User berhasil dihapus.';
-    header("Location: index.php?role=$roleFilter"); exit;
+// --- HANDLE HAPUS ---
+if (isset($_GET['delete'])) {
+    $pdo->prepare("DELETE FROM users WHERE id = ?")->execute([$_GET['delete']]);
+    header("Location: index.php?role=admin"); exit;
 }
 
-// --- 3. HANDLE RESET PASSWORD ---
-if (isset($_POST['reset_id'])) {
-    $resId = $_POST['reset_id'];
-    $defaultPass = password_hash('123456', PASSWORD_DEFAULT);
-    $pdo->prepare("UPDATE users SET password = ? WHERE id = ?")->execute([$defaultPass, $resId]);
-    $_SESSION['toast_type'] = 'success'; $_SESSION['toast_message'] = 'Password direset menjadi: 123456';
-    header("Location: index.php?role=$roleFilter"); exit;
-}
-
-// --- 4. AMBIL DATA ---
-$stmt = $pdo->prepare("SELECT u.*, c.nama_klub, c.kota 
-                       FROM users u 
-                       LEFT JOIN clubs c ON u.id = c.user_id 
-                       WHERE u.role = ? ORDER BY u.created_at DESC");
-$stmt->execute([$roleFilter]);
-$users = $stmt->fetchAll();
+// Ambil Data Admin
+$admins = $pdo->query("SELECT * FROM users WHERE role = 'admin' ORDER BY id DESC")->fetchAll();
 
 include __DIR__ . '/../../../views/layout/topbar.php'; 
 include __DIR__ . '/../../../views/layout/sidebar.php'; 
@@ -81,154 +49,113 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
 
 <div class="p-6 sm:ml-64 pt-24 bg-slate-50 min-h-screen font-sans">
     
-    <div class="flex justify-between items-center mb-6">
+    <div class="flex justify-between items-center mb-8">
         <div>
-            <a href="../dashboard.php" class="text-xs font-bold text-slate-400 hover:text-blue-600 mb-1 block">&larr; Kembali ke Dashboard</a>
-            <h1 class="text-2xl font-black text-slate-800 uppercase tracking-tight">Manajemen <?= $roleTitle ?></h1>
+            <nav class="text-slate-400 text-xs mb-2">
+                <a href="../dashboard.php" class="hover:text-blue-600">← Kembali ke Dashboard</a>
+            </nav>
+            <h1 class="text-2xl font-black text-slate-800 uppercase tracking-tight">Manajemen EO (Admin)</h1>
         </div>
-        <div class="flex gap-2 bg-white p-1 rounded-lg border border-slate-200">
-            <a href="?role=user" class="px-4 py-2 rounded-md text-xs font-bold transition <?= $roleFilter=='user'?'bg-blue-600 text-white shadow':'text-slate-500 hover:bg-slate-50' ?>">User (Klub)</a>
-            <a href="?role=admin" class="px-4 py-2 rounded-md text-xs font-bold transition <?= $roleFilter=='admin'?'bg-blue-600 text-white shadow':'text-slate-500 hover:bg-slate-50' ?>">Admin (EO)</a>
+        
+        <div class="flex gap-2 bg-white p-1.5 rounded-2xl shadow-sm border border-slate-200">
+            <a href="index.php?role=user" class="px-6 py-2 rounded-xl text-xs font-bold text-slate-400 hover:bg-slate-50 transition">User (Klub)</a>
+            <a href="index.php?role=admin" class="px-6 py-2 rounded-xl text-xs font-bold bg-blue-600 text-white shadow-lg">Admin (EO)</a>
         </div>
     </div>
 
-    <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+    <div class="flex justify-end mb-6">
+        <button onclick="openModal()" class="bg-slate-900 text-white px-8 py-3 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl hover:bg-blue-600 transition">
+            + Tambah Admin Baru
+        </button>
+    </div>
+
+    <div class="bg-white rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden">
         <table class="w-full text-left text-sm">
-            <thead class="bg-slate-50 border-b font-bold text-slate-500 uppercase text-xs">
+            <thead class="bg-slate-50 border-b">
                 <tr>
-                    <th class="px-6 py-4">Nama Akun / Klub</th>
-                    <th class="px-6 py-4">Username & Email</th>
-                    <th class="px-6 py-4">Terdaftar</th>
-                    <th class="px-6 py-4 text-right">Aksi</th>
+                    <th class="px-8 py-5 font-black uppercase text-[10px] text-slate-400 tracking-widest">Nama Penyelenggara</th>
+                    <th class="px-8 py-5 font-black uppercase text-[10px] text-slate-400 tracking-widest text-center">Sistem</th>
+                    <th class="px-8 py-5 font-black uppercase text-[10px] text-slate-400 tracking-widest text-right">Aksi</th>
                 </tr>
             </thead>
             <tbody class="divide-y divide-slate-100">
-                <?php if(empty($users)): ?>
-                    <tr><td colspan="4" class="p-8 text-center text-slate-400 italic">Tidak ada data ditemukan.</td></tr>
-                <?php else: ?>
-                    <?php foreach($users as $u): ?>
-                    <tr class="hover:bg-slate-50 transition">
-                        <td class="px-6 py-4">
-                            <div class="font-bold text-slate-700"><?= htmlspecialchars($u['nama_klub'] ?? $u['nama_lengkap']) ?></div>
-                            <?php if($u['role']=='user'): ?>
-                                <div class="text-xs text-slate-400">Kota: <?= htmlspecialchars($u['kota'] ?? '-') ?></div>
-                                <div class="text-[10px] text-slate-400">CP: <?= htmlspecialchars($u['nama_lengkap']) ?></div>
-                            <?php else: ?>
-                                <div class="text-xs text-slate-400"><?= htmlspecialchars($u['nama_lengkap']) ?></div>
-                            <?php endif; ?>
-                        </td>
-                        <td class="px-6 py-4">
-                            <div class="font-mono text-xs text-blue-600">@<?= htmlspecialchars($u['username']) ?></div>
-                            <div class="text-xs text-slate-400"><?= htmlspecialchars($u['email'] ?? '-') ?></div>
-                        </td>
-                        <td class="px-6 py-4 text-slate-500 text-xs">
-                            <?= date('d M Y', strtotime($u['created_at'])) ?>
-                        </td>
-                        <td class="px-6 py-4 text-right flex justify-end gap-2">
-                            
-                            <button type="button" 
-                                onclick="openEditModal(
-                                    '<?= $u['id'] ?>', 
-                                    '<?= addslashes($u['nama_lengkap']) ?>', 
-                                    '<?= addslashes($u['username']) ?>', 
-                                    '<?= addslashes($u['email']) ?>',
-                                    '<?= addslashes($u['nama_klub'] ?? '') ?>',
-                                    '<?= addslashes($u['kota'] ?? '') ?>'
-                                )"
-                                class="bg-blue-100 text-blue-700 px-3 py-1.5 rounded text-[10px] font-bold hover:bg-blue-200 transition flex items-center gap-1">
-                                ✏️ Edit
-                            </button>
-
-                            <form method="POST" onsubmit="return confirm('Reset password akun ini menjadi 123456?')">
-                                <input type="hidden" name="reset_id" value="<?= $u['id'] ?>">
-                                <button class="bg-yellow-100 text-yellow-700 px-3 py-1.5 rounded text-[10px] font-bold hover:bg-yellow-200 transition flex items-center gap-1">
-                                    🔑 Reset
-                                </button>
-                            </form>
-
-                            <form method="POST" onsubmit="return confirm('Hapus permanen akun ini beserta seluruh datanya?')">
-                                <input type="hidden" name="delete_id" value="<?= $u['id'] ?>">
-                                <button class="bg-red-100 text-red-700 px-3 py-1.5 rounded text-[10px] font-bold hover:bg-red-200 transition flex items-center gap-1">
-                                    🗑 Hapus
-                                </button>
-                            </form>
-                        </td>
-                    </tr>
-                    <?php endforeach; ?>
-                <?php endif; ?>
+                <?php foreach($admins as $a): ?>
+                <tr class="hover:bg-slate-50 transition">
+                    <td class="px-8 py-5">
+                        <div class="font-black text-slate-800 uppercase"><?= htmlspecialchars($a['nama_lengkap']) ?></div>
+                        <div class="text-[11px] text-slate-400"><?= htmlspecialchars($a['email']) ?></div>
+                    </td>
+                    <td class="px-8 py-5 text-center">
+                        <?php if($a['event_type'] == 'Babak Penyisihan'): ?>
+                            <span class="bg-orange-100 text-orange-700 px-4 py-1.5 rounded-full text-[9px] font-black uppercase border border-orange-200">Babak Penyisihan</span>
+                        <?php else: ?>
+                            <span class="bg-blue-100 text-blue-700 px-4 py-1.5 rounded-full text-[9px] font-black uppercase border border-blue-200">Langsung Final</span>
+                        <?php endif; ?>
+                    </td>
+                    <td class="px-8 py-5 text-right">
+                        <button onclick='editAdmin(<?= json_encode($a) ?>)' class="bg-blue-50 text-blue-600 px-4 py-2 rounded-xl text-[10px] font-black uppercase hover:bg-blue-600 hover:text-white transition">Edit</button>
+                        <a href="?delete=<?= $a['id'] ?>" onclick="return confirm('Hapus?')" class="bg-red-50 text-red-500 px-4 py-2 rounded-xl text-[10px] font-black uppercase hover:bg-red-500 hover:text-white transition">Hapus</a>
+                    </td>
+                </tr>
+                <?php endforeach; ?>
             </tbody>
         </table>
     </div>
 </div>
 
-<div id="editModal" class="fixed inset-0 z-[60] hidden overflow-y-auto overflow-x-hidden flex justify-center items-center backdrop-blur-sm bg-black/30">
-    <div class="relative p-4 w-full max-w-lg max-h-full">
-        <div class="relative bg-white rounded-xl shadow-2xl border border-slate-200">
-            <div class="flex items-center justify-between p-4 md:p-5 border-b rounded-t">
-                <h3 class="text-lg font-bold text-slate-900">Edit Data <?= $roleTitle ?></h3>
-                <button type="button" onclick="document.getElementById('editModal').classList.add('hidden')" class="text-gray-400 bg-transparent hover:bg-gray-200 hover:text-gray-900 rounded-lg text-sm w-8 h-8 inline-flex justify-center items-center">
-                    ✕
-                </button>
-            </div>
-            
-            <form method="POST" class="p-4 md:p-5">
-                <input type="hidden" name="edit_id" id="edit_id">
-                
-                <div class="grid gap-4 mb-4 grid-cols-2">
-                    <div class="col-span-2">
-                        <label class="block mb-2 text-xs font-bold text-slate-700 uppercase">Nama Lengkap (CP)</label>
-                        <input type="text" name="nama_lengkap" id="edit_nama" class="bg-slate-50 border border-slate-300 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 font-bold" required>
-                    </div>
-                    
-                    <div class="col-span-2 sm:col-span-1">
-                        <label class="block mb-2 text-xs font-bold text-slate-700 uppercase">Username</label>
-                        <input type="text" name="username" id="edit_username" class="bg-slate-50 border border-slate-300 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 font-mono" required>
-                    </div>
-                    
-                    <div class="col-span-2 sm:col-span-1">
-                        <label class="block mb-2 text-xs font-bold text-slate-700 uppercase">Email</label>
-                        <input type="email" name="email" id="edit_email" class="bg-slate-50 border border-slate-300 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 font-bold" required>
-                    </div>
-
-                    <?php if($roleFilter == 'user'): ?>
-                    <div class="col-span-2 mt-2 pt-4 border-t border-slate-100">
-                        <p class="text-xs text-blue-600 font-bold mb-3 uppercase">Informasi Klub</p>
-                    </div>
-                    <div class="col-span-2">
-                        <label class="block mb-2 text-xs font-bold text-slate-700 uppercase">Nama Klub</label>
-                        <input type="text" name="nama_klub" id="edit_klub" class="bg-blue-50 border border-blue-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 font-bold">
-                    </div>
-                    <div class="col-span-2">
-                        <label class="block mb-2 text-xs font-bold text-slate-700 uppercase">Kota Asal</label>
-                        <input type="text" name="kota" id="edit_kota" class="bg-blue-50 border border-blue-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 font-bold">
-                    </div>
-                    <?php endif; ?>
-                </div>
-                
-                <div class="flex justify-end pt-4 border-t border-slate-100">
-                    <button type="submit" class="text-white inline-flex items-center bg-blue-700 hover:bg-blue-800 font-bold rounded-lg text-sm px-5 py-2.5 text-center shadow-lg transform hover:-translate-y-0.5 transition">
-                        💾 Simpan Perubahan
-                    </button>
-                </div>
-            </form>
+<div id="modal-admin" class="fixed inset-0 z-[70] hidden bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white w-full max-w-lg rounded-[3rem] shadow-2xl overflow-hidden">
+        <div class="bg-slate-900 p-8 text-white flex justify-between items-center">
+            <h3 id="modal-title" class="font-black uppercase tracking-widest italic">Tambah Admin</h3>
+            <button onclick="closeModal()" class="text-slate-400 hover:text-white">✕</button>
         </div>
+        <form method="POST" class="p-10 space-y-6">
+            <input type="hidden" name="save_user" value="1">
+            <input type="hidden" name="user_id" id="form-id">
+            
+            <div>
+                <label class="block text-[10px] font-black text-slate-400 uppercase mb-1">Nama EO</label>
+                <input type="text" name="nama_lengkap" id="form-nama" class="w-full px-5 py-4 border-2 border-slate-50 bg-slate-50 rounded-2xl font-bold focus:bg-white focus:border-blue-500 transition outline-none" required>
+            </div>
+            <div>
+                <label class="block text-[10px] font-black text-slate-400 uppercase mb-1">Email</label>
+                <input type="email" name="email" id="form-email" class="w-full px-5 py-4 border-2 border-slate-50 bg-slate-50 rounded-2xl font-bold focus:bg-white focus:border-blue-500 transition outline-none" required>
+            </div>
+            <div>
+                <label class="block text-[10px] font-black text-slate-400 uppercase mb-1">Sistem Perlombaan</label>
+                <select name="event_type" id="form-mode" class="w-full px-5 py-4 border-2 border-slate-50 bg-slate-50 rounded-2xl font-black text-xs uppercase focus:bg-white focus:border-blue-500 outline-none">
+                    <option value="Langsung Final">Langsung Final (Timed Final)</option>
+                    <option value="Babak Penyisihan">Babak Penyisihan (Prelims)</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-[10px] font-black text-slate-400 uppercase mb-1">Password</label>
+                <input type="password" name="password" id="form-pass" class="w-full px-5 py-4 border-2 border-slate-50 bg-slate-50 rounded-2xl font-bold focus:bg-white focus:border-blue-500 transition outline-none">
+            </div>
+            <button type="submit" class="w-full bg-blue-600 text-white font-black py-5 rounded-3xl shadow-xl hover:bg-blue-700 transition uppercase tracking-widest text-xs mt-4">Simpan Akun</button>
+        </form>
     </div>
 </div>
 
 <script>
-function openEditModal(id, nama, username, email, klub, kota) {
-    document.getElementById('edit_id').value = id;
-    document.getElementById('edit_nama').value = nama;
-    document.getElementById('edit_username').value = username;
-    document.getElementById('edit_email').value = email;
-    
-    // Isi field klub jika ada
-    const fieldKlub = document.getElementById('edit_klub');
-    const fieldKota = document.getElementById('edit_kota');
-    
-    if(fieldKlub) fieldKlub.value = klub;
-    if(fieldKota) fieldKota.value = kota;
-    
-    document.getElementById('editModal').classList.remove('hidden');
+const modal = document.getElementById('modal-admin');
+function openModal() {
+    document.getElementById('modal-title').innerText = "Tambah Admin Baru";
+    document.getElementById('form-id').value = "";
+    document.getElementById('form-nama').value = "";
+    document.getElementById('form-email').value = "";
+    document.getElementById('form-mode').value = "Langsung Final";
+    document.getElementById('form-pass').required = true;
+    modal.classList.remove('hidden');
 }
+function editAdmin(data) {
+    document.getElementById('modal-title').innerText = "Edit Akun Admin";
+    document.getElementById('form-id').value = data.id;
+    document.getElementById('form-nama').value = data.nama_lengkap;
+    document.getElementById('form-email').value = data.email;
+    document.getElementById('form-mode').value = data.event_type; // Mengisi dropdown mode
+    document.getElementById('form-pass').required = false;
+    modal.classList.remove('hidden');
+}
+function closeModal() { modal.classList.add('hidden'); }
 </script>
