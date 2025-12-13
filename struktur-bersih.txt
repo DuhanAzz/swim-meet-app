@@ -1,0 +1,173 @@
+.
+├── package-lock.json
+├── package.json
+├── postcss.config.js
+├── public
+│   ├── assets
+│   ├── change_password.php
+│   ├── events.php
+│   ├── img
+│   │   ├── events
+│   │   │   ├── event_1765248934_69378fa6757b8.jpg
+│   │   │   ├── event_1765249324_6937912cabc67.jpg
+│   │   │   └── event_1765262738_6937c5923f9a8.png
+│   │   ├── hero
+│   │   │   ├── hero_1765203416_0.jpg
+│   │   │   ├── hero_1765203427_0.jpg
+│   │   │   ├── slide_1765341732_640.jpg
+│   │   │   ├── slide_1765550442_208.jpg
+│   │   │   └── tix_slide_1765340189_697.jpg
+│   │   ├── logo footer.png
+│   │   ├── logo.png
+│   │   ├── logos
+│   │   │   └── logo_9_1765373933.png
+│   │   ├── profiles
+│   │   │   ├── profile_1_1765256297.png
+│   │   │   ├── profile_7_1765254439.png
+│   │   │   └── profile_8_1765256199.JPG
+│   │   ├── receipts
+│   │   │   ├── receipt_1_1765279038.png
+│   │   │   ├── receipt_2_1765280458.png
+│   │   │   └── receipt_3_1765374236.png
+│   │   └── users
+│   │       ├── user_1_1765336304.png
+│   │       ├── user_10_1765550608.jpeg
+│   │       ├── user_7_1765343374.png
+│   │       ├── user_8_1765373770.jpeg
+│   │       └── user_9_1765373942.png
+│   ├── index.php
+│   ├── live.php
+│   ├── login_process.php
+│   ├── login.php
+│   ├── logout.php
+│   ├── profile_edit.php
+│   ├── register.php
+│   ├── results.php
+│   ├── uploads
+│   │   ├── banners
+│   │   ├── clubs
+│   │   ├── doc_1765343443.txt
+│   │   ├── documents
+│   │   │   ├── DOC_Other_1765520549_7.pdf
+│   │   │   └── DOC_StartList_1765520583_7.pdf
+│   │   ├── results
+│   │   │   └── doc_7_1765347172.pdf
+│   │   └── swimmers
+│   └── view_result.php
+├── src
+│   ├── admin
+│   │   ├── dashboard.php
+│   │   ├── entries
+│   │   │   └── index.php
+│   │   ├── keuangan
+│   │   │   └── index.php
+│   │   ├── preview_buku_acara.php
+│   │   ├── preview_buku_hasil.php
+│   │   ├── results
+│   │   │   ├── index.php
+│   │   │   ├── logic.php
+│   │   │   └── print.php
+│   │   ├── seeding
+│   │   │   ├── index.php
+│   │   │   ├── logic.php
+│   │   │   └── print.php
+│   │   ├── settings
+│   │   │   └── event_profile.php
+│   │   ├── upload.php
+│   │   └── verifikasi.php
+│   ├── common
+│   │   └── profile.php
+│   ├── config
+│   │   └── database.php
+│   ├── controllers
+│   │   └── LoginController.php
+│   ├── entries
+│   │   ├── create.php
+│   │   ├── delete.php
+│   │   ├── index.php
+│   │   ├── input_by_club.php
+│   │   ├── process.php
+│   │   └── store.php
+│   ├── events
+│   │   ├── create.php
+│   │   ├── delete.php
+│   │   ├── edit.php
+│   │   ├── index.php
+│   │   ├── seeding.php
+│   │   └── store.php
+│   ├── heats
+│   │   ├── generate.php
+│   │   └── view_startlist.php
+│   ├── helpers
+│   ├── layout
+│   ├── master
+│   │   ├── clubs
+│   │   │   ├── create.php
+│   │   │   ├── delete.php
+│   │   │   ├── edit.php
+│   │   │   ├── index.php
+│   │   │   ├── store.php
+│   │   │   └── update.php
+│   │   ├── dashboard.php
+│   │   ├── settings
+│   │   │   ├── backup.php
+│   │   │   ├── index.php
+│   │   │   └── public_page.php
+│   │   ├── swimmers
+│   │   │   ├── create.php
+│   │   │   ├── delete.php
+│   │   │   ├── edit.php
+│   │   │   ├── index.php
+│   │   │   ├── store.php
+│   │   │   └── update.php
+│   │   ├── user
+│   │   │   ├── create.php
+│   │   │   ├── delete.php
+│   │   │   ├── edit.php
+│   │   │   ├── index.php
+│   │   │   ├── reset_password.php
+│   │   │   ├── store.php
+│   │   │   └── update.php
+│   │   └── users
+│   │       ├── create.php
+│   │       ├── delete.php
+│   │       ├── edit.php
+│   │       └── index.php
+│   ├── middleware
+│   │   └── auth.php
+│   ├── models
+│   │   └── User.php
+│   ├── results
+│   │   ├── index.php
+│   │   ├── input_result.php
+│   │   ├── input.php
+│   │   ├── print_result.php
+│   │   ├── print_startlist.php
+│   │   ├── store.php
+│   │   └── view_ranking.php
+│   └── user
+│       ├── atlet
+│       │   ├── index.php
+│       │   └── track_record.php
+│       ├── dashboard.php
+│       ├── kompetisi
+│       │   ├── detail.php
+│       │   ├── edit_entry.php
+│       │   ├── explore.php
+│       │   ├── history.php
+│       │   ├── live.php
+│       │   ├── register_event.php
+│       │   └── registration.php
+│       ├── pembayaran.php
+│       └── pengumuman.php
+├── storage
+│   └── login_debug.log
+├── struktur-bersih.txt
+├── struktur.txt
+├── tailwind.config.js
+└── views
+    └── layout
+        ├── sidebar.php
+        └── topbar.php
+
+46 directories, 125 files

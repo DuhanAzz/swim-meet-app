@@ -1,0 +1,6 @@
+# MATIKAN EKSEKUSI PHP DI FOLDER GAMBAR
+# Agar kalau ada virus terupload, tidak bisa dijalankan
+<FilesMatch "\.(php|php5|phtml)$">
+    Order Deny,Allow
+    Deny from all
+</FilesMatch>

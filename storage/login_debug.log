@@ -1,0 +1,74 @@
+STARTED
+[2025-12-07 15:28:17] LOGIN_PROCESS_LOADED
+STARTED
+[2025-12-07 15:31:29] LOGIN_PROCESS_LOADED
+STARTED
+[2025-12-07 15:32:44] LOGIN_PROCESS_LOADED
+STARTED
+[2025-12-07 15:35:40] LOGIN_PROCESS_LOADED
+STARTED
+[2025-12-07 15:37:27] LOGIN_PROCESS_LOADED
+[2025-12-07 15:37:27] User found: id=1 email=master@example.com stored_pw_prefix=$2y$10$d role=master
+[2025-12-07 15:37:27] Login failed: password mismatch for master@example.com
+STARTED
+[2025-12-07 15:40:27] LOGIN_PROCESS_LOADED
+[2025-12-07 15:40:27] User found: id=1 email=master@example.com stored_pw_prefix=12345678 role=master
+[2025-12-07 15:40:27] Login success via plaintext match for master@example.com
+STARTED
+[2025-12-07 15:42:16] LOGIN_PROCESS_LOADED
+[2025-12-07 15:42:16] User found: id=2 email=admin@example.com stored_pw_prefix=$2y$10$d role=admin
+[2025-12-07 15:42:16] Login failed: password mismatch for admin@example.com
+STARTED
+[2025-12-07 15:43:02] LOGIN_PROCESS_LOADED
+[2025-12-07 15:43:02] User found: id=2 email=admin@example.com stored_pw_prefix=12345678 role=admin
+[2025-12-07 15:43:03] Login success via plaintext match for admin@example.com
+STARTED
+[2025-12-07 15:43:15] LOGIN_PROCESS_LOADED
+[2025-12-07 15:43:15] User found: id=3 email=user@example.com stored_pw_prefix=12345678 role=user
+[2025-12-07 15:43:15] Login success via plaintext match for user@example.com
+STARTED
+[2025-12-07 16:02:21] LOGIN_PROCESS_LOADED
+[2025-12-07 16:02:21] User found: id=1 email=master@example.com stored_pw_prefix=$2y$10$9 role=master
+[2025-12-07 16:02:21] Login failed: password mismatch for master@example.com
+STARTED
+[2025-12-07 16:02:29] LOGIN_PROCESS_LOADED
+[2025-12-07 16:02:29] User found: id=1 email=master@example.com stored_pw_prefix=$2y$10$9 role=master
+[2025-12-07 16:02:29] Login success via password_verify for master@example.com
+STARTED
+[2025-12-07 16:07:18] LOGIN_PROCESS_LOADED
+[2025-12-07 16:07:18] User found: id=1 email=master@example.com stored_pw_prefix=$2y$10$9 role=master
+[2025-12-07 16:07:18] Login failed: password mismatch for master@example.com
+STARTED
+[2025-12-07 16:07:26] LOGIN_PROCESS_LOADED
+[2025-12-07 16:07:26] User found: id=1 email=master@example.com stored_pw_prefix=$2y$10$9 role=master
+[2025-12-07 16:07:26] Login success via password_verify for master@example.com
+STARTED
+[2025-12-07 16:11:06] LOGIN_PROCESS_LOADED
+[2025-12-07 16:11:06] User found: id=1 email=master@example.com stored_pw_prefix=$2y$10$9 role=master
+[2025-12-07 16:11:06] Login success via password_verify for master@example.com
+STARTED
+[2025-12-08 02:24:19] LOGIN_PROCESS_LOADED
+[2025-12-08 02:24:19] User found: id=1 email=master@example.com stored_pw_prefix=$2y$10$9 role=master
+[2025-12-08 02:24:19] Login success via password_verify for master@example.com
+STARTED
+[2025-12-08 02:25:33] LOGIN_PROCESS_LOADED
+[2025-12-08 02:25:33] User found: id=2 email=admin@example.com stored_pw_prefix=$2y$10$3 role=admin
+[2025-12-08 02:25:33] Login success via password_verify for admin@example.com
+STARTED
+[2025-12-08 02:39:28] LOGIN_PROCESS_LOADED
+[2025-12-08 02:39:28] User found: id=1 email=master@example.com stored_pw_prefix=$2y$10$9 role=master
+[2025-12-08 02:39:28] Login failed: password mismatch for master@example.com
+STARTED
+[2025-12-08 02:39:35] LOGIN_PROCESS_LOADED
+[2025-12-08 02:39:35] User found: id=1 email=master@example.com stored_pw_prefix=$2y$10$9 role=master
+[2025-12-08 02:39:35] Login success via password_verify for master@example.com
+STARTED
+[2025-12-08 02:44:53] LOGIN_PROCESS_LOADED
+[2025-12-08 02:44:53] User found: id=1 email=master@example.com stored_pw_prefix=$2y$10$9 role=master
+[2025-12-08 02:44:53] Login success via password_verify for master@example.com
+STARTED
+[2025-12-08 03:23:22] LOGIN_PROCESS_LOADED
+STARTED
+[2025-12-08 03:46:49] LOGIN_PROCESS_LOADED
+STARTED
+[2025-12-08 03:49:17] LOGIN_PROCESS_LOADED
