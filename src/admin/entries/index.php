@@ -8,14 +8,42 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
 
 $uid = $_SESSION['user_id']; // ID Admin EO
 
-// --- 1. HANDLE VERIFIKASI ---
+// --- 1. HANDLE VERIFIKASI (REVISI) ---
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_status'])) {
     $payId = $_POST['payment_id'];
-    $status = $_POST['status'];
+    $status = $_POST['status']; // 'Verified' atau 'Rejected'
+
     if ($payId) {
-        $stmt = $pdo->prepare("UPDATE event_payments SET status = ? WHERE id = ?");
-        $stmt->execute([$status, $payId]);
-        $_SESSION['toast_type'] = 'success'; $_SESSION['toast_message'] = "Status pendaftaran diperbarui!";
+        try {
+            $pdo->beginTransaction();
+
+            // A. Update status pembayaran di tabel event_payments
+            $stmtPay = $pdo->prepare("UPDATE event_payments SET status = ? WHERE id = ?");
+            $stmtPay->execute([$status, $payId]);
+
+            // B. LOGIKA SINKRONISASI: Jika di-Approve (Verified)
+            if ($status == 'Verified') {
+                // 1. Cari tau dulu ini pembayaran untuk Klub mana dan Event apa
+                $stmtGetInfo = $pdo->prepare("SELECT club_id, event_id FROM event_payments WHERE id = ?");
+                $stmtGetInfo->execute([$payId]);
+                $payInfo = $stmtGetInfo->fetch();
+
+                if ($payInfo) {
+                    // 2. Update SEMUA pendaftaran atlet (event_entries) milik klub tersebut menjadi 'Approved'
+                    // Ini memastikan logic.php bisa menarik data mereka untuk disusun lintasannya
+                    $stmtEntries = $pdo->prepare("UPDATE event_entries SET status = 'Approved' WHERE club_id = ? AND event_id = ?");
+                    $stmtEntries->execute([$payInfo['club_id'], $payInfo['event_id']]);
+                }
+            }
+
+            $pdo->commit();
+            $_SESSION['toast_type'] = 'success'; 
+            $_SESSION['toast_message'] = "Pendaftaran Klub Berhasil Diverifikasi & Atlet Telah Disetujui!";
+        } catch (Exception $e) {
+            $pdo->rollBack();
+            $_SESSION['toast_type'] = 'error'; 
+            $_SESSION['toast_message'] = "Gagal memverifikasi: " . $e->getMessage();
+        }
     }
     header("Location: index.php"); exit;
 }
@@ -42,13 +70,13 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
 <div class="p-6 sm:ml-64 pt-24 bg-slate-50 min-h-screen font-sans text-slate-800">
     <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-6">
         <div>
-            <h1 class="text-3xl font-black uppercase tracking-tighter italic text-slate-900">Registration Manager</h1>
-            <p class="text-sm text-slate-500 font-bold uppercase tracking-widest">Manajemen Pendaftaran Kolektif per Klub</p>
+            <h1 class="text-3xl font-black uppercase tracking-tighter italic text-slate-900 leading-none">Registration Manager</h1>
+            <p class="text-sm text-slate-500 font-bold uppercase tracking-widest mt-2">Manajemen Pendaftaran Kolektif per Klub</p>
         </div>
         <div class="bg-white p-5 rounded-[2rem] border border-slate-200 shadow-sm flex items-center gap-4">
             <div class="w-12 h-12 bg-blue-50 rounded-2xl flex items-center justify-center text-2xl">📊</div>
             <div>
-                <div class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Klub Terdaftar</div>
+                <div class="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Klub Terdaftar</div>
                 <div class="font-black text-xl text-slate-900"><?= count($submissions) ?></div>
             </div>
         </div>
@@ -68,7 +96,7 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                 </thead>
                 <tbody class="divide-y divide-slate-100">
                     <?php if(empty($submissions)): ?>
-                        <tr><td colspan="5" class="px-8 py-20 text-center font-black text-slate-300 uppercase text-xs">Belum ada kiriman pendaftaran.</td></tr>
+                        <tr><td colspan="5" class="px-8 py-20 text-center font-black text-slate-300 uppercase text-xs italic">Belum ada kiriman pendaftaran.</td></tr>
                     <?php else: foreach($submissions as $s): ?>
                         <tr class="hover:bg-slate-50 transition h-24">
                             <td class="px-8 py-4">
@@ -106,13 +134,15 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                                 <?php endif; ?>
                             </td>
                             <td class="px-8 py-4 text-right">
-                                <?php if($s['payment_id']): ?>
+                                <?php if($s['payment_id'] && $s['payment_status'] != 'Verified'): ?>
                                 <form method="POST" class="flex justify-end gap-2">
                                     <input type="hidden" name="payment_id" value="<?= $s['payment_id'] ?>">
                                     <input type="hidden" name="update_status" value="1">
                                     <button name="status" value="Verified" class="bg-emerald-600 text-white px-5 py-2.5 rounded-xl text-[10px] font-black uppercase hover:bg-emerald-700 transition shadow-lg shadow-emerald-100">Approve</button>
                                     <button name="status" value="Rejected" class="bg-white text-slate-400 border border-slate-200 px-5 py-2.5 rounded-xl text-[10px] font-black uppercase hover:bg-red-500 hover:text-white transition">Reject</button>
                                 </form>
+                                <?php elseif($s['payment_status'] == 'Verified'): ?>
+                                    <span class="text-[10px] font-black text-slate-300 uppercase italic">Sudah Disetujui</span>
                                 <?php endif; ?>
                             </td>
                         </tr>
@@ -122,3 +152,5 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
         </div>
     </div>
 </div>
+
+<?php include __DIR__ . '/../../../views/layout/footer.php'; ?>

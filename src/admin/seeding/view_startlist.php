@@ -7,6 +7,7 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
 }
 
 $catId = $_GET['category_id'] ?? 0;
+$stage = $_GET['stage'] ?? 'Prelims'; // Menangkap parameter Prelims atau Final
 $uid = $_SESSION['user_id'];
 
 // --- 1. AMBIL DATA ACARA & BRANDING DARI USER ---
@@ -25,9 +26,9 @@ $stmtSponsors = $pdo->prepare("SELECT image_path FROM event_sponsors WHERE user_
 $stmtSponsors->execute([$uid]);
 $sponsors = $stmtSponsors->fetchAll();
 
-// --- 3. AMBIL DATA SERI (HEATS) & LINTASAN ---
-$stmtHeats = $pdo->prepare("SELECT * FROM race_heats WHERE category_id = ? ORDER BY heat_number ASC");
-$stmtHeats->execute([$catId]);
+// --- 3. AMBIL DATA SERI (HEATS) BERDASARKAN BABAK (STAGE) ---
+$stmtHeats = $pdo->prepare("SELECT * FROM race_heats WHERE category_id = ? AND stage = ? ORDER BY heat_number ASC");
+$stmtHeats->execute([$catId, $stage]);
 $heats = $stmtHeats->fetchAll();
 
 foreach ($heats as &$h) {
@@ -63,7 +64,6 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
     .table-report td { padding: 8px 5px; vertical-align: top; border-bottom: 1px solid #f2f2f2; overflow: hidden; }
     .center { text-align: center; }
     
-    /* Container Sponsor Footer */
     .sponsor-footer {
         margin-top: 50px;
         padding-top: 20px;
@@ -83,12 +83,9 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
 
     /* --- FIX CETAK (PRINT) --- */
     @media print {
-        /* Sembunyikan elemen Dashboard secara paksa */
         #logo-sidebar, nav, header, aside, .no-print, [role="navigation"], .pt-24 { 
             display: none !important; 
         }
-
-        /* Pastikan konten dimulai dari koordinat 0 (paling kiri atas) */
         body, html {
             background: white !important;
             margin: 0 !important;
@@ -97,8 +94,6 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
             height: auto !important;
             overflow: visible !important;
         }
-
-        /* Container utama dilepas dari layout Sidebar */
         .sm\:ml-64, main, .p-6 { 
             margin: 0 !important; 
             padding: 0 !important; 
@@ -106,7 +101,6 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
             display: block !important;
             position: relative !important;
         }
-
         .report-paper {
             box-shadow: none !important;
             border: none !important;
@@ -115,11 +109,8 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
             margin: 0 !important;
             display: block !important;
         }
-
-        /* Atur agar tabel tidak terpotong aneh di tengah halaman */
         .table-report { page-break-inside: auto; }
         tr { page-break-inside: avoid; page-break-after: auto; }
-        
         @page { size: A4 portrait; margin: 15mm; }
     }
 </style>
@@ -129,8 +120,8 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
     <div class="max-w-full mb-10 no-print">
         <div class="flex flex-col md:flex-row justify-between items-center gap-6 bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm">
             <div>
-                <h1 class="text-2xl font-black uppercase italic text-slate-900 leading-none">Buku Acara Preview</h1>
-                <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-2">Nomor Acara: #<?= $info['event_no'] ?></p>
+                <h1 class="text-2xl font-black uppercase italic text-slate-900 leading-none">Start List Preview</h1>
+                <p class="text-[10px] font-bold text-blue-600 uppercase tracking-widest mt-2">Mode: <?= strtoupper($stage) ?> #<?= $info['event_no'] ?></p>
             </div>
             <div class="flex gap-3">
                 <a href="index.php" class="bg-white border-2 border-slate-100 px-6 py-3 rounded-2xl font-black text-[10px] uppercase text-slate-400 hover:text-slate-600 transition">← Kembali</a>
@@ -174,10 +165,13 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
         
         <div class="text-center font-black text-xl uppercase mb-10 italic">
             <?= $info['distance'] ?? '0' ?> M <?= strtoupper(htmlspecialchars($info['style'] ?? '')) ?> <?= strtoupper(htmlspecialchars(($info['gender'] ?? '') == 'Male' ? 'PUTRA' : 'PUTRI')) ?>
+            <?php if($stage == 'Final'): ?>
+                <div class="text-lg bg-slate-900 text-white px-4 py-1 not-italic inline-block mt-2 tracking-widest">BABAK FINAL</div>
+            <?php endif; ?>
         </div>
 
         <?php if(empty($heats)): ?>
-            <p class="text-center py-20 italic">Data seri belum disusun.</p>
+            <p class="text-center py-20 italic">Data seri <?= $stage ?> belum disusun.</p>
         <?php else: foreach($heats as $h): ?>
             <table class="table-report">
                 <thead>
@@ -218,7 +212,7 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
         <?php endif; ?>
 
         <div class="mt-10 text-[9px] italic flex justify-between border-t pt-4 text-slate-400 uppercase font-bold">
-            <span>Official Start List Generated by SwimMeet System</span>
+            <span>Official <?= strtoupper($stage) ?> Start List Generated by SwimMeet System</span>
             <span>Waktu Cetak: <?= date('d/m/Y H:i:s') ?></span>
         </div>
     </div>
