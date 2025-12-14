@@ -2,150 +2,118 @@
 session_start();
 require_once __DIR__ . '/../../config/database.php';
 
-// Proteksi Admin
 if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
     header("Location: ../../../public/login.php"); exit;
 }
 
-$uid = $_SESSION['user_id'];
-$selectedCatId = $_GET['category_id'] ?? 0;
-$search = $_GET['q'] ?? '';
+$uid = $_SESSION['user_id']; // ID Admin EO
 
-// 1. Ambil List Kategori untuk Filter
-$stmtCat = $pdo->prepare("SELECT * FROM event_categories WHERE user_id = ? ORDER BY age_group ASC, gender DESC");
-$stmtCat->execute([$uid]);
-$categories = $stmtCat->fetchAll();
-
-// 2. Ambil Statistik
-$countClubs = $pdo->prepare("SELECT COUNT(DISTINCT club_id) FROM event_entries WHERE event_id = ?");
-$countClubs->execute([$uid]);
-$totalClubs = $countClubs->fetchColumn();
-
-$countEntries = $pdo->prepare("SELECT COUNT(*) FROM event_entries WHERE event_id = ?");
-$countEntries->execute([$uid]);
-$totalEntries = $countEntries->fetchColumn();
-
-// 3. Query Data Peserta (MENGGUNAKAN tanggal_lahir)
-$sql = "SELECT ee.*, s.nama_atlet, s.tanggal_lahir, u.nama_lengkap as nama_klub, 
-               ec.age_group, ec.distance, ec.style, ec.gender
-        FROM event_entries ee
-        JOIN swimmers s ON ee.swimmer_id = s.id
-        JOIN users u ON ee.club_id = u.id
-        JOIN event_categories ec ON ee.category_id = ec.id
-        WHERE ee.event_id = ?";
-
-$params = [$uid];
-if ($selectedCatId) {
-    $sql .= " AND ee.category_id = ?";
-    $params[] = $selectedCatId;
-}
-if ($search) {
-    $sql .= " AND (s.nama_atlet LIKE ? OR u.nama_lengkap LIKE ?)";
-    $params[] = "%$search%";
-    $params[] = "%$search%";
+// --- 1. HANDLE VERIFIKASI ---
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_status'])) {
+    $payId = $_POST['payment_id'];
+    $status = $_POST['status'];
+    if ($payId) {
+        $stmt = $pdo->prepare("UPDATE event_payments SET status = ? WHERE id = ?");
+        $stmt->execute([$status, $payId]);
+        $_SESSION['toast_type'] = 'success'; $_SESSION['toast_message'] = "Status pendaftaran diperbarui!";
+    }
+    header("Location: index.php"); exit;
 }
 
-$sql .= " ORDER BY ec.age_group ASC, s.nama_atlet ASC";
-$stmtEntries = $pdo->prepare($sql);
-$stmtEntries->execute($params);
-$entries = $stmtEntries->fetchAll();
+// --- 2. AMBIL DATA PENGIRIMAN PER KLUB ---
+$sql = "SELECT 
+            u.id as club_id, u.nama_lengkap as nama_klub, u.email as email_klub,
+            p.id as payment_id, p.status as payment_status, p.proof_file, p.requirement_file, p.created_at as submission_date,
+            (SELECT COUNT(DISTINCT ee.swimmer_id) FROM event_entries ee WHERE ee.club_id = u.id AND ee.event_id = ?) as total_atlet,
+            (SELECT COUNT(*) FROM event_entries ee WHERE ee.club_id = u.id AND ee.event_id = ?) as total_entries
+        FROM users u
+        LEFT JOIN event_payments p ON (p.club_id = u.id AND p.event_id = ?)
+        WHERE EXISTS (SELECT 1 FROM event_entries ee WHERE ee.club_id = u.id AND ee.event_id = ?)
+        ORDER BY p.created_at DESC, u.nama_lengkap ASC";
 
-// 4. Handle Hapus
-if (isset($_POST['delete_entry'])) {
-    $pdo->prepare("DELETE FROM event_entries WHERE id = ?")->execute([$_POST['entry_id']]);
-    header("Location: index.php?category_id=$selectedCatId&msg=deleted"); exit;
-}
+$stmt = $pdo->prepare($sql);
+$stmt->execute([$uid, $uid, $uid, $uid]);
+$submissions = $stmt->fetchAll();
 
 include __DIR__ . '/../../../views/layout/topbar.php'; 
 include __DIR__ . '/../../../views/layout/sidebar.php'; 
 ?>
 
 <div class="p-6 sm:ml-64 pt-24 bg-slate-50 min-h-screen font-sans text-slate-800">
-    
     <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-6">
         <div>
-            <h1 class="text-3xl font-black uppercase tracking-tighter italic text-slate-900">Participant Data</h1>
-            <p class="text-sm text-slate-500 font-bold uppercase tracking-widest">Manajemen Database Pendaftaran</p>
+            <h1 class="text-3xl font-black uppercase tracking-tighter italic text-slate-900">Registration Manager</h1>
+            <p class="text-sm text-slate-500 font-bold uppercase tracking-widest">Manajemen Pendaftaran Kolektif per Klub</p>
         </div>
-        
-        <div class="flex gap-4">
-            <div class="bg-white p-5 rounded-[2rem] border border-slate-200 shadow-sm flex items-center gap-4">
-                <div class="w-12 h-12 bg-blue-50 rounded-2xl flex items-center justify-center text-2xl">🏰</div>
-                <div>
-                    <div class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Klub</div>
-                    <div class="font-black text-xl text-slate-900"><?= $totalClubs ?></div>
-                </div>
-            </div>
-            <div class="bg-white p-5 rounded-[2rem] border border-slate-200 shadow-sm flex items-center gap-4">
-                <div class="w-12 h-12 bg-orange-50 rounded-2xl flex items-center justify-center text-2xl">🏊</div>
-                <div>
-                    <div class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Entries</div>
-                    <div class="font-black text-xl text-slate-900"><?= $totalEntries ?></div>
-                </div>
+        <div class="bg-white p-5 rounded-[2rem] border border-slate-200 shadow-sm flex items-center gap-4">
+            <div class="w-12 h-12 bg-blue-50 rounded-2xl flex items-center justify-center text-2xl">📊</div>
+            <div>
+                <div class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Klub Terdaftar</div>
+                <div class="font-black text-xl text-slate-900"><?= count($submissions) ?></div>
             </div>
         </div>
-    </div>
-
-    <div class="bg-white p-6 rounded-[2.5rem] border border-slate-200 shadow-sm mb-10">
-        <form method="GET" class="grid grid-cols-1 lg:grid-cols-3 gap-6 items-end">
-            <div class="lg:col-span-1">
-                <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Filter Nomor Lomba</label>
-                <select name="category_id" onchange="this.form.submit()" class="w-full p-4 border-2 border-slate-50 rounded-2xl font-black text-slate-700 uppercase text-xs focus:border-blue-500 transition outline-none bg-slate-50">
-                    <option value="">-- SEMUA NOMOR --</option>
-                    <?php foreach($categories as $c): ?>
-                        <option value="<?= $c['id'] ?>" <?= $selectedCatId == $c['id'] ? 'selected' : '' ?>>
-                            <?= $c['age_group'] ?> - <?= $c['distance'] ?>m <?= $c['style'] ?>
-                        </option>
-                    <?php endforeach; ?>
-                </select>
-            </div>
-            <div class="lg:col-span-1">
-                <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Cari Atlet / Klub</label>
-                <input type="text" name="q" value="<?= htmlspecialchars($search) ?>" placeholder="Ketik nama..." class="w-full p-4 border-2 border-slate-50 rounded-2xl font-bold text-xs focus:border-blue-500 transition outline-none bg-slate-50">
-            </div>
-            <div class="lg:col-span-1">
-                <button type="submit" class="w-full bg-slate-900 text-white font-black py-4 rounded-2xl text-[10px] uppercase tracking-widest hover:bg-blue-600 transition shadow-lg">Terapkan Filter</button>
-            </div>
-        </form>
     </div>
 
     <div class="bg-white rounded-[2.5rem] border border-slate-200 overflow-hidden shadow-sm">
         <div class="overflow-x-auto">
-            <table class="w-full text-left text-sm">
+            <table class="w-full text-left text-sm border-collapse">
                 <thead class="bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest">
                     <tr>
-                        <th class="px-8 py-5">Atlet & Tgl Lahir</th>
-                        <th class="px-8 py-5">Klub / Sekolah</th>
-                        <th class="px-8 py-5 text-center">Nomor Lomba</th>
-                        <th class="px-8 py-5 text-center">Entry Time</th>
-                        <th class="px-8 py-5 text-right">Aksi</th>
+                        <th class="px-8 py-6">Klub / Pengirim</th>
+                        <th class="px-8 py-6 text-center">Summary Atlet</th>
+                        <th class="px-8 py-6 text-center">Berkas & Bukti</th>
+                        <th class="px-8 py-6 text-center">Status</th>
+                        <th class="px-8 py-6 text-right">Konfirmasi</th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-slate-100">
-                    <?php if(empty($entries)): ?>
-                        <tr><td colspan="5" class="px-8 py-20 text-center font-black text-slate-300 uppercase text-xs">Data tidak ditemukan</td></tr>
-                    <?php else: foreach($entries as $e): ?>
-                        <tr class="hover:bg-blue-50/30 transition h-20">
+                    <?php if(empty($submissions)): ?>
+                        <tr><td colspan="5" class="px-8 py-20 text-center font-black text-slate-300 uppercase text-xs">Belum ada kiriman pendaftaran.</td></tr>
+                    <?php else: foreach($submissions as $s): ?>
+                        <tr class="hover:bg-slate-50 transition h-24">
                             <td class="px-8 py-4">
-                                <div class="font-black uppercase text-slate-800 text-sm"><?= htmlspecialchars($e['nama_atlet']) ?></div>
-                                <div class="text-[9px] font-bold text-slate-400 uppercase mt-1"><?= ($e['tanggal_lahir']) ? date('d M Y', strtotime($e['tanggal_lahir'])) : '-' ?></div>
-                            </td>
-                            <td class="px-8 py-4">
-                                <span class="bg-slate-100 px-4 py-1.5 rounded-full text-[9px] font-black text-slate-600 uppercase tracking-tighter">
-                                    🏰 <?= htmlspecialchars($e['nama_klub']) ?>
-                                </span>
+                                <div class="font-black uppercase text-slate-800 text-sm leading-tight"><?= htmlspecialchars($s['nama_klub']) ?></div>
+                                <div class="text-[10px] font-bold text-blue-500 mt-1"><?= $s['email_klub'] ?></div>
+                                <div class="text-[9px] text-slate-400 mt-1 italic"><?= $s['submission_date'] ? 'Submit: '.date('d/m/y H:i', strtotime($s['submission_date'])) : '⚠️ Belum Checkout' ?></div>
                             </td>
                             <td class="px-8 py-4 text-center">
-                                <div class="font-bold text-slate-700"><?= $e['distance'] ?>m <?= $e['style'] ?></div>
-                                <div class="text-[9px] font-black text-blue-500 uppercase"><?= $e['age_group'] ?></div>
+                                <a href="view_matrix.php?club_id=<?= $s['club_id'] ?>" class="group flex flex-col items-center mx-auto">
+                                    <span class="font-black text-xl text-slate-800 group-hover:text-blue-600 transition"><?= $s['total_atlet'] ?></span>
+                                    <span class="text-[9px] font-black text-purple-600 uppercase tracking-tighter bg-purple-50 px-3 py-1 rounded-full border border-purple-100 group-hover:bg-purple-600 group-hover:text-white transition">👁️ Matriks Peserta</span>
+                                </a>
                             </td>
-                            <td class="px-8 py-4 text-center font-mono font-black text-blue-600 text-base"><?= $e['entry_time'] ?></td>
+                            <td class="px-8 py-4 text-center">
+                                <div class="flex justify-center gap-2">
+                                    <?php if($s['payment_id']): ?>
+                                        <a href="../../../public/<?= $s['proof_file'] ?>" target="_blank" class="w-11 h-11 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center hover:bg-emerald-500 hover:text-white transition shadow-sm border border-emerald-100" title="Bukti Transfer">💰</a>
+                                        <?php if($s['requirement_file']): ?>
+                                            <a href="../../../public/<?= $s['requirement_file'] ?>" target="_blank" class="w-11 h-11 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center hover:bg-blue-500 hover:text-white transition shadow-sm border border-blue-100" title="Berkas Persyaratan">📄</a>
+                                        <?php endif; ?>
+                                    <?php else: ?>
+                                        <div class="w-11 h-11 bg-slate-50 text-slate-200 rounded-xl flex items-center justify-center border border-slate-100 italic text-[9px]">Empty</div>
+                                    <?php endif; ?>
+                                </div>
+                            </td>
+                            <td class="px-8 py-4 text-center">
+                                <?php if(!$s['payment_id']): ?>
+                                    <span class="px-4 py-1.5 rounded-full text-[9px] font-black uppercase bg-slate-100 text-slate-400 border border-slate-200">Draft</span>
+                                <?php elseif($s['payment_status'] == 'Verified'): ?>
+                                    <span class="px-4 py-1.5 rounded-full text-[9px] font-black uppercase bg-emerald-100 text-emerald-700 border border-emerald-200">✅ Verified</span>
+                                <?php elseif($s['payment_status'] == 'Rejected'): ?>
+                                    <span class="px-4 py-1.5 rounded-full text-[9px] font-black uppercase bg-red-100 text-red-700 border border-red-200">❌ Rejected</span>
+                                <?php else: ?>
+                                    <span class="px-4 py-1.5 rounded-full text-[9px] font-black uppercase bg-orange-100 text-orange-700 border border-orange-200 animate-pulse">⏳ Pending</span>
+                                <?php endif; ?>
+                            </td>
                             <td class="px-8 py-4 text-right">
-                                <form method="POST" onsubmit="return confirm('Hapus pendaftaran ini?')">
-                                    <input type="hidden" name="entry_id" value="<?= $e['id'] ?>">
-                                    <input type="hidden" name="delete_entry" value="1">
-                                    <button class="w-10 h-10 bg-red-50 text-red-500 rounded-xl hover:bg-red-500 hover:text-white transition shadow-sm font-black text-xs">✕</button>
+                                <?php if($s['payment_id']): ?>
+                                <form method="POST" class="flex justify-end gap-2">
+                                    <input type="hidden" name="payment_id" value="<?= $s['payment_id'] ?>">
+                                    <input type="hidden" name="update_status" value="1">
+                                    <button name="status" value="Verified" class="bg-emerald-600 text-white px-5 py-2.5 rounded-xl text-[10px] font-black uppercase hover:bg-emerald-700 transition shadow-lg shadow-emerald-100">Approve</button>
+                                    <button name="status" value="Rejected" class="bg-white text-slate-400 border border-slate-200 px-5 py-2.5 rounded-xl text-[10px] font-black uppercase hover:bg-red-500 hover:text-white transition">Reject</button>
                                 </form>
+                                <?php endif; ?>
                             </td>
                         </tr>
                     <?php endforeach; endif; ?>

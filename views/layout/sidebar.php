@@ -1,13 +1,15 @@
 <?php 
 if (session_status() === PHP_SESSION_NONE) session_start();
 $role = $_SESSION['role'] ?? 'guest'; 
-$adminMode = $_SESSION['event_type'] ?? 'Langsung Final'; // Ambil Mode dari Session
+$adminMode = $_SESSION['event_type'] ?? 'Langsung Final'; // Deteksi Mode EO
 $page = basename($_SERVER['PHP_SELF']);
 $req = $_SERVER['REQUEST_URI']; 
 
+// --- CONFIGURATION STYLE ---
 $baseLink = 'flex items-center px-6 py-3 text-slate-400 hover:text-white hover:bg-slate-800/50 transition-all border-l-4 border-transparent group';
 $activeLink = 'flex items-center px-6 py-3 text-white bg-slate-800 border-l-4 border-blue-500 shadow-[inset_0px_1px_0px_0px_rgba(255,255,255,0.05)]';
 
+// Link Dashboard dinamis
 if ($role == 'master') $dashLink = '/swim-meet/src/master/dashboard.php';
 elseif ($role == 'admin') $dashLink = '/swim-meet/src/admin/dashboard.php';
 elseif ($role == 'user') $dashLink = '/swim-meet/src/user/dashboard.php';
@@ -35,6 +37,10 @@ else $dashLink = '/swim-meet/public/login.php';
          <a href="/swim-meet/src/master/users/index.php?role=user" class="<?= (strpos($req,"role=user")!==false) ? $activeLink : $baseLink ?>">
             <span class="w-6 text-center mr-3 text-lg">🏊</span> User Klub
          </a>
+         <div class="px-8 mt-6 mb-2 text-[10px] font-black text-slate-600 uppercase tracking-widest">Global Settings</div>
+         <a href="/swim-meet/src/master/settings/public_page.php" class="<?= (strpos($req,"public_page")!==false) ? $activeLink : $baseLink ?>">
+            <span class="w-6 text-center mr-3 text-lg">⚙️</span> Landing Page
+         </a>
       <?php endif; ?>
 
       <?php if($role == 'admin'): ?>
@@ -54,33 +60,55 @@ else $dashLink = '/swim-meet/public/login.php';
          <a href="/swim-meet/src/admin/seeding/index.php" class="<?= (strpos($req,"seeding/index")!==false) ? $activeLink : $baseLink ?>">
             <span class="w-6 text-xl mr-3 text-center opacity-80">⚡</span>
             <span class="font-bold text-[11px] tracking-widest uppercase">
-               Start List <?= ($adminMode == 'Babak Penyisihan') ? 'Penyisihan' : '' ?>
+                Start List <?= ($adminMode == 'Babak Penyisihan') ? 'Penyisihan' : '' ?>
             </span>
          </a>
 
          <?php if($adminMode == 'Babak Penyisihan'): ?>
-         <a href="/swim-meet/src/admin/seeding/final.php" class="flex items-center px-6 py-3 text-orange-400 hover:text-white hover:bg-orange-500/10 transition-all border-l-4 border-transparent group">
+         <a href="/swim-meet/src/admin/seeding/final.php" class="<?= (strpos($req,"seeding/final")!==false) ? $activeLink : $baseLink ?> text-orange-400">
             <span class="w-6 text-xl mr-3 text-center opacity-80 group-hover:scale-110 transition">🏆</span> 
-            <span class="font-black text-[10px] tracking-widest uppercase italic">Seeding Babak Final</span>
+            <span class="font-black text-[10px] tracking-widest uppercase italic">Seeding Final</span>
          </a>
          <?php endif; ?>
 
-         <a href="/swim-meet/src/admin/results/index.php" class="<?= (strpos($req,"results")!==false) ? $activeLink : $baseLink ?>">
+         <div class="px-8 mt-8 mb-2 text-[10px] font-black text-slate-600 uppercase tracking-widest">Results & Awards</div>
+         <a href="/swim-meet/src/admin/results/index.php" class="<?= (strpos($req,"results/index")!==false) ? $activeLink : $baseLink ?>">
             <span class="w-6 text-xl mr-3 text-center opacity-80">⏱️</span><span class="font-bold text-[11px] tracking-widest uppercase">Input Hasil</span>
+         </a>
+
+         <a href="/swim-meet/src/admin/results/medal_tally.php" class="<?= (strpos($req,"medal_tally")!==false) ? $activeLink : $baseLink ?>">
+            <span class="w-6 text-xl mr-3 text-center opacity-80">🥇</span><span class="font-bold text-[11px] tracking-widest uppercase">Rekap Medali</span>
+         </a>
+
+         <a href="/swim-meet/src/admin/results/certificates.php" class="<?= (strpos($req,"certificates")!==false) ? $activeLink : $baseLink ?>">
+            <span class="w-6 text-xl mr-3 text-center opacity-80">📜</span><span class="font-bold text-[11px] tracking-widest uppercase">Cetak Piagam</span>
+         </a>
+
+         <div class="px-8 mt-8 mb-2 text-[10px] font-black text-slate-600 uppercase tracking-widest">Accounting</div>
+         <a href="/swim-meet/src/admin/keuangan/index.php" class="<?= (strpos($req,"keuangan")!==false) ? $activeLink : $baseLink ?>">
+            <span class="w-6 text-xl mr-3 text-center opacity-80">💰</span><span class="font-bold text-[11px] tracking-widest uppercase">Verifikasi Bayar</span>
          </a>
       <?php endif; ?>
 
       <?php if($role == 'user'): ?>
          <div class="px-8 mt-8 mb-2 text-[10px] font-black text-slate-600 uppercase tracking-widest">Club Management</div>
-         <a href="/swim-meet/src/user/atlet/index.php" class="<?= (strpos($req,"atlet")!==false) ? $activeLink : $baseLink ?>">
+         <a href="/swim-meet/src/user/atlet/index.php" class="<?= (strpos($req,"user/atlet")!==false) ? $activeLink : $baseLink ?>">
             <span class="w-6 text-xl mr-3 text-center opacity-80">🏊</span><span class="font-bold text-[11px] tracking-widest uppercase">Atlet Saya</span>
+         </a>
+         
+         <div class="px-8 mt-8 mb-2 text-[10px] font-black text-slate-600 uppercase tracking-widest">Registrations</div>
+         <a href="/swim-meet/src/user/kompetisi/explore.php" class="<?= (strpos($req,"kompetisi")!==false) ? $activeLink : $baseLink ?>">
+            <span class="w-6 text-xl mr-3 text-center opacity-80">🚀</span><span class="font-bold text-[11px] tracking-widest uppercase">Cari Lomba</span>
+         </a>
+         <a href="/swim-meet/src/user/pembayaran.php" class="<?= (strpos($req,"pembayaran")!==false) ? $activeLink : $baseLink ?>">
+            <span class="w-6 text-xl mr-3 text-center opacity-80">💸</span><span class="font-bold text-[11px] tracking-widest uppercase">Status Bayar</span>
          </a>
       <?php endif; ?>
 
    </div>
 
    <div class="p-6 border-t border-slate-800 bg-[#0F172A] shrink-0 text-center">
-      <p class="text-[9px] text-slate-600 font-bold uppercase tracking-widest">&copy; 2025 SwimMeet</p>
+      <p class="text-[9px] text-slate-600 font-bold uppercase tracking-widest">&copy; 2025 SwimMeet System</p>
    </div>
 
 </aside>

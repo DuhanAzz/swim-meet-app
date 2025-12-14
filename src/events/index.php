@@ -2,37 +2,53 @@
 session_start();
 require_once __DIR__ . '/../../src/config/database.php';
 
+// Proteksi Admin
 if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
     header("Location: ../../public/login.php"); exit;
 }
 
 $uid = $_SESSION['user_id'];
 
+// --- 1. HANDLE TAMBAH NOMOR LOMBA ---
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_category'])) {
     try {
+        $event_no = $_POST['event_no'];
+        $event_date = $_POST['event_date'];
         $gender = $_POST['gender'];
         $distance = $_POST['distance'];
         $style = $_POST['style'];
         $age = $_POST['age_group'];
         $price = $_POST['price'];
 
-        $sql = "INSERT INTO event_categories (user_id, gender, distance, style, age_group, price) VALUES (?, ?, ?, ?, ?, ?)";
-        $pdo->prepare($sql)->execute([$uid, $gender, $distance, $style, $age, $price]);
+        $sql = "INSERT INTO event_categories (user_id, event_no, event_date, gender, distance, style, age_group, price) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+        $pdo->prepare($sql)->execute([$uid, $event_no, $event_date, $gender, $distance, $style, $age, $price]);
 
-        $_SESSION['toast_type'] = 'success'; $_SESSION['toast_message'] = 'Nomor lomba ditambahkan!';
+        $_SESSION['toast_type'] = 'success'; $_SESSION['toast_message'] = 'Acara #' . $event_no . ' berhasil ditambahkan!';
     } catch (Exception $e) {
         $_SESSION['toast_type'] = 'error'; $_SESSION['toast_message'] = 'Gagal: ' . $e->getMessage();
     }
     header("Location: index.php"); exit;
 }
 
+// --- 2. HANDLE HAPUS ---
 if (isset($_POST['delete_id'])) {
     $pdo->prepare("DELETE FROM event_categories WHERE id = ? AND user_id = ?")->execute([$_POST['delete_id'], $uid]);
-    $_SESSION['toast_type'] = 'success'; $_SESSION['toast_message'] = 'Nomor dihapus.';
+    $_SESSION['toast_type'] = 'success'; $_SESSION['toast_message'] = 'Nomor lomba telah dihapus.';
     header("Location: index.php"); exit;
 }
 
-$items = $pdo->prepare("SELECT * FROM event_categories WHERE user_id = ? ORDER BY age_group ASC, gender DESC, style ASC");
+// --- 3. AMBIL DATA PENDUKUNG ---
+// Ambil Tanggal Event dari profil untuk limitasi input
+$eventInfo = $pdo->query("SELECT event_start_date, event_end_date FROM users WHERE id = $uid")->fetch();
+
+// Ambil KU yang tersedia
+$stmtKU = $pdo->prepare("SELECT group_name FROM event_age_groups WHERE event_id = ? ORDER BY min_age DESC");
+$stmtKU->execute([$uid]);
+$availableKU = $stmtKU->fetchAll();
+
+// Ambil Daftar Nomor (Urut berdasarkan Nomor Acara)
+$items = $pdo->prepare("SELECT * FROM event_categories WHERE user_id = ? ORDER BY event_no ASC");
 $items->execute([$uid]);
 $categories = $items->fetchAll();
 
@@ -40,53 +56,62 @@ include __DIR__ . '/../../views/layout/topbar.php';
 include __DIR__ . '/../../views/layout/sidebar.php'; 
 ?>
 
-<div class="p-6 sm:ml-64 pt-24 bg-slate-50 min-h-screen font-sans">
+<div class="p-6 sm:ml-64 pt-24 bg-slate-50 min-h-screen font-sans text-slate-800">
     
-    <div class="flex justify-between items-center mb-8">
+    <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-4">
         <div>
-            <h1 class="text-3xl font-black text-slate-800 uppercase tracking-tight">Kelola Nomor Lomba</h1>
-            <p class="text-sm text-slate-500">Tentukan nomor-nomor pertandingan yang dibuka untuk pendaftaran.</p>
+            <h1 class="text-3xl font-black text-slate-800 uppercase tracking-tighter italic">Order of Events</h1>
+            <p class="text-sm text-slate-500 font-bold uppercase tracking-widest">Susunan Nomor Acara Pertandingan</p>
         </div>
-        <div class="bg-blue-100 text-blue-800 px-4 py-2 rounded-lg font-bold text-xs">
-            Total Nomor: <?= count($categories) ?>
+        <div class="bg-white border-2 border-slate-200 px-6 py-3 rounded-2xl font-black text-xs uppercase tracking-widest text-slate-600 shadow-sm">
+            Total: <?= count($categories) ?> Acara
         </div>
     </div>
 
-    <div class="grid grid-cols-1 xl:grid-cols-3 gap-8">
+    <div class="grid grid-cols-1 xl:grid-cols-3 gap-10">
         
         <div class="xl:col-span-1">
-            <div class="bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden sticky top-24">
-                <div class="bg-slate-800 px-6 py-4 border-b border-slate-700">
-                    <h3 class="text-white font-bold text-sm uppercase tracking-wider">➕ Tambah Nomor Baru</h3>
+            <div class="bg-white rounded-[2.5rem] shadow-sm border border-slate-200 overflow-hidden sticky top-28">
+                <div class="bg-slate-900 px-8 py-6 text-white">
+                    <h3 class="font-black text-xs uppercase tracking-[0.2em] italic">➕ Buat Acara Baru</h3>
                 </div>
-                <form method="POST" class="p-6 space-y-5">
+                
+                <form method="POST" class="p-8 space-y-5">
                     <input type="hidden" name="add_category" value="1">
                     
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">No. Acara</label>
+                            <input type="number" name="event_no" placeholder="Contoh: 1" class="w-full px-5 py-3 border-2 border-slate-50 bg-slate-50 rounded-2xl font-black text-lg focus:bg-white focus:border-blue-500 transition outline-none" required>
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Tanggal</label>
+                            <input type="date" name="event_date" value="<?= $eventInfo['event_start_date'] ?>" class="w-full px-4 py-3 border-2 border-slate-50 bg-slate-50 rounded-2xl font-bold text-xs focus:bg-white focus:border-blue-500 transition outline-none" required>
+                        </div>
+                    </div>
+
                     <div>
-                        <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Kelompok Umur (KU)</label>
-                        <select name="age_group" class="w-full px-4 py-2 border rounded-lg text-sm font-bold text-slate-700 focus:ring-2 focus:ring-blue-500" required>
-                            <option value="">-- Pilih KU --</option>
-                            <option value="Senior (19+ Th)">Senior (19+ Th)</option>
-                            <option value="Grup 1 (16-18 Th)">Grup 1 (16-18 Th)</option>
-                            <option value="Grup 2 (14-15 Th)">Grup 2 (14-15 Th)</option>
-                            <option value="Grup 3 (12-13 Th)">Grup 3 (12-13 Th)</option>
-                            <option value="Grup 4 (10-11 Th)">Grup 4 (10-11 Th)</option>
-                            <option value="Grup 5 (< 10 Th)">Grup 5 (< 10 Th)</option>
+                        <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Kelompok Umur (KU)</label>
+                        <select name="age_group" class="w-full px-5 py-3 border-2 border-slate-50 bg-slate-50 rounded-2xl font-black text-xs uppercase tracking-widest focus:bg-white focus:border-blue-500 transition outline-none cursor-pointer" required>
+                            <option value="">-- PILIH KU --</option>
+                            <?php foreach($availableKU as $ku): ?>
+                                <option value="<?= htmlspecialchars($ku['group_name']) ?>"><?= htmlspecialchars($ku['group_name']) ?></option>
+                            <?php endforeach; ?>
                         </select>
                     </div>
 
                     <div class="grid grid-cols-2 gap-4">
                         <div>
-                            <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Gender</label>
-                            <select name="gender" class="w-full px-4 py-2 border rounded-lg text-sm" required>
-                                <option value="Male">Putra 🚹</option>
-                                <option value="Female">Putri 🚺</option>
-                                <option value="Mixed">Campuran 🚻</option>
+                            <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Gender</label>
+                            <select name="gender" class="w-full px-5 py-3 border-2 border-slate-50 bg-slate-50 rounded-2xl font-black text-[10px] uppercase tracking-widest focus:bg-white focus:border-blue-500 transition outline-none cursor-pointer" required>
+                                <option value="Male">Putra</option>
+                                <option value="Female">Putri</option>
+                                <option value="Mixed">Mixed</option>
                             </select>
                         </div>
                         <div>
-                            <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Jarak (Meter)</label>
-                            <select name="distance" class="w-full px-4 py-2 border rounded-lg text-sm" required>
+                            <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Jarak</label>
+                            <select name="distance" class="w-full px-5 py-3 border-2 border-slate-50 bg-slate-50 rounded-2xl font-black text-xs uppercase focus:bg-white focus:border-blue-500 transition outline-none cursor-pointer" required>
                                 <option value="50">50m</option>
                                 <option value="100">100m</option>
                                 <option value="200">200m</option>
@@ -98,89 +123,85 @@ include __DIR__ . '/../../views/layout/sidebar.php';
                     </div>
 
                     <div>
-                        <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Gaya Renang</label>
-                        <select name="style" class="w-full px-4 py-2 border rounded-lg text-sm" required>
-                            <option value="Gaya Bebas">Gaya Bebas (Freestyle)</option>
-                            <option value="Gaya Dada">Gaya Dada (Breaststroke)</option>
-                            <option value="Gaya Punggung">Gaya Punggung (Backstroke)</option>
-                            <option value="Gaya Kupu-kupu">Gaya Kupu (Butterfly)</option>
-                            <option value="Gaya Ganti">Gaya Ganti (Medley)</option>
+                        <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Gaya Renang</label>
+                        <select name="style" class="w-full px-5 py-3 border-2 border-slate-50 bg-slate-50 rounded-2xl font-black text-[10px] uppercase tracking-widest focus:bg-white focus:border-blue-500 transition outline-none cursor-pointer" required>
+                            <option value="Gaya Bebas">Gaya Bebas</option>
+                            <option value="Gaya Dada">Gaya Dada</option>
+                            <option value="Gaya Punggung">Gaya Punggung</option>
+                            <option value="Gaya Kupu-kupu">Gaya Kupu-kupu</option>
+                            <option value="Gaya Ganti">Gaya Ganti</option>
                             <option value="Estafet Bebas">Estafet Bebas</option>
                             <option value="Estafet Ganti">Estafet Ganti</option>
                         </select>
                     </div>
 
                     <div>
-                        <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Biaya Pendaftaran (Rp)</label>
-                        <input type="number" name="price" class="w-full px-4 py-2 border rounded-lg text-sm" value="125000" required>
+                        <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Biaya (Rp)</label>
+                        <input type="number" name="price" class="w-full px-5 py-3 border-2 border-slate-50 bg-slate-50 rounded-2xl font-black text-sm focus:bg-white focus:border-blue-500 transition outline-none" value="125000" required>
                     </div>
 
-                    <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg shadow-lg transition transform hover:-translate-y-0.5">
-                        Simpan Nomor
+                    <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-black py-4 rounded-3xl shadow-xl shadow-blue-100 transition transform hover:-translate-y-1 uppercase tracking-widest text-xs mt-4">
+                        🚀 Simpan Acara
                     </button>
                 </form>
             </div>
         </div>
 
         <div class="xl:col-span-2">
-            <div class="bg-white rounded-xl shadow-md border border-slate-200 overflow-hidden">
-                <div class="bg-slate-50 px-6 py-4 border-b border-slate-200 flex justify-between items-center">
-                    <h3 class="font-bold text-slate-700 text-sm uppercase tracking-wider">Daftar Nomor Pertandingan</h3>
+            <div class="bg-white rounded-[2.5rem] shadow-sm border border-slate-200 overflow-hidden">
+                <div class="bg-slate-50 px-8 py-5 border-b border-slate-100 flex justify-between items-center">
+                    <h3 class="font-black text-slate-400 text-[10px] uppercase tracking-[0.2em] italic">Event Schedule List</h3>
                 </div>
                 
-                <?php if(empty($categories)): ?>
-                    <div class="p-12 text-center">
-                        <span class="text-4xl block mb-2 opacity-30">🏊</span>
-                        <p class="text-slate-400 font-bold">Belum ada nomor lomba dibuat.</p>
-                        <p class="text-xs text-slate-400">Silakan input di form sebelah kiri.</p>
-                    </div>
-                <?php else: ?>
-                    <div class="overflow-x-auto">
-                        <table class="w-full text-left text-sm">
-                            <thead class="bg-slate-100 text-slate-500 font-bold uppercase text-xs border-b border-slate-200">
-                                <tr>
-                                    <th class="px-6 py-3">Kelompok Umur</th>
-                                    <th class="px-6 py-3">Nomor Lomba</th>
-                                    <th class="px-6 py-3">Gender</th>
-                                    <th class="px-6 py-3">Biaya</th>
-                                    <th class="px-6 py-3 text-right">Aksi</th>
-                                </tr>
-                            </thead>
-                            <tbody class="divide-y divide-slate-100">
-                                <?php foreach($categories as $c): ?>
-                                <tr class="hover:bg-blue-50 transition">
-                                    <td class="px-6 py-3 font-bold text-slate-700 text-xs">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left">
+                        <thead class="bg-slate-50 text-[10px] font-black uppercase text-slate-400 border-b border-slate-100">
+                            <tr>
+                                <th class="px-8 py-4 text-center w-16">#</th>
+                                <th class="px-8 py-4">Tanggal / Sesi</th>
+                                <th class="px-8 py-4">KU</th>
+                                <th class="px-8 py-4">Pertandingan</th>
+                                <th class="px-8 py-4">Gender</th>
+                                <th class="px-8 py-4 text-right">Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-50">
+                            <?php if(empty($categories)): ?>
+                                <tr><td colspan="6" class="p-20 text-center text-slate-300 font-black uppercase text-xs">Belum ada acara.</td></tr>
+                            <?php else: foreach($categories as $c): ?>
+                                <tr class="hover:bg-blue-50/50 transition">
+                                    <td class="px-8 py-5 text-center font-black text-slate-900 bg-slate-50/50">
+                                        <?= $c['event_no'] ?>
+                                    </td>
+                                    <td class="px-8 py-5">
+                                        <div class="text-[10px] font-black text-slate-700 uppercase">
+                                            <?= ($c['event_date']) ? date('d M Y', strtotime($c['event_date'])) : '-' ?>
+                                        </div>
+                                    </td>
+                                    <td class="px-8 py-5 font-black text-slate-800 text-[11px] italic">
                                         <?= htmlspecialchars($c['age_group']) ?>
                                     </td>
-                                    <td class="px-6 py-3">
-                                        <div class="font-bold text-slate-800">
+                                    <td class="px-8 py-5">
+                                        <div class="font-black text-slate-900 text-sm uppercase italic tracking-tighter">
                                             <?= $c['distance'] ?>m <?= htmlspecialchars($c['style']) ?>
                                         </div>
                                     </td>
-                                    <td class="px-6 py-3">
-                                        <?php if($c['gender'] == 'Male'): ?>
-                                            <span class="bg-blue-100 text-blue-700 px-2 py-1 rounded text-[10px] font-bold uppercase">Putra</span>
-                                        <?php elseif($c['gender'] == 'Female'): ?>
-                                            <span class="bg-pink-100 text-pink-700 px-2 py-1 rounded text-[10px] font-bold uppercase">Putri</span>
-                                        <?php else: ?>
-                                            <span class="bg-purple-100 text-purple-700 px-2 py-1 rounded text-[10px] font-bold uppercase">Mix</span>
-                                        <?php endif; ?>
+                                    <td class="px-8 py-5">
+                                        <span class="px-3 py-1 rounded-xl text-[9px] font-black uppercase border <?= $c['gender'] == 'Male' ? 'bg-blue-50 text-blue-600 border-blue-100' : 'bg-pink-50 text-pink-600 border-pink-100' ?>">
+                                            <?= $c['gender'] == 'Male' ? 'Putra' : ($c['gender'] == 'Female' ? 'Putri' : 'Mixed') ?>
+                                        </span>
                                     </td>
-                                    <td class="px-6 py-3 font-mono text-slate-600 text-xs">
-                                        Rp <?= number_format($c['price'], 0, ',', '.') ?>
-                                    </td>
-                                    <td class="px-6 py-3 text-right">
-                                        <form method="POST" onsubmit="return confirm('Hapus nomor ini?')">
+                                    <td class="px-8 py-5 text-right">
+                                        <form method="POST" onsubmit="return confirm('Hapus acara ini?')">
                                             <input type="hidden" name="delete_id" value="<?= $c['id'] ?>">
-                                            <button class="text-red-400 hover:text-red-600 font-bold px-2 py-1 hover:bg-red-50 rounded transition">✕</button>
+                                            <button class="w-10 h-10 bg-red-50 text-red-400 hover:bg-red-500 hover:text-white rounded-xl transition flex items-center justify-center mx-auto">✕</button>
                                         </form>
                                     </td>
                                 </tr>
-                                <?php endforeach; ?>
-                            </tbody>
-                        </table>
-                    </div>
-                <?php endif; ?>
+                            <?php endforeach; endif; ?>
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
 
