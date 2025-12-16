@@ -9,9 +9,11 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
 $uid = $_SESSION['user_id'];
 $search = $_GET['q'] ?? '';
 
-// --- 1. AMBIL DATA DENGAN FITUR PENCARIAN ---
+// --- 1. AMBIL DATA (REVISI: MENGHITUNG SEMUA STATUS) ---
+// Perbaikan: Menghapus "AND ee.status = 'Approved'" agar semua data yang masuk terbaca
 $sql = "SELECT ec.*, 
-        (SELECT COUNT(*) FROM race_heats rh WHERE rh.category_id = ec.id) as total_heats 
+        (SELECT COUNT(*) FROM race_heats rh WHERE rh.category_id = ec.id) as total_heats,
+        (SELECT COUNT(*) FROM event_entries ee WHERE ee.category_id = ec.id) as total_entries
         FROM event_categories ec 
         WHERE ec.user_id = ?";
 
@@ -70,6 +72,7 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                     <tr>
                         <th class="px-8 py-6 text-center w-24">#</th>
                         <th class="px-8 py-6">Event Description</th>
+                        <th class="px-8 py-6 text-center">Entries (All)</th>
                         <th class="px-8 py-6 text-center">Status</th>
                         <th class="px-8 py-6 text-right">Action</th>
                     </tr>
@@ -77,31 +80,67 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                 <tbody class="divide-y divide-slate-100">
                     <?php if(empty($events)): ?>
                         <tr>
-                            <td colspan="4" class="px-8 py-20 text-center">
-                                <p class="text-slate-400 font-bold italic">Tidak ada acara yang ditemukan untuk "<?= htmlspecialchars($search) ?>"</p>
+                            <td colspan="5" class="px-8 py-20 text-center">
+                                <p class="text-slate-400 font-bold italic">Tidak ada acara yang ditemukan.</p>
                             </td>
                         </tr>
-                    <?php else: foreach($events as $e): $has = $e['total_heats'] > 0; ?>
+                    <?php else: foreach($events as $e): 
+                        $hasHeats = $e['total_heats'] > 0;
+                        $hasEntries = $e['total_entries'] > 0;
+                    ?>
                         <tr class="hover:bg-slate-50 transition">
                             <td class="px-8 py-6 text-center font-black text-2xl text-slate-300 italic">#<?= $e['event_no'] ?></td>
+                            
                             <td class="px-8 py-6">
-                                <div class="font-black text-slate-800 uppercase italic tracking-tighter text-lg"><?= $e['distance'] ?>m <?= $e['style'] ?> (<?= $e['gender'] == 'Male' ? 'Putra' : 'Putri' ?>)</div>
-                                <div class="text-[10px] font-bold text-slate-400 mt-1 uppercase tracking-widest"><?= $e['age_group'] ?> • <?= date('d M Y', strtotime($e['event_date'])) ?></div>
+                                <div class="font-black text-slate-800 uppercase italic tracking-tighter text-lg">
+                                    <?= $e['distance'] ?>m <?= $e['style'] ?> (<?= $e['gender'] == 'Male' ? 'Putra' : 'Putri' ?>)
+                                </div>
+                                <div class="text-[10px] font-bold text-slate-400 mt-1 uppercase tracking-widest">
+                                    <?= $e['age_group'] ?>
+                                </div>
                             </td>
+                            
                             <td class="px-8 py-6 text-center">
-                                <span class="px-4 py-2 rounded-full text-[9px] font-black uppercase tracking-tighter <?= $has ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' : 'bg-orange-100 text-orange-700 border border-orange-200 animate-pulse' ?>">
-                                    <?= $has ? '✅ Ready to Race' : '⏳ Needs Seeding' ?>
-                                </span>
+                                <div class="flex flex-col items-center">
+                                    <span class="font-black text-xl <?= $hasEntries ? 'text-blue-600' : 'text-slate-200' ?>">
+                                        <?= $e['total_entries'] ?>
+                                    </span>
+                                    <span class="text-[9px] font-bold uppercase text-slate-400">Swimmers</span>
+                                </div>
                             </td>
+
+                            <td class="px-8 py-6 text-center">
+                                <?php if (!$hasEntries): ?>
+                                    <span class="px-4 py-2 rounded-full text-[9px] font-black uppercase tracking-tighter bg-slate-100 text-slate-400 border border-slate-200">
+                                        ⛔ Kosong
+                                    </span>
+                                <?php elseif ($hasHeats): ?>
+                                    <span class="px-4 py-2 rounded-full text-[9px] font-black uppercase tracking-tighter bg-emerald-100 text-emerald-700 border border-emerald-200">
+                                        ✅ Siap Lomba
+                                    </span>
+                                <?php else: ?>
+                                    <span class="px-4 py-2 rounded-full text-[9px] font-black uppercase tracking-tighter bg-blue-100 text-blue-700 border border-blue-200 animate-pulse">
+                                        ⚠️ Butuh Seeding
+                                    </span>
+                                <?php endif; ?>
+                            </td>
+
                             <td class="px-8 py-6 text-right">
                                 <div class="flex justify-end gap-2">
-                                    <form action="logic.php" method="POST">
-                                        <input type="hidden" name="category_id" value="<?= $e['id'] ?>">
-                                        <button name="generate_startlist" class="bg-slate-900 text-white font-black px-6 py-3 rounded-2xl text-[9px] uppercase tracking-widest hover:bg-blue-600 transition shadow-lg shadow-slate-200">
-                                            ⚡ <?= $has ? 'RE-SEED' : 'SEED' ?>
+                                    <?php if ($hasEntries): ?>
+                                        <form action="logic.php" method="POST">
+                                            <input type="hidden" name="category_id" value="<?= $e['id'] ?>">
+                                            <button name="generate_startlist" class="bg-slate-900 text-white font-black px-6 py-3 rounded-2xl text-[9px] uppercase tracking-widest hover:bg-blue-600 transition shadow-lg shadow-slate-200">
+                                                ⚡ <?= $hasHeats ? 'RE-SEED' : 'SEED' ?>
+                                            </button>
+                                        </form>
+                                    <?php else: ?>
+                                        <button disabled class="bg-slate-50 text-slate-300 font-black px-6 py-3 rounded-2xl text-[9px] uppercase tracking-widest cursor-not-allowed">
+                                            Empty
                                         </button>
-                                    </form>
-                                    <?php if($has): ?>
+                                    <?php endif; ?>
+
+                                    <?php if($hasHeats): ?>
                                         <a href="view_startlist.php?category_id=<?= $e['id'] ?>" class="bg-white border-2 border-slate-100 text-slate-400 font-black px-6 py-3 rounded-2xl text-[9px] uppercase tracking-widest hover:bg-slate-900 hover:text-white transition">👁️ View</a>
                                     <?php endif; ?>
                                 </div>
@@ -112,8 +151,9 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
             </table>
         </div>
     </div>
-
-    <div class="mt-8 text-center">
-        <p class="text-[10px] font-bold text-slate-400 uppercase tracking-[0.3em]">SwimMeet Management System</p>
+    
+    <div class="mt-8 text-center text-[10px] text-slate-400">
+        Jika jumlah peserta muncul tapi status belum Approved, Seeding tetap bisa dilakukan dengan kode ini.
     </div>
+
 </div>

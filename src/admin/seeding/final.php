@@ -6,123 +6,112 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
     header("Location: ../../../public/login.php"); exit;
 }
 
+$catId = $_GET['category_id'] ?? 0;
+// FORCE STAGE MENJADI FINAL
+$stage = 'Final';
 $uid = $_SESSION['user_id'];
-$search = $_GET['q'] ?? '';
 
-// --- QUERY DATA ACARA DENGAN LOGIKA PENYISIHAN ---
-$sql = "SELECT ec.*, 
-        -- Cek apakah sudah ada Seri Final yang dibuat
-        (SELECT COUNT(*) FROM race_heats rh WHERE rh.category_id = ec.id AND rh.stage = 'Final') as has_final,
-        -- Hitung berapa atlet yang sudah punya HASIL (result_time) di babak Prelims
-        (SELECT COUNT(rl.id) FROM race_lines rl 
-         JOIN race_heats rh ON rl.heat_id = rh.id 
-         WHERE rh.category_id = ec.id AND rh.stage = 'Prelims' AND rl.result_time IS NOT NULL AND rl.result_time != '') as prelims_done
-        FROM event_categories ec 
-        WHERE ec.user_id = ?";
+// 1. AMBIL DATA
+$stmt = $pdo->prepare("SELECT u.nama_lengkap AS event_name, u.venue_name, u.location, u.logo_left, u.logo_right, u.lane_count, ec.* FROM event_categories ec JOIN users u ON ec.user_id = u.id WHERE ec.id = ?");
+$stmt->execute([$catId]);
+$info = $stmt->fetch();
 
-$params = [$uid];
-if ($search) {
-    $sql .= " AND (ec.event_no LIKE ? OR ec.style LIKE ? OR ec.age_group LIKE ?)";
-    $params[] = "%$search%"; $params[] = "%$search%"; $params[] = "%$search%";
+if (!$info) die("Data kategori tidak ditemukan.");
+
+// 2. AMBIL HEATS FINAL
+$stmtH = $pdo->prepare("SELECT * FROM race_heats WHERE category_id = ? AND stage = ? ORDER BY heat_number ASC");
+$stmtH->execute([$catId, $stage]);
+$heats = $stmtH->fetchAll();
+
+foreach ($heats as &$h) {
+    $stmtL = $pdo->prepare("SELECT rl.*, s.nama_atlet, u.nama_lengkap as nama_klub, u.location as kab 
+                            FROM race_lines rl 
+                            JOIN swimmers s ON rl.swimmer_id = s.id 
+                            JOIN users u ON s.user_id = u.id 
+                            WHERE rl.heat_id = ? ORDER BY rl.lane_number ASC");
+    $stmtL->execute([$h['id']]);
+    $h['lanes'] = $stmtL->fetchAll();
 }
-$sql .= " ORDER BY ec.event_no ASC";
-
-$stmt = $pdo->prepare($sql); 
-$stmt->execute($params);
-$events = $stmt->fetchAll();
 
 include __DIR__ . '/../../../views/layout/topbar.php'; 
 include __DIR__ . '/../../../views/layout/sidebar.php'; 
 ?>
 
-<div class="p-6 sm:ml-64 pt-24 bg-slate-50 min-h-screen font-sans text-slate-800">
-    
-    <div class="mb-10 flex flex-col xl:flex-row justify-between items-center gap-6">
+<style>
+    /* CSS SAMA PERSIS */
+    .report-container { background-color: #525659; min-height: 100vh; padding: 40px 0; display: flex; justify-content: center; }
+    .report-paper { background: white; width: 210mm; min-height: 297mm; padding: 15mm 20mm; margin: 0 auto; box-shadow: 0 0 15px rgba(0,0,0,0.3); font-family: 'Courier New', Courier, monospace; color: #000; position: relative; }
+    .double-line { border-top: 4px double #000; margin: 10px 0 20px 0; }
+    .table-list { width: 100%; border-collapse: collapse; font-size: 11px; margin-bottom: 25px; }
+    .table-list th { border-top: 2px solid #000; border-bottom: 2px solid #000; padding: 8px 4px; text-align: left; text-transform: uppercase; }
+    .table-list td { padding: 6px 4px; border-bottom: 1px solid #ddd; vertical-align: middle; font-weight: bold; }
+    .table-list tr:last-child td { border-bottom: 2px solid #000; }
+    @media print {
+        nav, aside, .no-print, .pt-24, .sm\:ml-64 { display: none !important; }
+        .report-container { background: white; padding: 0; display: block; height: auto; }
+        .report-paper { width: 100%; box-shadow: none; margin: 0; padding: 0; border: none; page-break-after: always; }
+        @page { size: A4 portrait; margin: 15mm; }
+    }
+</style>
+
+<div class="p-6 sm:ml-64 pt-24 bg-slate-50 min-h-screen">
+    <div class="max-w-7xl mx-auto mb-6 no-print flex justify-between items-center bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
         <div>
-            <h1 class="text-3xl font-black uppercase italic text-slate-900 leading-none tracking-tighter">Final Stage Manager</h1>
-            <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-2">Penyusunan Lintasan Babak Final (Top 8/10)</p>
+            <h1 class="text-xl font-bold">START LIST FINAL</h1>
+            <p class="text-xs font-bold text-orange-600 uppercase">EVENT #<?= $info['event_no'] ?> - FINAL</p>
         </div>
-        <div class="flex flex-wrap gap-3 no-print">
-            <a href="index.php" class="bg-white border border-slate-200 text-slate-400 font-black px-6 py-4 rounded-2xl text-[10px] uppercase hover:bg-slate-50 transition">← Kembali Ke Seeding Awal</a>
-        </div>
+        <button onclick="window.print()" class="bg-blue-600 text-white px-6 py-2 rounded-lg font-bold text-xs uppercase shadow hover:bg-blue-700">🖨️ Cetak PDF</button>
     </div>
 
-    <div class="mb-10">
-        <form method="GET" action="" class="relative group max-w-2xl">
-            <div class="absolute inset-y-0 left-0 pl-6 flex items-center pointer-events-none">
-                <span class="text-xl text-slate-300 group-focus-within:text-blue-500 transition-colors">🔍</span>
+    <div class="report-container">
+        <div class="report-paper">
+            <div class="flex justify-between items-center mb-6">
+                <div class="w-20 h-20 flex items-center justify-center">
+                    <?php if($info['logo_left']): ?><img src="../../../public/<?= $info['logo_left'] ?>" class="max-h-full"><?php endif; ?>
+                </div>
+                <div class="text-center flex-1 mx-4">
+                    <h2 class="text-lg font-black uppercase leading-tight"><?= strtoupper($info['event_name']) ?></h2>
+                    <p class="text-xs font-bold mt-1 uppercase"><?= $info['location'] ?></p>
+                    <div class="h-1 w-24 bg-black mx-auto my-2"></div>
+                    <h1 class="text-3xl font-black uppercase tracking-tighter">OFFICIAL START LIST</h1>
+                </div>
+                <div class="w-20 h-20 flex items-center justify-center">
+                    <?php if($info['logo_right']): ?><img src="../../../public/<?= $info['logo_right'] ?>" class="max-h-full"><?php endif; ?>
+                </div>
             </div>
-            <input type="text" name="q" value="<?= htmlspecialchars($search) ?>" 
-                   placeholder="Cari Nomor Acara, Gaya, atau KU..." 
-                   class="w-full pl-16 pr-6 py-5 bg-white border border-slate-200 rounded-[2rem] font-bold text-sm shadow-sm outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all">
-        </form>
-    </div>
+            <div class="double-line"></div>
 
-    <div class="bg-white rounded-[2.5rem] border border-slate-200 overflow-hidden shadow-sm">
-        <div class="overflow-x-auto">
-            <table class="w-full text-left text-sm">
-                <thead class="bg-slate-900 text-white text-[10px] font-black uppercase tracking-[0.2em]">
-                    <tr>
-                        <th class="px-8 py-6 text-center w-24">#</th>
-                        <th class="px-8 py-6">Event Description</th>
-                        <th class="px-8 py-6 text-center">Status Penyisihan</th>
-                        <th class="px-8 py-6 text-center">Status Final</th>
-                        <th class="px-8 py-6 text-right">Aksi</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-slate-100">
-                    <?php if(empty($events)): ?>
-                        <tr><td colspan="5" class="px-8 py-20 text-center text-slate-400 font-bold italic">Data tidak ditemukan.</td></tr>
-                    <?php else: foreach($events as $e): 
-                        $canFinalize = $e['prelims_done'] > 0;
-                        $isFinalReady = $e['has_final'] > 0;
-                    ?>
-                        <tr class="hover:bg-slate-50 transition">
-                            <td class="px-8 py-6 text-center font-black text-2xl text-slate-300 italic">#<?= $e['event_no'] ?></td>
-                            <td class="px-8 py-6">
-                                <div class="font-black text-slate-800 uppercase italic tracking-tighter text-lg"><?= $e['distance'] ?>m <?= $e['style'] ?></div>
-                                <div class="text-[10px] font-bold text-slate-400 mt-1 uppercase tracking-widest"><?= $e['age_group'] ?> • <?= $e['gender'] == 'Male' ? 'Putra' : 'Putri' ?></div>
-                            </td>
-                            
-                            <td class="px-8 py-6 text-center">
-                                <?php if($canFinalize): ?>
-                                    <span class="text-[10px] font-black text-emerald-600 uppercase">✅ Hasil Masuk (<?= $e['prelims_done'] ?>)</span>
-                                <?php else: ?>
-                                    <span class="text-[10px] font-black text-slate-300 uppercase italic">⏳ Belum Input Waktu</span>
-                                <?php endif; ?>
-                            </td>
+            <div class="flex justify-between items-end mb-6 font-bold uppercase text-xs border-b pb-2">
+                <div><span class="block text-slate-500 text-[9px]">Nomor Acara</span><span class="text-xl">#<?= $info['event_no'] ?></span></div>
+                <div class="text-center"><span class="block text-slate-500 text-[9px]">Kategori</span><span class="text-base"><?= $info['distance'] ?>M <?= $info['style'] ?> <?= $info['gender']=='Male'?'PUTRA':'PUTRI' ?></span></div>
+                <div class="text-right"><span class="block text-slate-500 text-[9px]">Babak</span><span class="text-base bg-black text-white px-2 py-0.5">FINAL</span></div>
+            </div>
 
-                            <td class="px-8 py-6 text-center">
-                                <?php if($isFinalReady): ?>
-                                    <span class="px-4 py-2 rounded-full bg-blue-100 text-blue-700 text-[9px] font-black uppercase border border-blue-200">🏁 Final Ready</span>
-                                <?php elseif($canFinalize): ?>
-                                    <span class="px-4 py-2 rounded-full bg-amber-100 text-amber-700 text-[9px] font-black uppercase border border-amber-200 animate-pulse">⚡ Siap Seed Final</span>
-                                <?php else: ?>
-                                    <span class="px-4 py-2 rounded-full bg-slate-100 text-slate-400 text-[9px] font-black uppercase border border-slate-200">Locked</span>
-                                <?php endif; ?>
-                            </td>
+            <?php if(!$heats): ?><p class="text-center italic">Belum ada seeding Final.</p><?php else: foreach($heats as $h): ?>
+                <div class="mb-6">
+                    <div class="font-bold text-xs uppercase bg-slate-100 p-1 border border-slate-300 mb-1">FINAL SERI <?= $h['heat_number'] ?></div>
+                    <table class="table-list">
+                        <thead><tr><th width="5%">LN</th><th width="35%">NAMA ATLET</th><th width="25%">DAERAH</th><th width="25%">KLUB</th><th width="10%" class="text-center">Q.TIME</th></tr></thead>
+                        <tbody>
+                            <?php 
+                            $map = []; foreach($h['lanes'] as $l) $map[$l['lane_number']] = $l;
+                            for($i=1; $i<=$info['lane_count']; $i++): $sw=$map[$i]??null; ?>
+                            <tr>
+                                <td class="text-center"><?= $i ?></td>
+                                <td><?= $sw ? strtoupper($sw['nama_atlet']) : '<span class="text-slate-300 italic">--</span>' ?></td>
+                                <td><?= $sw ? strtoupper($sw['kab']??'') : '' ?></td>
+                                <td><?= $sw ? strtoupper($sw['nama_klub']??'') : '' ?></td>
+                                <td class="text-center"><?= $sw ? $sw['entry_time'] : '' ?></td>
+                            </tr>
+                            <?php endfor; ?>
+                        </tbody>
+                    </table>
+                </div>
+            <?php endforeach; endif; ?>
 
-                            <td class="px-8 py-6 text-right">
-                                <div class="flex justify-end gap-2">
-                                    <?php if($canFinalize): ?>
-                                        <form action="final_logic.php" method="POST">
-                                            <input type="hidden" name="category_id" value="<?= $e['id'] ?>">
-                                            <button type="submit" class="bg-amber-500 text-white font-black px-6 py-3 rounded-2xl text-[9px] uppercase tracking-widest hover:bg-slate-900 transition shadow-lg shadow-amber-100">
-                                                <?= $isFinalReady ? '🔄 Re-Seed Final' : '⚡ Seed Final' ?>
-                                            </button>
-                                        </form>
-                                        <?php if($isFinalReady): ?>
-                                            <a href="view_startlist.php?category_id=<?= $e['id'] ?>&stage=Final" class="bg-white border-2 border-slate-100 text-slate-400 font-black px-6 py-3 rounded-2xl text-[9px] uppercase hover:bg-slate-900 hover:text-white transition">👁️ View</a>
-                                        <?php endif; ?>
-                                    <?php else: ?>
-                                        <button disabled class="bg-slate-100 text-slate-300 font-black px-6 py-3 rounded-2xl text-[9px] uppercase cursor-not-allowed">Input Hasil Dulu</button>
-                                    <?php endif; ?>
-                                </div>
-                            </td>
-                        </tr>
-                    <?php endforeach; endif; ?>
-                </tbody>
-            </table>
+            <div class="mt-auto pt-4 border-t text-[9px] flex justify-between uppercase text-slate-400 font-bold">
+                <span>Generated by SwimMeet System</span><span><?= date('d/m/Y H:i') ?></span>
+            </div>
         </div>
     </div>
 </div>

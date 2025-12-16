@@ -15,22 +15,27 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $targetDir = "../../../public/uploads/logos/";
         if (!is_dir($targetDir)) mkdir($targetDir, 0777, true);
 
-        // A. UPDATE INFO UTAMA & REKENING
+        // A. UPDATE INFO UTAMA, REKENING, SISTEM, & STATUS (REVISI)
         $sql = "UPDATE users SET 
                 nama_lengkap = ?, location = ?, venue_name = ?, 
                 event_start_date = ?, event_end_date = ?,
-                lane_count = ?, age_calculation_type = ?,
+                lane_count = ?, age_calculation_type = ?, event_type = ?, event_status = ?,
                 bank_name = ?, bank_account_number = ?, bank_account_name = ?
                 WHERE id = ?";
+        
         $pdo->prepare($sql)->execute([
-            $_POST['nama_lengkap'], $_POST['location'], $_POST['venue_name'], 
-            $_POST['event_start_date'], $_POST['event_end_date'],
-            (int)$_POST['lane_count'], $_POST['age_calculation_type'],
-            $_POST['bank_name'], $_POST['bank_account_number'], $_POST['bank_account_name'],
+            $_POST['nama_lengkap'] ?? '', $_POST['location'] ?? '', $_POST['venue_name'] ?? '', 
+            $_POST['event_start_date'] ?? '', $_POST['event_end_date'] ?? '',
+            (int)($_POST['lane_count'] ?? 8), $_POST['age_calculation_type'] ?? 'Dec 31', 
+            $_POST['event_type'] ?? 'Langsung Final', $_POST['event_status'] ?? 'Registration',
+            $_POST['bank_name'] ?? '', $_POST['bank_account_number'] ?? '', $_POST['bank_account_name'] ?? '',
             $uid
         ]);
 
-        // B. UPDATE KELOMPOK UMUR
+        // Sync Session
+        $_SESSION['event_type'] = $_POST['event_type'];
+
+        // B. UPDATE KELOMPOK UMUR (DELETE & RE-INSERT)
         $pdo->prepare("DELETE FROM event_age_groups WHERE event_id = ?")->execute([$uid]);
         if (!empty($_POST['ku_name'])) {
             $insKU = $pdo->prepare("INSERT INTO event_age_groups (event_id, group_name, min_age, max_age) VALUES (?, ?, ?, ?)");
@@ -41,7 +46,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             }
         }
 
-        // C. HANDLE LOGO KIRI (Header)
+        // C. HANDLE LOGO KIRI
         if (!empty($_FILES['logo_left']['name'])) {
             $ext = pathinfo($_FILES['logo_left']['name'], PATHINFO_EXTENSION);
             $fn = "l_left_" . $uid . "_" . time() . "." . $ext;
@@ -50,7 +55,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             }
         }
 
-        // D. HANDLE LOGO KANAN (Header)
+        // D. HANDLE LOGO KANAN
         if (!empty($_FILES['logo_right']['name'])) {
             $ext = pathinfo($_FILES['logo_right']['name'], PATHINFO_EXTENSION);
             $fn = "l_right_" . $uid . "_" . time() . "." . $ext;
@@ -59,7 +64,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             }
         }
 
-        // E. HANDLE SPONSOR (Bisa Tambah Baru)
+        // E. HANDLE SPONSOR
         if (!empty($_FILES['new_sponsor']['name'])) {
             $ext = pathinfo($_FILES['new_sponsor']['name'], PATHINFO_EXTENSION);
             $fn = "sp_" . $uid . "_" . time() . "." . $ext;
@@ -105,15 +110,54 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
     <div class="max-w-5xl mx-auto mb-10 flex justify-between items-end">
         <div>
             <h1 class="text-4xl font-black uppercase tracking-tighter italic text-slate-900 leading-none">Event Settings</h1>
-            <p class="text-sm text-slate-500 font-bold uppercase tracking-widest mt-2">Pusat Konfigurasi Identitas & Branding Lomba</p>
+            <p class="text-sm text-slate-500 font-bold uppercase tracking-widest mt-2">Identitas & Status Operasional Lomba</p>
         </div>
         <div class="bg-white px-5 py-2 rounded-2xl border border-slate-200 shadow-sm text-[10px] font-black uppercase text-blue-600">
-            System: <?= $_SESSION['event_type'] ?? 'Standard' ?>
+            Active System: <?= htmlspecialchars($row['event_type'] ?? 'Standard') ?>
         </div>
     </div>
 
     <form method="POST" enctype="multipart/form-data" class="max-w-5xl mx-auto space-y-8 pb-32">
         
+        <div class="bg-slate-900 rounded-[2.5rem] shadow-2xl p-10 text-white relative overflow-hidden">
+            <div class="absolute right-0 top-0 p-8 opacity-10">
+                <svg class="w-32 h-32" fill="currentColor" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z"></path></svg>
+            </div>
+            <h3 class="font-black uppercase text-sm mb-6 flex items-center gap-3 italic">
+                <span class="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center text-lg">📡</span> Live Event Status
+            </h3>
+            
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <label class="cursor-pointer group">
+                    <input type="radio" name="event_status" value="Registration" class="hidden peer" <?= ($row['event_status'] ?? 'Registration') == 'Registration' ? 'checked' : '' ?>>
+                    <div class="p-6 rounded-[2rem] border-2 border-white/10 bg-white/5 transition-all peer-checked:bg-emerald-500 peer-checked:border-emerald-400 group-hover:border-white/30 text-center">
+                        <span class="text-2xl block mb-2">📝</span>
+                        <span class="block font-black uppercase tracking-widest text-[11px]">Registration</span>
+                        <span class="block text-[8px] font-bold text-white/50 uppercase mt-1">Pendaftaran Dibuka</span>
+                    </div>
+                </label>
+                
+                <label class="cursor-pointer group">
+                    <input type="radio" name="event_status" value="Running" class="hidden peer" <?= ($row['event_status'] ?? '') == 'Running' ? 'checked' : '' ?>>
+                    <div class="p-6 rounded-[2rem] border-2 border-white/10 bg-white/5 transition-all peer-checked:bg-blue-600 peer-checked:border-blue-400 group-hover:border-white/30 text-center">
+                        <span class="text-2xl block mb-2">🏊</span>
+                        <span class="block font-black uppercase tracking-widest text-[11px]">Running</span>
+                        <span class="block text-[8px] font-bold text-white/50 uppercase mt-1">Lomba Berjalan (Live)</span>
+                    </div>
+                </label>
+                
+                <label class="cursor-pointer group">
+                    <input type="radio" name="event_status" value="Finished" class="hidden peer" <?= ($row['event_status'] ?? '') == 'Finished' ? 'checked' : '' ?>>
+                    <div class="p-6 rounded-[2rem] border-2 border-white/10 bg-white/5 transition-all peer-checked:bg-slate-700 peer-checked:border-slate-500 group-hover:border-white/30 text-center">
+                        <span class="text-2xl block mb-2">🏁</span>
+                        <span class="block font-black uppercase tracking-widest text-[11px]">Finished</span>
+                        <span class="block text-[8px] font-bold text-white/50 uppercase mt-1">Selesai / Hasil Final</span>
+                    </div>
+                </label>
+            </div>
+            <p class="text-[9px] text-white/40 mt-6 font-bold uppercase italic">* Status ini akan mempengaruhi tampilan menu pendaftaran dan hasil di halaman publik.</p>
+        </div>
+
         <div class="bg-white rounded-[2.5rem] shadow-sm border border-slate-200 p-10">
             <h3 class="font-black uppercase text-sm mb-8 flex items-center gap-3 text-blue-600 italic">
                 <span class="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center text-lg">📝</span> Detail Informasi Kejuaraan
@@ -140,84 +184,10 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
         </div>
 
         <div class="bg-white rounded-[2.5rem] shadow-sm border border-slate-200 p-10">
-            <h3 class="font-black uppercase text-sm mb-8 flex items-center gap-3 text-emerald-600 italic">
-                <span class="w-10 h-10 bg-emerald-50 rounded-xl flex items-center justify-center text-lg">💳</span> Informasi Rekening (Checkout)
-            </h3>
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div>
-                    <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Nama Bank</label>
-                    <input type="text" name="bank_name" value="<?= htmlspecialchars($row['bank_name'] ?? '') ?>" placeholder="MANDIRI / BCA / BNI" class="w-full px-5 py-4 border-2 border-slate-50 bg-slate-50 rounded-2xl font-black text-[11px] uppercase focus:bg-white focus:border-emerald-500 outline-none transition">
-                </div>
-                <div>
-                    <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">No. Rekening</label>
-                    <input type="text" name="bank_account_number" value="<?= htmlspecialchars($row['bank_account_number'] ?? '') ?>" placeholder="00000000000" class="w-full px-5 py-4 border-2 border-slate-50 bg-slate-50 rounded-2xl font-black text-[11px] focus:bg-white focus:border-emerald-500 outline-none transition">
-                </div>
-                <div>
-                    <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Atas Nama (A/N)</label>
-                    <input type="text" name="bank_account_name" value="<?= htmlspecialchars($row['bank_account_name'] ?? '') ?>" placeholder="Nama Pemilik Akun" class="w-full px-5 py-4 border-2 border-slate-50 bg-slate-50 rounded-2xl font-black text-[11px] uppercase focus:bg-white focus:border-emerald-500 outline-none transition">
-                </div>
-            </div>
-        </div>
-
-        <div class="bg-white rounded-[2.5rem] shadow-sm border border-slate-200 p-10">
-            <h3 class="font-black uppercase text-sm mb-8 flex items-center gap-3 text-slate-800 italic">
-                <span class="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center text-lg">🖼️</span> Header Logos (Buku Acara)
-            </h3>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-10">
-                <div class="space-y-4">
-                    <label class="block text-[10px] font-black text-slate-400 uppercase ml-1">Logo Kiri (Instansi/Univ)</label>
-                    <div class="w-full h-40 bg-slate-50 rounded-[2rem] border-2 border-dashed border-slate-200 flex items-center justify-center overflow-hidden">
-                        <?php if(!empty($row['logo_left'])): ?>
-                            <img src="../../../public/<?= $row['logo_left'] ?>" class="max-h-32 object-contain p-2">
-                        <?php else: ?><span class="text-slate-300 font-bold text-xs uppercase">Belum ada logo</span><?php endif; ?>
-                    </div>
-                    <input type="file" name="logo_left" class="text-[10px] w-full file:bg-slate-900 file:text-white file:border-0 file:px-4 file:py-2 file:rounded-xl file:font-black">
-                </div>
-                <div class="space-y-4">
-                    <label class="block text-[10px] font-black text-slate-400 uppercase ml-1">Logo Kanan (Federasi/PRSI)</label>
-                    <div class="w-full h-40 bg-slate-50 rounded-[2rem] border-2 border-dashed border-slate-200 flex items-center justify-center overflow-hidden">
-                        <?php if(!empty($row['logo_right'])): ?>
-                            <img src="../../../public/<?= $row['logo_right'] ?>" class="max-h-32 object-contain p-2">
-                        <?php else: ?><span class="text-slate-300 font-bold text-xs uppercase">Belum ada logo</span><?php endif; ?>
-                    </div>
-                    <input type="file" name="logo_right" class="text-[10px] w-full file:bg-slate-900 file:text-white file:border-0 file:px-4 file:py-2 file:rounded-xl file:font-black">
-                </div>
-            </div>
-        </div>
-
-        <div class="bg-slate-900 rounded-[2.5rem] shadow-2xl p-10 text-white">
-            <h3 class="font-black uppercase text-sm mb-8 flex items-center gap-3 italic">
-                <span class="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center text-lg">🤝</span> Sponsor & Partners (Footer)
-            </h3>
-            
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-10">
-                <div class="space-y-4">
-                    <p class="text-[10px] font-bold text-slate-400 uppercase leading-relaxed">Tambahkan logo sponsor yang akan tampil di bagian bawah setiap halaman Buku Acara.</p>
-                    <input type="file" name="new_sponsor" class="text-[10px] w-full file:bg-blue-600 file:text-white file:border-0 file:px-6 file:py-3 file:rounded-2xl file:font-black file:uppercase">
-                    <p class="text-[9px] text-slate-500 font-bold">* Tip: Gunakan logo dengan background transparan (PNG).</p>
-                </div>
-
-                <div class="bg-white/5 rounded-3xl p-6 min-h-[150px]">
-                    <p class="text-[9px] font-black text-slate-500 uppercase mb-4 tracking-widest">Sponsor Saat Ini:</p>
-                    <div class="flex flex-wrap gap-4">
-                        <?php if(empty($sponsors)): ?>
-                            <p class="text-xs text-slate-600 italic">Belum ada sponsor diunggah.</p>
-                        <?php else: foreach($sponsors as $sp): ?>
-                            <div class="relative group w-20 h-20 bg-white rounded-2xl flex items-center justify-center shadow-lg overflow-hidden border border-white/10">
-                                <img src="../../../public/<?= $sp['image_path'] ?>" class="w-full h-full object-contain p-2">
-                                <button type="submit" name="delete_sponsor_id" value="<?= $sp['id'] ?>" class="absolute inset-0 bg-red-600/90 text-white opacity-0 group-hover:opacity-100 transition flex items-center justify-center font-black text-[10px] uppercase">Hapus</button>
-                            </div>
-                        <?php endforeach; endif; ?>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="bg-white rounded-[2.5rem] shadow-sm border border-slate-200 p-10">
             <h3 class="font-black uppercase text-sm mb-8 flex items-center gap-3 text-orange-600 italic">
                 <span class="w-10 h-10 bg-orange-50 rounded-xl flex items-center justify-center text-lg">⚙️</span> Technical Specification
             </h3>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-10">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-10">
                 <div>
                     <label class="block text-[10px] font-black text-slate-400 uppercase mb-4 ml-1">Jumlah Lintasan Kolam</label>
                     <div class="flex items-center gap-6 bg-slate-50 p-3 rounded-3xl w-fit border-2 border-slate-100">
@@ -227,58 +197,63 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                     </div>
                 </div>
                 <div>
-                    <label class="block text-[10px] font-black text-slate-400 uppercase mb-4 ml-1">Metode Perhitungan Usia</label>
+                    <label class="block text-[10px] font-black text-slate-400 uppercase mb-4 ml-1">Metode Usia</label>
                     <select name="age_calculation_type" class="w-full p-5 border-2 border-slate-50 bg-slate-50 rounded-3xl font-black text-xs uppercase focus:bg-white transition outline-none cursor-pointer">
-                        <option value="Dec 31" <?= $row['age_calculation_type'] == 'Dec 31' ? 'selected' : '' ?>>Per 31 Des (Tahun Berjalan)</option>
-                        <option value="Meet Start" <?= $row['age_calculation_type'] == 'Meet Start' ? 'selected' : '' ?>>Per Hari Pertama Lomba</option>
+                        <option value="Dec 31" <?= $row['age_calculation_type'] == 'Dec 31' ? 'selected' : '' ?>>Per 31 Des</option>
+                        <option value="Meet Start" <?= $row['age_calculation_type'] == 'Meet Start' ? 'selected' : '' ?>>Per Hari H</option>
                     </select>
                 </div>
-            </div>
-
-            <div class="mt-12 pt-10 border-t border-slate-50">
-                <div class="flex justify-between items-center mb-6">
-                    <h4 class="font-black uppercase text-xs text-purple-600 italic">Daftar Kelompok Umur (KU)</h4>
-                    <button type="button" onclick="addKURow()" class="bg-slate-900 text-white px-5 py-2 rounded-xl font-black text-[9px] uppercase tracking-widest hover:bg-purple-600 transition">+ Tambah KU</button>
-                </div>
-                <div class="overflow-x-auto">
-                    <table class="w-full text-left">
-                        <thead class="text-[10px] font-black text-slate-400 uppercase">
-                            <tr><th class="pb-4 px-2">Label KU</th><th class="pb-4 text-center w-32">Min Usia</th><th class="pb-4 text-center w-32">Max Usia</th><th class="pb-4 text-right w-20">Aksi</th></tr>
-                        </thead>
-                        <tbody id="ku-container" class="divide-y divide-slate-50">
-                            <?php foreach($ageGroups as $ku): ?>
-                                <tr>
-                                    <td class="py-3 px-2"><input type="text" name="ku_name[]" value="<?= htmlspecialchars($ku['group_name']) ?>" class="w-full p-3 border-2 border-slate-50 bg-slate-50 rounded-xl font-black text-xs outline-none focus:bg-white transition"></td>
-                                    <td class="py-3 px-2"><input type="number" name="ku_min[]" value="<?= $ku['min_age'] ?>" class="w-full text-center p-3 border-2 border-slate-50 bg-slate-50 rounded-xl font-black text-xs outline-none"></td>
-                                    <td class="py-3 px-2"><input type="number" name="ku_max[]" value="<?= $ku['max_age'] ?>" class="w-full text-center p-3 border-2 border-slate-50 bg-slate-50 rounded-xl font-black text-xs outline-none"></td>
-                                    <td class="py-3 text-right"><button type="button" onclick="this.closest('tr').remove()" class="text-red-400 hover:text-red-600 font-bold px-4">✕</button></td>
-                                </tr>
-                            <?php endforeach; ?>
-                        </tbody>
-                    </table>
+                <div>
+                    <label class="block text-[10px] font-black text-slate-400 uppercase mb-4 ml-1">Sistem Pertandingan</label>
+                    <?php if ($_SESSION['role'] === 'master'): ?>
+                        <select name="event_type" class="w-full p-5 border-2 border-blue-100 bg-blue-50/30 rounded-3xl font-black text-xs uppercase focus:bg-white transition outline-none cursor-pointer text-blue-600">
+                            <option value="Langsung Final" <?= ($row['event_type'] ?? '') == 'Langsung Final' ? 'selected' : '' ?>>Timed Final</option>
+                            <option value="Babak Penyisihan" <?= ($row['event_type'] ?? '') == 'Babak Penyisihan' ? 'selected' : '' ?>>Heats & Finals</option>
+                        </select>
+                    <?php else: ?>
+                        <div class="w-full p-5 border-2 border-slate-100 bg-slate-100 rounded-3xl font-black text-xs uppercase text-slate-500 flex items-center justify-between">
+                            <span><?= htmlspecialchars($row['event_type'] ?? 'Langsung Final') ?></span>
+                            <span class="text-[8px] bg-white px-2 py-1 rounded-lg border">🔒 LOCKED</span>
+                        </div>
+                        <input type="hidden" name="event_type" value="<?= htmlspecialchars($row['event_type']) ?>">
+                    <?php endif; ?>
                 </div>
             </div>
         </div>
 
         <div class="bg-white rounded-[2.5rem] shadow-sm border border-slate-200 p-10">
-            <h3 class="font-black uppercase text-sm mb-4 flex items-center gap-3 text-slate-800 italic">
-                <span class="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center text-lg">📸</span> Event Poster (Public Page)
+            <h3 class="font-black uppercase text-sm mb-8 flex items-center gap-3 text-emerald-600 italic">
+                <span class="w-10 h-10 bg-emerald-50 rounded-xl flex items-center justify-center text-lg">💳</span> Informasi Rekening
             </h3>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-10 items-center">
-                <div class="aspect-[3/4] max-w-sm bg-slate-100 rounded-[2.5rem] overflow-hidden border-2 border-dashed border-slate-200 relative group">
-                    <?php 
-                        $banner = $row['profile_image'] ?? '';
-                        if ($banner && strpos($banner, 'http') !== 0) $banner = "../../../public/" . $banner;
-                    ?>
-                    <img id="preview" src="<?= !empty($banner) ? $banner . '?t=' . time() : '' ?>" class="w-full h-full object-cover <?= empty($banner) ? 'hidden' : '' ?>">
-                    <div id="placeholder" class="absolute inset-0 flex flex-col items-center justify-center text-slate-300 <?= !empty($banner) ? 'hidden' : '' ?>">
-                        <span class="text-5xl mb-4">🖼️</span>
-                        <span class="text-[10px] font-black uppercase tracking-widest text-center px-4">Upload Poster Rasio 3:4</span>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <input type="text" name="bank_name" value="<?= htmlspecialchars($row['bank_name'] ?? '') ?>" placeholder="Nama Bank" class="w-full px-5 py-4 border-2 border-slate-50 bg-slate-50 rounded-2xl font-black text-[11px] uppercase outline-none focus:bg-white transition">
+                <input type="text" name="bank_account_number" value="<?= htmlspecialchars($row['bank_account_number'] ?? '') ?>" placeholder="No. Rekening" class="w-full px-5 py-4 border-2 border-slate-50 bg-slate-50 rounded-2xl font-black text-[11px] outline-none focus:bg-white transition">
+                <input type="text" name="bank_account_name" value="<?= htmlspecialchars($row['bank_account_name'] ?? '') ?>" placeholder="Atas Nama" class="w-full px-5 py-4 border-2 border-slate-50 bg-slate-50 rounded-2xl font-black text-[11px] outline-none focus:bg-white transition">
+            </div>
+        </div>
+
+        <div class="bg-white rounded-[2.5rem] shadow-sm border border-slate-200 p-10">
+            <h3 class="font-black uppercase text-sm mb-8 flex items-center gap-3 text-slate-800 italic">
+                <span class="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center text-lg">🖼️</span> Header Logos (Buku Acara)
+            </h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-10">
+                <div class="space-y-4">
+                    <label class="block text-[10px] font-black text-slate-400 uppercase ml-1">Logo Kiri</label>
+                    <div class="w-full h-40 bg-slate-50 rounded-[2rem] border-2 border-dashed border-slate-200 flex items-center justify-center overflow-hidden">
+                        <?php if(!empty($row['logo_left'])): ?>
+                            <img src="../../../public/<?= $row['logo_left'] ?>" class="max-h-32 object-contain p-2">
+                        <?php else: ?><span class="text-slate-300 font-bold text-xs">Belum ada logo</span><?php endif; ?>
                     </div>
+                    <input type="file" name="logo_left" class="text-[10px] w-full file:bg-slate-900 file:text-white file:border-0 file:px-4 file:py-2 file:rounded-xl">
                 </div>
-                <div class="space-y-6">
-                    <p class="text-xs text-slate-400 font-bold uppercase italic leading-relaxed">Poster ini akan tampil di landing page pendaftaran publik. Pastikan resolusi tinggi (1200x1600px).</p>
-                    <input type="file" name="banner" class="text-[10px] w-full file:bg-slate-900 file:text-white file:border-0 file:px-6 file:py-3 file:rounded-2xl file:font-black file:uppercase transition hover:file:bg-blue-600" onchange="previewImage(this)">
+                <div class="space-y-4">
+                    <label class="block text-[10px] font-black text-slate-400 uppercase ml-1">Logo Kanan</label>
+                    <div class="w-full h-40 bg-slate-50 rounded-[2rem] border-2 border-dashed border-slate-200 flex items-center justify-center overflow-hidden">
+                        <?php if(!empty($row['logo_right'])): ?>
+                            <img src="../../../public/<?= $row['logo_right'] ?>" class="max-h-32 object-contain p-2">
+                        <?php else: ?><span class="text-slate-300 font-bold text-xs">Belum ada logo</span><?php endif; ?>
+                    </div>
+                    <input type="file" name="logo_right" class="text-[10px] w-full file:bg-slate-900 file:text-white file:border-0 file:px-4 file:py-2 file:rounded-xl">
                 </div>
             </div>
         </div>
@@ -297,29 +272,5 @@ function changeLane(val) {
     const input = document.getElementById('lane_count');
     let current = parseInt(input.value);
     if(current + val >= 4 && current + val <= 10) { input.value = current + val; }
-}
-
-function addKURow() {
-    const container = document.getElementById('ku-container');
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-        <td class="py-3 px-2"><input type="text" name="ku_name[]" placeholder="Nama KU" class="w-full p-3 border-2 border-slate-50 bg-slate-50 rounded-xl font-black text-xs outline-none"></td>
-        <td class="py-3 px-2"><input type="number" name="ku_min[]" value="0" class="w-full text-center p-3 border-2 border-slate-50 bg-slate-50 rounded-xl font-black text-xs outline-none"></td>
-        <td class="py-3 px-2"><input type="number" name="ku_max[]" value="0" class="w-full text-center p-3 border-2 border-slate-50 bg-slate-50 rounded-xl font-black text-xs outline-none"></td>
-        <td class="py-3 text-right"><button type="button" onclick="this.closest('tr').remove()" class="text-red-400 hover:text-red-600 font-bold px-4">✕</button></td>
-    `;
-    container.appendChild(tr);
-}
-
-function previewImage(input) {
-    if (input.files && input.files[0]) {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            document.getElementById('preview').src = e.target.result;
-            document.getElementById('preview').classList.remove('hidden');
-            document.getElementById('placeholder').classList.add('hidden');
-        }
-        reader.readAsDataURL(input.files[0]);
-    }
 }
 </script>

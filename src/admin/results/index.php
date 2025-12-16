@@ -7,15 +7,16 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
 }
 
 $uid = $_SESSION['user_id'];
-$adminMode = $_SESSION['event_type'] ?? 'Langsung Final';
 $selectedCatId = $_GET['category_id'] ?? 0;
 $stage = $_GET['stage'] ?? 'Prelims'; 
 $search = $_GET['q'] ?? '';
 
-// --- 1. AMBIL SETTING KOLAM (Lane Count) ---
-$stmtUser = $pdo->prepare("SELECT lane_count FROM users WHERE id = ?");
+// --- 1. AMBIL SETTING USER (Lane Count & Event Type) ---
+$stmtUser = $pdo->prepare("SELECT lane_count, event_type FROM users WHERE id = ?");
 $stmtUser->execute([$uid]);
-$laneCount = $stmtUser->fetchColumn() ?: 8;
+$uData = $stmtUser->fetch();
+$laneCount = $uData['lane_count'] ?: 8;
+$adminMode = $uData['event_type'] ?? 'Langsung Final'; // Penting untuk memunculkan pilihan Final
 
 // --- 2. LOGIKA SIMPAN HASIL & RANKING ---
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['save_results'])) {
@@ -31,7 +32,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['save_results'])) {
             }
         }
 
-        // AUTO-RANKING (Hanya untuk yang status OK)
+        // AUTO-RANKING (Per Babak)
         $sqlRank = "SELECT rl.id FROM race_lines rl 
                     JOIN race_heats rh ON rl.heat_id = rh.id 
                     WHERE rh.category_id = ? AND rh.stage = ? 
@@ -82,10 +83,8 @@ if ($selectedCatId) {
         $stmtL->execute([$h['id']]);
         $lines = $stmtL->fetchAll();
         
-        // Mapping lintasan agar mudah dipanggil berdasarkan nomor LN (1-8)
         $mappedLines = [];
         foreach($lines as $l) { $mappedLines[$l['lane_number']] = $l; }
-        
         $h['mapped_lanes'] = $mappedLines;
         $heats[] = $h;
     }
@@ -97,24 +96,33 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
 
 <style>
     .paper-font { font-family: 'Courier New', Courier, monospace; }
-    .double-line { border-top: 4px double #000; margin: 10px 0; }
+    .double-line { border-top: 4px double #000; margin: 15px 0; }
     .event-btn.active { border-color: #000; background: #000; color: #fff; }
     .event-scroll::-webkit-scrollbar { height: 4px; }
     .event-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
-    .status-btn { font-size: 9px; font-weight: 800; border: 1px solid #e2e8f0; padding: 4px 6px; border-radius: 4px; transition: all 0.2s; background: #fff; cursor: pointer; }
+    .status-btn { font-size: 9px; font-weight: 800; border: 1px solid #e2e8f0; padding: 4px 6px; border-radius: 4px; background: #fff; cursor: pointer; transition: 0.2s; }
     .active-ns { background: #64748b; color: #fff; border-color: #64748b; }
     .active-nf { background: #f59e0b; color: #fff; border-color: #f59e0b; }
     .active-dq { background: #ef4444; color: #fff; border-color: #ef4444; }
     .input-time { border: 1px solid #e2e8f0; border-radius: 8px; text-align: center; font-weight: 800; font-family: monospace; }
-    .input-time:focus { border-color: #3b82f6; outline: none; background: #f0f7ff; }
 </style>
 
 <div class="p-6 sm:ml-64 pt-24 bg-slate-50 min-h-screen">
     
     <div class="flex flex-col xl:flex-row justify-between items-center mb-8 gap-6 bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm">
         <div>
-            <h1 class="text-2xl font-black uppercase italic tracking-tighter text-slate-900 leading-none">Race Entry Manager</h1>
-            <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-2">Mode: <?= strtoupper($stage) ?></p>
+            <h1 class="text-2xl font-black uppercase italic tracking-tighter text-slate-900 leading-none">Result Entry</h1>
+            
+            <?php if($adminMode == 'Babak Penyisihan'): ?>
+                <div class="flex bg-slate-100 p-1 rounded-xl mt-3 w-fit">
+                    <a href="index.php?category_id=<?= $selectedCatId ?>&stage=Prelims&q=<?= $search ?>" 
+                       class="px-4 py-1.5 rounded-lg text-[9px] font-black uppercase transition <?= $stage == 'Prelims' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400' ?>">PRELIMS</a>
+                    <a href="index.php?category_id=<?= $selectedCatId ?>&stage=Final&q=<?= $search ?>" 
+                       class="px-4 py-1.5 rounded-lg text-[9px] font-black uppercase transition <?= $stage == 'Final' ? 'bg-orange-600 text-white shadow-sm' : 'text-slate-400' ?>">FINAL</a>
+                </div>
+            <?php else: ?>
+                <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-2 italic">Mode: Timed Final</p>
+            <?php endif; ?>
         </div>
         
         <div class="flex flex-wrap justify-center gap-3">
@@ -126,8 +134,12 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
             </form>
 
             <?php if($selectedCatId): ?>
-                <a href="print_result.php?category_id=<?= $selectedCatId ?>&stage=<?= $stage ?>" target="_blank" class="bg-blue-50 text-blue-600 font-black px-6 py-3 rounded-2xl text-[10px] uppercase border border-blue-100 hover:bg-blue-600 hover:text-white transition">🖨️ Cetak</a>
-                <button type="submit" form="formMaster" name="save_results" class="bg-slate-900 text-white font-black px-8 py-3 rounded-2xl text-[10px] uppercase shadow-lg hover:bg-blue-600 transition">💾 Simpan Hasil</button>
+                <a href="print_result.php?category_id=<?= $selectedCatId ?>&stage=<?= $stage ?>" target="_blank" class="bg-blue-100 text-blue-600 font-black px-6 py-3 rounded-2xl text-[10px] uppercase hover:bg-blue-600 hover:text-white transition flex items-center gap-2">
+                    <span>🖨️</span> CETAK HASIL
+                </a>
+                <button type="submit" form="formMaster" name="save_results" class="bg-slate-900 text-white font-black px-8 py-3 rounded-2xl text-[10px] uppercase shadow-lg hover:bg-blue-600 transition flex items-center gap-2">
+                    <span>💾</span> SIMPAN SEMUA
+                </button>
             <?php endif; ?>
         </div>
     </div>
@@ -144,7 +156,12 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
 
     <?php if(!$selectedCatId): ?>
         <div class="text-center py-20 bg-white rounded-[2rem] border border-slate-200 border-dashed">
-            <p class="font-black uppercase tracking-widest text-[10px] text-slate-300">Pilih nomor lomba di atas</p>
+            <p class="font-black uppercase tracking-widest text-[10px] text-slate-300 italic">Pilih nomor lomba di atas</p>
+        </div>
+    <?php elseif(empty($heats)): ?>
+        <div class="text-center py-20 bg-white rounded-[2rem] border-2 border-dashed border-slate-100 max-w-xl mx-auto">
+            <p class="text-slate-400 font-bold uppercase text-xs">Belum ada seri babak <?= $stage ?>.</p>
+            <p class="text-[9px] text-slate-300 font-black uppercase mt-1">Lakukan Seeding babak ini terlebih dahulu.</p>
         </div>
     <?php else: ?>
         
@@ -158,7 +175,7 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                     <div class="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm relative">
                         <div class="flex justify-between items-end mb-2 font-black text-[11px] uppercase">
                             <span>SERI <?= $h['heat_number'] ?></span>
-                            <span class="text-slate-400"><?= strtoupper($stage) ?></span>
+                            <span class="<?= $stage == 'Final' ? 'text-orange-600' : 'text-slate-400' ?>"><?= strtoupper($stage) ?></span>
                         </div>
                         <div class="double-line"></div>
                         
@@ -181,8 +198,8 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                                         <td class="text-center font-bold text-xl text-slate-300 italic"><?= $i ?></td>
                                         <td>
                                             <?php if($l): ?>
-                                                <div class="font-bold text-[13px] uppercase leading-tight"><?= htmlspecialchars($l['nama_atlet']) ?></div>
-                                                <div class="text-[9px] text-slate-500 uppercase"><?= htmlspecialchars($l['nama_klub']) ?></div>
+                                                <div class="font-bold text-[13px] uppercase leading-tight"><?= htmlspecialchars($l['nama_atlet'] ?? '') ?></div>
+                                                <div class="text-[9px] text-slate-500 uppercase"><?= htmlspecialchars($l['nama_klub'] ?? '') ?></div>
                                             <?php else: ?>
                                                 <div class="text-[10px] text-slate-300 italic">-- LINTASAN KOSONG --</div>
                                             <?php endif; ?>
@@ -191,7 +208,7 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                                             <?php if($l): ?>
                                                 <input type="text" name="result[<?= $l['id'] ?>]" id="res-<?= $l['id'] ?>"
                                                        value="<?= htmlspecialchars($l['result_time'] ?? '') ?>"
-                                                       class="input-time w-32 py-2 text-blue-600 text-lg"
+                                                       class="input-time w-32 py-2 text-blue-600 text-lg outline-none focus:border-blue-500"
                                                        placeholder="00:00.00" <?= ($l['status'] !== 'OK') ? 'readonly style="opacity:0.3"' : '' ?>>
                                             <?php endif; ?>
                                         </td>
@@ -199,14 +216,14 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                                             <?php if($l): ?>
                                                 <div class="flex justify-center gap-1">
                                                     <input type="hidden" name="status[<?= $l['id'] ?>]" id="status-<?= $l['id'] ?>" value="<?= $l['status'] ?? 'OK' ?>">
-                                                    <button type="button" onclick="toggleStatus(<?= $l['id'] ?>, 'NS')" id="btn-ns-<?= $l['id'] ?>" class="status-btn <?= $l['status']=='NS'?'active-ns':'' ?>">NS</button>
-                                                    <button type="button" onclick="toggleStatus(<?= $l['id'] ?>, 'NF')" id="btn-nf-<?= $l['id'] ?>" class="status-btn <?= $l['status']=='NF'?'active-nf':'' ?>">NF</button>
-                                                    <button type="button" onclick="toggleStatus(<?= $l['id'] ?>, 'DQ')" id="btn-dq-<?= $l['id'] ?>" class="status-btn <?= $l['status']=='DQ'?'active-dq':'' ?>">DQ</button>
+                                                    <button type="button" onclick="toggleStatus(<?= $l['id'] ?>, 'NS')" id="btn-ns-<?= $l['id'] ?>" class="status-btn <?= ($l['status'] ?? '')=='NS'?'active-ns':'' ?>">NS</button>
+                                                    <button type="button" onclick="toggleStatus(<?= $l['id'] ?>, 'NF')" id="btn-nf-<?= $l['id'] ?>" class="status-btn <?= ($l['status'] ?? '')=='NF'?'active-nf':'' ?>">NF</button>
+                                                    <button type="button" onclick="toggleStatus(<?= $l['id'] ?>, 'DQ')" id="btn-dq-<?= $l['id'] ?>" class="status-btn <?= ($l['status'] ?? '')=='DQ'?'active-dq':'' ?>">DQ</button>
                                                 </div>
                                             <?php endif; ?>
                                         </td>
                                         <td class="text-center font-black text-slate-400">
-                                            <?= ($l && $l['rank']) ? '#' . $l['rank'] : '-' ?>
+                                            <?= ($l && ($l['rank'] ?? null)) ? '#' . $l['rank'] : '-' ?>
                                         </td>
                                     </tr>
                                     <?php endfor; ?>
@@ -230,16 +247,14 @@ function toggleStatus(id, status) {
 
     if (statusInput.value === status) {
         statusInput.value = 'OK';
-        timeInput.readOnly = false;
-        timeInput.style.opacity = '1';
-        [bNS, bNF, bDQ].forEach(b => b.className = 'status-btn');
+        if(timeInput) { timeInput.readOnly = false; timeInput.style.opacity = '1'; }
+        [bNS, bNF, bDQ].forEach(b => { if(b) b.classList.remove('active-ns','active-nf','active-dq'); });
     } else {
         statusInput.value = status;
-        timeInput.value = ''; 
-        timeInput.readOnly = true;
-        timeInput.style.opacity = '0.3';
-        [bNS, bNF, bDQ].forEach(b => b.className = 'status-btn');
-        document.getElementById('btn-' + status.toLowerCase() + '-' + id).classList.add('active-' + status.toLowerCase());
+        if(timeInput) { timeInput.value = ''; timeInput.readOnly = true; timeInput.style.opacity = '0.3'; }
+        [bNS, bNF, bDQ].forEach(b => { if(b) b.classList.remove('active-ns','active-nf','active-dq'); });
+        const activeBtn = document.getElementById('btn-' + status.toLowerCase() + '-' + id);
+        if(activeBtn) activeBtn.classList.add('active-' + status.toLowerCase());
     }
 }
 </script>

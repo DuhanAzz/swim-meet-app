@@ -6,214 +6,163 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
     header("Location: ../../../public/login.php"); exit;
 }
 
-$catId = $_GET['category_id'] ?? 0;
-$stage = $_GET['stage'] ?? 'Prelims'; // Menangkap parameter Prelims atau Final
-$uid = $_SESSION['user_id'];
+$cat_id = $_GET['category_id'] ?? null;
+if (!$cat_id) {
+    header("Location: index.php"); exit;
+}
 
-// --- 1. AMBIL DATA ACARA & BRANDING DARI USER ---
-$sql = "SELECT u.nama_lengkap AS event_name, u.venue_name, u.location, u.event_start_date, u.event_end_date, 
-               u.logo_left, u.logo_right, u.lane_count, ec.* FROM event_categories ec 
-        JOIN users u ON ec.user_id = u.id 
-        WHERE ec.id = ? AND ec.user_id = ?";
-$stmtCat = $pdo->prepare($sql);
-$stmtCat->execute([$catId, $uid]);
-$info = $stmtCat->fetch();
+// 1. AMBIL INFO EVENT
+$stmt = $pdo->prepare("SELECT * FROM event_categories WHERE id = ?");
+$stmt->execute([$cat_id]);
+$event = $stmt->fetch();
 
-if (!$info) die("Data acara tidak ditemukan.");
+if (!$event) die("Event tidak ditemukan.");
 
-// --- 2. AMBIL DAFTAR SPONSOR ---
-$stmtSponsors = $pdo->prepare("SELECT image_path FROM event_sponsors WHERE user_id = ?");
-$stmtSponsors->execute([$uid]);
-$sponsors = $stmtSponsors->fetchAll();
+// 2. AMBIL DATA SERI (HEATS) & LINTASAN (LINES)
+try {
+    // QUERY FINAL - DISESUAIKAN DENGAN STRUKTUR DB ANDA
+    $sql = "SELECT 
+                rh.heat_number as heat_no, 
+                rh.stage, 
+                rl.lane_number as lane_no, 
+                rl.entry_time,
+                s.nama_atlet as swimmer_name,   /* Dari tabel swimmers */
+                s.jenis_kelamin as gender,      /* Dari tabel swimmers */
+                s.asal_sekolah,                 /* Opsional: Tampilkan sekolah */
+                u.nama_lengkap as club_name     /* Nama Klub dari tabel users */
+            FROM race_heats rh
+            JOIN race_lines rl ON rl.heat_id = rh.id
+            JOIN swimmers s ON rl.swimmer_id = s.id
+            /* Hubungkan swimmer ke user (klub) via user_id */
+            LEFT JOIN users u ON s.user_id = u.id 
+            WHERE rh.category_id = ?
+            ORDER BY rh.heat_number ASC, rl.lane_number ASC";
 
-// --- 3. AMBIL DATA SERI (HEATS) BERDASARKAN BABAK (STAGE) ---
-$stmtHeats = $pdo->prepare("SELECT * FROM race_heats WHERE category_id = ? AND stage = ? ORDER BY heat_number ASC");
-$stmtHeats->execute([$catId, $stage]);
-$heats = $stmtHeats->fetchAll();
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute([$cat_id]);
+    $raw_data = $stmt->fetchAll();
 
-foreach ($heats as &$h) {
-    $stmtLines = $pdo->prepare("SELECT rl.*, s.nama_atlet, u.nama_lengkap as nama_klub, u.location as kabupaten 
-                                FROM race_lines rl 
-                                JOIN swimmers s ON rl.swimmer_id = s.id 
-                                JOIN users u ON s.user_id = u.id 
-                                WHERE rl.heat_id = ? ORDER BY rl.lane_number ASC");
-    $stmtLines->execute([$h['id']]);
-    $h['lanes'] = $stmtLines->fetchAll();
+} catch (PDOException $e) {
+    die("Error Database: " . $e->getMessage());
+}
+
+// 3. GROUPING DATA BERDASARKAN HEAT
+$heats = [];
+foreach ($raw_data as $row) {
+    $key = $row['heat_no'];
+    $heats[$key]['stage'] = $row['stage'] ?? 'Prelims';
+    $heats[$key]['swimmers'][] = $row;
 }
 
 include __DIR__ . '/../../../views/layout/topbar.php'; 
 include __DIR__ . '/../../../views/layout/sidebar.php'; 
 ?>
 
-<style>
-    /* --- TAMPILAN MONITOR --- */
-    .report-paper {
-        background: white;
-        width: 100%; 
-        min-height: 297mm;
-        padding: 20mm;
-        margin: 0 auto;
-        font-family: 'Courier New', Courier, monospace;
-        color: #000;
-        box-shadow: 0 0 50px rgba(0,0,0,0.1);
-        border: 1px solid #e2e8f0;
-    }
-    .double-line { border-top: 4px double #000; margin: 15px 0; }
-    .table-report { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 40px; table-layout: fixed; }
-    .table-report th { border-bottom: 2px solid #000; padding: 10px 5px; text-align: left; font-weight: bold; }
-    .table-report td { padding: 8px 5px; vertical-align: top; border-bottom: 1px solid #f2f2f2; overflow: hidden; }
-    .center { text-align: center; }
-    
-    .sponsor-footer {
-        margin-top: 50px;
-        padding-top: 20px;
-        border-top: 1px solid #eee;
-        display: flex;
-        flex-wrap: wrap;
-        justify-content: center;
-        align-items: center;
-        gap: 30px;
-    }
-    .sponsor-footer img {
-        height: 40px;
-        width: auto;
-        filter: grayscale(1);
-        opacity: 0.7;
-    }
+<div class="p-6 sm:ml-64 pt-24 bg-slate-50 min-h-screen font-sans text-slate-800">
 
-    /* --- FIX CETAK (PRINT) --- */
-    @media print {
-        #logo-sidebar, nav, header, aside, .no-print, [role="navigation"], .pt-24 { 
-            display: none !important; 
-        }
-        body, html {
-            background: white !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            width: 100% !important;
-            height: auto !important;
-            overflow: visible !important;
-        }
-        .sm\:ml-64, main, .p-6 { 
-            margin: 0 !important; 
-            padding: 0 !important; 
-            width: 100% !important;
-            display: block !important;
-            position: relative !important;
-        }
-        .report-paper {
-            box-shadow: none !important;
-            border: none !important;
-            width: 100% !important;
-            padding: 0 !important;
-            margin: 0 !important;
-            display: block !important;
-        }
-        .table-report { page-break-inside: auto; }
-        tr { page-break-inside: avoid; page-break-after: auto; }
-        @page { size: A4 portrait; margin: 15mm; }
-    }
-</style>
-
-<div class="p-6 sm:ml-64 pt-24 bg-slate-50 min-h-screen">
-    
-    <div class="max-w-full mb-10 no-print">
-        <div class="flex flex-col md:flex-row justify-between items-center gap-6 bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm">
-            <div>
-                <h1 class="text-2xl font-black uppercase italic text-slate-900 leading-none">Start List Preview</h1>
-                <p class="text-[10px] font-bold text-blue-600 uppercase tracking-widest mt-2">Mode: <?= strtoupper($stage) ?> #<?= $info['event_no'] ?></p>
+    <div class="mb-8 flex justify-between items-end">
+        <div>
+            <a href="index.php" class="text-[10px] font-bold text-slate-400 uppercase tracking-widest hover:text-slate-600 transition mb-2 block">← Kembali ke Seeding</a>
+            <h1 class="text-3xl font-black uppercase italic text-slate-900 leading-none tracking-tighter">
+                Start List
+            </h1>
+            <div class="flex items-center gap-3 mt-4">
+                <span class="bg-slate-900 text-white px-4 py-2 rounded-lg text-lg font-black italic uppercase">
+                    #<?= $event['event_no'] ?>
+                </span>
+                <div class="leading-tight">
+                    <div class="text-xl font-black uppercase italic text-slate-800">
+                        <?= $event['distance'] ?>m <?= $event['style'] ?> <span class="text-slate-400">/</span> <?= $event['gender'] == 'Male' ? 'Putra' : 'Putri' ?>
+                    </div>
+                    <div class="text-xs font-bold text-slate-500 uppercase tracking-widest">
+                        <?= $event['age_group'] ?> • <?= date('d M Y', strtotime($event['event_date'])) ?>
+                    </div>
+                </div>
             </div>
-            <div class="flex gap-3">
-                <a href="index.php" class="bg-white border-2 border-slate-100 px-6 py-3 rounded-2xl font-black text-[10px] uppercase text-slate-400 hover:text-slate-600 transition">← Kembali</a>
-                <button onclick="window.print()" class="bg-blue-600 hover:bg-blue-700 text-white font-black px-10 py-4 rounded-2xl text-[10px] uppercase shadow-xl shadow-blue-100 transition transform active:scale-95 flex items-center gap-2">
-                    <span>🖨️</span> CETAK / DOWNLOAD PDF
-                </button>
-            </div>
+        </div>
+        
+        <div class="flex gap-2">
+             <button onclick="window.print()" class="bg-blue-600 text-white font-black px-6 py-3 rounded-xl text-[10px] uppercase tracking-widest hover:bg-blue-700 transition shadow-lg shadow-blue-100 flex items-center gap-2">
+                🖨️ Cetak / PDF
+            </button>
         </div>
     </div>
 
-    <div class="report-paper">
-        
-        <div class="flex justify-between items-center mb-10 px-4">
-            <div class="w-28 h-28 flex items-center justify-center">
-                <?php if(!empty($info['logo_left'])): ?>
-                    <img src="../../../public/<?= $info['logo_left'] ?>" class="max-w-full max-h-full object-contain">
-                <?php endif; ?>
+    <div class="space-y-8 print:space-y-8">
+        <?php if (empty($heats)): ?>
+            <div class="bg-white p-10 rounded-3xl border border-slate-200 text-center">
+                <p class="text-slate-400 font-bold italic">Belum ada seeding untuk nomor ini.</p>
+                <a href="index.php" class="text-blue-600 font-bold text-sm mt-2 block underline">Lakukan Seeding Sekarang</a>
             </div>
+        <?php else: ?>
+            
+            <?php foreach ($heats as $heat_num => $data): ?>
+                <div class="bg-white rounded-[1.5rem] border border-slate-200 overflow-hidden shadow-sm break-inside-avoid">
+                    <div class="bg-slate-900 text-white px-6 py-3 flex justify-between items-center">
+                        <div class="flex items-center gap-3">
+                            <span class="font-black uppercase tracking-widest text-sm">HEAT <?= $heat_num ?></span>
+                            <?php if(isset($data['stage']) && $data['stage'] == 'Final'): ?>
+                                <span class="bg-yellow-400 text-slate-900 text-[9px] px-2 py-0.5 rounded font-black uppercase">Final</span>
+                            <?php endif; ?>
+                        </div>
+                        <span class="text-[9px] font-bold uppercase text-slate-400 tracking-wider">Start List</span>
+                    </div>
 
-            <div class="text-center flex-1 mx-6">
-                <h2 class="text-xl font-bold uppercase m-0 leading-tight"><?= strtoupper(htmlspecialchars($info['event_name'] ?? '')) ?></h2>
-                <p class="font-bold text-sm mt-1">
-                    <?= date('d F Y', strtotime($info['event_start_date'] ?? 'today')) ?> - <?= date('d F Y', strtotime($info['event_end_date'] ?? 'today')) ?>
-                </p>
-                <h1 class="text-4xl font-bold mt-4 uppercase tracking-[0.3em]">Buku Acara</h1>
-            </div>
+                    <table class="w-full text-left text-sm">
+                        <thead class="bg-slate-50 text-slate-500 text-[9px] font-black uppercase tracking-widest border-b border-slate-100">
+                            <tr>
+                                <th class="px-6 py-3 text-center w-16">LN</th>
+                                <th class="px-6 py-3">Nama Atlet</th>
+                                <th class="px-6 py-3">Klub / Sekolah</th>
+                                <th class="px-6 py-3 text-right">Waktu (Entry)</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100">
+                            <?php foreach ($data['swimmers'] as $s): ?>
+                            <tr class="hover:bg-blue-50/50 transition">
+                                <td class="px-6 py-3 text-center">
+                                    <span class="font-black text-lg text-slate-800"><?= $s['lane_no'] ?></span>
+                                </td>
+                                
+                                <td class="px-6 py-3">
+                                    <div class="font-bold text-slate-800 uppercase text-sm"><?= $s['swimmer_name'] ?></div>
+                                    <div class="text-[9px] text-slate-400 font-bold">
+                                        <?= ($s['gender'] == 'Male' || $s['gender'] == 'L') ? 'Laki-Laki' : 'Perempuan' ?>
+                                    </div>
+                                </td>
+                                
+                                <td class="px-6 py-3">
+                                    <div class="text-xs font-semibold text-slate-600 uppercase truncate max-w-[200px]" title="<?= $s['club_name'] ?>">
+                                        <?= !empty($s['club_name']) ? $s['club_name'] : $s['asal_sekolah'] ?>
+                                    </div>
+                                </td>
 
-            <div class="w-28 h-28 flex items-center justify-center">
-                <?php if(!empty($info['logo_right'])): ?>
-                    <img src="../../../public/<?= $info['logo_right'] ?>" class="max-w-full max-h-full object-contain">
-                <?php endif; ?>
-            </div>
-        </div>
-
-        <div class="double-line"></div>
-        
-        <div class="flex justify-between font-bold text-sm uppercase mb-2">
-            <span>ACARA <?= $info['event_no'] ?? '0' ?></span>
-            <span><?= !empty($info['event_date']) ? date('d F Y', strtotime($info['event_date'])) : '' ?></span>
-        </div>
-        
-        <div class="text-center font-black text-xl uppercase mb-10 italic">
-            <?= $info['distance'] ?? '0' ?> M <?= strtoupper(htmlspecialchars($info['style'] ?? '')) ?> <?= strtoupper(htmlspecialchars(($info['gender'] ?? '') == 'Male' ? 'PUTRA' : 'PUTRI')) ?>
-            <?php if($stage == 'Final'): ?>
-                <div class="text-lg bg-slate-900 text-white px-4 py-1 not-italic inline-block mt-2 tracking-widest">BABAK FINAL</div>
-            <?php endif; ?>
-        </div>
-
-        <?php if(empty($heats)): ?>
-            <p class="text-center py-20 italic">Data seri <?= $stage ?> belum disusun.</p>
-        <?php else: foreach($heats as $h): ?>
-            <table class="table-report">
-                <thead>
-                    <tr>
-                        <th style="width: 45px;" class="center">LN</th>
-                        <th style="width: 220px;">NAMA ATLET</th>
-                        <th style="width: 140px;">KABUPATEN / KOTA</th>
-                        <th style="width: 180px;">ASAL SEKOLAH / KLUB</th>
-                        <th style="width: 90px;" class="center">PRESTASI</th>
-                        <th style="width: 120px;" class="center">SERI <?= $h['heat_number'] ?></th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php 
-                    $L = $info['lane_count'] ?: 8;
-                    $mapped = []; foreach($h['lanes'] as $l) { $mapped[$l['lane_number']] = $l; }
-                    for($i=1; $i<=$L; $i++): $sw = $mapped[$i] ?? null;
-                    ?>
-                    <tr>
-                        <td class="center font-bold"><?= $i ?></td>
-                        <td class="font-bold"><?= $sw ? strtoupper(htmlspecialchars($sw['nama_atlet'] ?? '')) : '<KOSONG>' ?></td>
-                        <td><?= $sw ? strtoupper(htmlspecialchars($sw['kabupaten'] ?? '-')) : '' ?></td>
-                        <td><?= $sw ? strtoupper(htmlspecialchars($sw['nama_klub'] ?? '')) : '' ?></td>
-                        <td class="center font-bold"><?= $sw ? ($sw['entry_time'] ?? '') : '' ?></td>
-                        <td class="center text-slate-400 font-black">[ . . . . . . ]</td>
-                    </tr>
-                    <?php endfor; ?>
-                </tbody>
-            </table>
-        <?php endforeach; endif; ?>
-
-        <?php if(!empty($sponsors)): ?>
-        <div class="sponsor-footer">
-            <?php foreach($sponsors as $sp): ?>
-                <img src="../../../public/<?= $sp['image_path'] ?>">
+                                <td class="px-6 py-3 text-right font-mono font-bold text-slate-700">
+                                    <?= ($s['entry_time'] == '99:99.99' || $s['entry_time'] == NULL) ? 'NT' : $s['entry_time'] ?>
+                                </td>
+                            </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
             <?php endforeach; ?>
-        </div>
-        <?php endif; ?>
 
-        <div class="mt-10 text-[9px] italic flex justify-between border-t pt-4 text-slate-400 uppercase font-bold">
-            <span>Official <?= strtoupper($stage) ?> Start List Generated by SwimMeet System</span>
-            <span>Waktu Cetak: <?= date('d/m/Y H:i:s') ?></span>
-        </div>
+        <?php endif; ?>
+    </div>
+
+    <div class="mt-10 text-center print:hidden">
+        <p class="text-[10px] font-bold text-slate-300 uppercase">SwimMeet System • Generated at <?= date('H:i:s') ?></p>
     </div>
 </div>
+
+<style media="print">
+    @page { margin: 1cm; size: A4; }
+    body { background: white; -webkit-print-color-adjust: exact; }
+    .print\:hidden { display: none !important; }
+    .bg-slate-50 { background: white !important; }
+    .sm\:ml-64 { margin-left: 0 !important; }
+    .p-6 { padding: 0 !important; }
+    .shadow-sm, .shadow-lg { box-shadow: none !important; }
+    .border { border: 1px solid #eee !important; }
+    a { text-decoration: none; color: black; }
+</style>

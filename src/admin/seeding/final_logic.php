@@ -2,7 +2,6 @@
 session_start();
 require_once __DIR__ . '/../../config/database.php';
 
-// Fungsi bantu harus identik dengan logic.php
 function getLaneOrder($laneCount) {
     $orders = [
         10 => [4, 5, 3, 6, 2, 7, 1, 8, 0, 9],
@@ -20,36 +19,38 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['category_id'])) {
 
         $L = (int)($pdo->query("SELECT lane_count FROM users WHERE id = $uid")->fetchColumn() ?: 8);
 
-        // PEMANGGILAN DATA: Mengambil hasil TERBAIK dari babak Prelims
+        // AMBIL PEMENANG TERBAIK (TOP L) DARI PRELIMS
         $sql = "SELECT rl.swimmer_id, rl.result_time FROM race_lines rl 
                 JOIN race_heats rh ON rl.heat_id = rh.id
                 WHERE rh.category_id = ? AND rh.stage = 'Prelims' 
-                AND rl.result_time IS NOT NULL AND rl.result_time != '' AND rl.result_time != 'NT'
+                AND rl.status = 'OK' AND rl.result_time IS NOT NULL AND rl.result_time != ''
                 ORDER BY rl.result_time ASC LIMIT $L";
         
         $stmt = $pdo->prepare($sql);
         $stmt->execute([$catId]);
         $finalists = $stmt->fetchAll();
 
-        if (empty($finalists)) throw new Exception("Tidak ada hasil Prelims yang valid.");
+        if (empty($finalists)) throw new Exception("Belum ada hasil penyisihan yang valid.");
 
         $pdo->beginTransaction();
         
-        // Hapus final lama jika ada (Re-seed Final)
+        // Bersihkan data Final lama untuk kategori ini
         $pdo->prepare("DELETE rl FROM race_lines rl JOIN race_heats rh ON rl.heat_id = rh.id WHERE rh.category_id = ? AND rh.stage = 'Final'")->execute([$catId]);
         $pdo->prepare("DELETE FROM race_heats WHERE category_id = ? AND stage = 'Final'")->execute([$catId]);
 
-        // Buat seri Final (Selalu Heat 1)
+        // Buat seri Final baru
         $insH = $pdo->prepare("INSERT INTO race_heats (category_id, heat_number, stage) VALUES (?, 1, 'Final')");
         $insH->execute([$catId]);
         $heatId = $pdo->lastInsertId();
 
+        // Gunakan Spearhead Lane Order (Lintasan Tengah untuk yang Tercepat)
+        // 
         $laneOrder = getLaneOrder($L);
         
-        // Seeding Spearhead: Perenang tercepat di Prelims masuk ke lintasan tengah Final
         foreach ($finalists as $index => $f) {
             if (isset($laneOrder[$index])) {
                 $lane = $laneOrder[$index];
+                // Waktu entry babak final diambil dari waktu hasil babak penyisihan
                 $pdo->prepare("INSERT INTO race_lines (heat_id, lane_number, swimmer_id, entry_time) VALUES (?, ?, ?, ?)")
                     ->execute([$heatId, $lane, $f['swimmer_id'], $f['result_time']]);
             }

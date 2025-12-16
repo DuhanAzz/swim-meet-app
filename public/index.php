@@ -14,15 +14,15 @@ $infoText    = $s['info_text'] ?? 'Sistem Manajemen Lomba Renang Terintegrasi - 
 $sliders = $pdo->query("SELECT * FROM hero_slides ORDER BY id DESC")->fetchAll();
 if (empty($sliders)) $sliders[] = ['image_path' => 'https://images.unsplash.com/photo-1530549387789-4c1017266635'];
 
-// 4. DATA JADWAL (Hanya 4 Event Terbaru)
-$upcoming_preview = $pdo->query("SELECT * FROM users WHERE role = 'admin' ORDER BY event_start_date DESC LIMIT 4")->fetchAll();
+// 4. DATA JADWAL (Hanya 4 Event Terbaru + Status Perlombaan)
+$upcoming_preview = $pdo->query("SELECT id, nama_lengkap, location, event_start_date, event_status, profile_image FROM users WHERE role = 'admin' ORDER BY event_start_date DESC LIMIT 4")->fetchAll();
 ?>
 <!DOCTYPE html>
 <html lang="id" class="scroll-smooth">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?= htmlspecialchars($heroTitle) ?></title>
+    <title><?= htmlspecialchars($heroTitle ?? '') ?></title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet">
     <style>
@@ -33,7 +33,6 @@ $upcoming_preview = $pdo->query("SELECT * FROM users WHERE role = 'admin' ORDER 
             position: fixed; inset: 0; z-index: 9999;
             background-color: #0F172A;
             display: flex; flex-direction: column; align-items: center; justify-content: center;
-            transition: opacity 0.5s ease, visibility 0.5s;
         }
         .loader-container { position: relative; width: 150px; height: 150px; }
         .circle-loader {
@@ -55,7 +54,7 @@ $upcoming_preview = $pdo->query("SELECT * FROM users WHERE role = 'admin' ORDER 
         }
         @keyframes wave { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         .load-text { margin-top: 30px; color: white; font-weight: 900; letter-spacing: 0.4em; font-size: 12px; text-transform: uppercase; }
-        .loader-finish { opacity: 0; visibility: hidden; }
+        .loader-finish { opacity: 0; visibility: hidden; transition: opacity 0.5s ease, visibility 0.5s; }
 
         /* --- HERO & NAV STYLE --- */
         .hero-slide { position: absolute; inset: 0; width: 100%; height: 100%; background-size: cover; background-position: center; opacity: 0; transition: opacity 1.5s ease-in-out; z-index: -1; }
@@ -116,7 +115,7 @@ $upcoming_preview = $pdo->query("SELECT * FROM users WHERE role = 'admin' ORDER 
                     <div class="h-1 w-12 bg-blue-500"></div>
                     <span class="font-bold tracking-[0.3em] uppercase text-xs md:text-sm shadow-black drop-shadow-md">Professional Timing System</span>
                 </div>
-                <h1 class="text-7xl md:text-9xl font-black uppercase tracking-tighter leading-none mb-10 drop-shadow-2xl"><?= htmlspecialchars($heroTitle) ?></h1>
+                <h1 class="text-7xl md:text-9xl font-black uppercase tracking-tighter leading-none mb-10 drop-shadow-2xl"><?= htmlspecialchars($heroTitle ?? '') ?></h1>
 
                 <?php if(!empty($runningText)): ?>
                 <div class="mb-12 w-full md:w-3/4 bg-yellow-400 text-slate-900 px-1 py-1 rounded font-bold overflow-hidden shadow-2xl border-l-8 border-slate-900 transform -skew-x-6">
@@ -137,7 +136,7 @@ $upcoming_preview = $pdo->query("SELECT * FROM users WHERE role = 'admin' ORDER 
 
     <section id="schedule" class="py-32 px-6 max-w-screen-xl mx-auto section-scroll">
         <div class="flex justify-between items-end mb-16">
-            <h2 class="text-5xl font-black uppercase italic text-slate-900 tracking-tighter">Competition Preview</h2>
+            <h2 class="text-5xl font-black uppercase italic text-slate-900 tracking-tighter leading-none">Competition Preview</h2>
             <a href="events.php" class="text-blue-600 font-bold text-sm uppercase underline tracking-[0.2em]">Lihat Semua Lomba &rarr;</a>
         </div>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-10">
@@ -145,18 +144,43 @@ $upcoming_preview = $pdo->query("SELECT * FROM users WHERE role = 'admin' ORDER 
                 $stmtP = $pdo->prepare("SELECT file_path FROM event_results WHERE event_id = ? AND category = 'Other' LIMIT 1");
                 $stmtP->execute([$e['id']]);
                 $pathPersyaratan = $stmtP->fetchColumn();
+
+                // LOGIKA WARNA BADGE STATUS
+                $statusLabel = $e['event_status'] ?? 'Registration';
+                $badgeClass = "bg-emerald-500"; 
+                $badgeIcon = "📝";
+                
+                if($statusLabel == 'Running') {
+                    $badgeClass = "bg-red-600 animate-pulse";
+                    $badgeIcon = "● LIVE";
+                } elseif ($statusLabel == 'Finished') {
+                    $badgeClass = "bg-slate-600";
+                    $badgeIcon = "🏁 CLOSED";
+                }
             ?>
-            <div class="bg-white rounded-[3rem] border border-slate-200 overflow-hidden hover:shadow-2xl transition-all duration-500 group flex flex-col">
+            <div class="bg-white rounded-[3rem] border border-slate-200 overflow-hidden hover:shadow-2xl transition-all duration-500 group flex flex-col relative">
+                
+                <div class="absolute top-6 right-8 z-10 <?= $badgeClass ?> text-white px-4 py-1.5 rounded-full font-black text-[9px] uppercase tracking-widest shadow-lg">
+                    <?= $badgeIcon ?> <?= strtoupper($statusLabel) ?>
+                </div>
+
                 <div class="p-10 flex-1">
-                    <h3 class="text-3xl font-black uppercase text-slate-800 mb-6 group-hover:text-blue-600 transition leading-tight"><?= $e['nama_lengkap'] ?></h3>
-                    <div class="flex gap-8 text-slate-500 text-sm font-bold uppercase tracking-widest">
+                    <h3 class="text-3xl font-black uppercase text-slate-800 mb-6 group-hover:text-blue-600 transition leading-tight italic"><?= htmlspecialchars($e['nama_lengkap'] ?? '') ?></h3>
+                    <div class="flex gap-8 text-slate-500 text-xs font-bold uppercase tracking-widest">
                         <span>📅 <?= date('d M Y', strtotime($e['event_start_date'])) ?></span>
-                        <span>📍 <?= $e['location'] ?></span>
+                        <span>📍 <?= htmlspecialchars($e['location'] ?? '') ?></span>
                     </div>
                 </div>
+
                 <div class="grid grid-cols-3 border-t bg-slate-50">
-                    <a href="<?= $pathPersyaratan ?: '#' ?>" class="py-6 border-r flex flex-col items-center hover:bg-blue-600 hover:text-white transition uppercase text-[10px] font-black <?= !$pathPersyaratan ? 'opacity-30' : '' ?>"><span>📄</span>Persyaratan</a>
-                    <a href="results.php?event_id=<?= $e['id'] ?>&cat=StartList" class="py-6 border-r flex flex-col items-center hover:bg-blue-600 hover:text-white transition uppercase text-[10px] font-black"><span>📖</span>Buku Acara</a>
+                    <a href="<?= $pathPersyaratan ?: '#' ?>" class="py-6 border-r flex flex-col items-center hover:bg-blue-600 hover:text-white transition uppercase text-[10px] font-black <?= !$pathPersyaratan ? 'opacity-30 pointer-events-none' : '' ?>"><span>📄</span>Persyaratan</a>
+                    
+                    <?php if($statusLabel == 'Registration'): ?>
+                        <a href="register.php" class="py-6 border-r flex flex-col items-center bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white transition uppercase text-[10px] font-black"><span>📝</span>Daftar Sekarang</a>
+                    <?php else: ?>
+                        <a href="results.php?event_id=<?= $e['id'] ?>&cat=StartList" class="py-6 border-r flex flex-col items-center hover:bg-slate-900 hover:text-white transition uppercase text-[10px] font-black"><span>📖</span>Buku Acara</a>
+                    <?php endif; ?>
+
                     <a href="results.php?event_id=<?= $e['id'] ?>&cat=Result" class="py-6 flex flex-col items-center hover:bg-blue-600 hover:text-white transition uppercase text-[10px] font-black"><span>🏆</span>Hasil Lomba</a>
                 </div>
             </div>
@@ -186,25 +210,45 @@ $upcoming_preview = $pdo->query("SELECT * FROM users WHERE role = 'admin' ORDER 
     </footer>
 
     <script>
-        window.addEventListener('load', () => {
+        // FIXED PRELOADER
+        document.addEventListener('DOMContentLoaded', () => {
             const liquid = document.getElementById('liquid-level');
             const textPerc = document.getElementById('load-perc');
             const preloader = document.getElementById('preloader');
             let progress = 0;
             const interval = setInterval(() => {
                 progress += Math.floor(Math.random() * 15) + 5;
-                if (progress >= 100) { progress = 100; clearInterval(interval); setTimeout(() => { preloader.classList.add('loader-finish'); }, 500); }
-                liquid.style.top = (100 - progress) + '%'; textPerc.innerText = progress + '%';
+                if (progress >= 100) { 
+                    progress = 100; 
+                    clearInterval(interval); 
+                    setTimeout(() => { preloader.classList.add('loader-finish'); }, 500); 
+                }
+                if(liquid) liquid.style.top = (100 - progress) + '%'; 
+                if(textPerc) textPerc.innerText = progress + '%';
             }, 80);
         });
+
         const navbar = document.getElementById('navbar');
         const logo = document.getElementById('nav-logo');
         window.addEventListener('scroll', () => { 
-            if(window.scrollY > 50) { navbar.classList.add('scrolled'); logo.classList.replace('h-24', 'h-16'); } 
-            else { navbar.classList.remove('scrolled'); logo.classList.replace('h-16', 'h-24'); }
+            if(window.scrollY > 50) { 
+                navbar.classList.add('scrolled'); 
+                if(logo) logo.classList.replace('h-24', 'h-16'); 
+            } 
+            else { 
+                navbar.classList.remove('scrolled'); 
+                if(logo) logo.classList.replace('h-16', 'h-24'); 
+            }
         });
+
         let cur = 0; const slides = document.querySelectorAll('.hero-slide');
-        if(slides.length > 1) { setInterval(() => { slides[cur].classList.remove('active'); cur = (cur + 1) % slides.length; slides[cur].classList.add('active'); }, 6000); }
+        if(slides.length > 1) { 
+            setInterval(() => { 
+                slides[cur].classList.remove('active'); 
+                cur = (cur + 1) % slides.length; 
+                slides[cur].classList.add('active'); 
+            }, 6000); 
+        }
     </script>
 </body>
 </html>
