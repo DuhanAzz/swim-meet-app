@@ -60,6 +60,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     </style>
 </head>
 <body class="bg-white h-screen w-full flex overflow-hidden">
+    
     <div class="hidden lg:flex w-1/2 relative bg-slate-900 items-center justify-center overflow-hidden">
         <div id="login-slider-container" class="absolute inset-0 w-full h-full">
             <?php foreach($sliders as $index => $slide): ?>
@@ -75,18 +76,30 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             <img src="img/logo.png" class="w-64 h-auto drop-shadow-2xl filter brightness-110" alt="Logo SET System">
         </div>
     </div>
-    <div class="w-full lg:w-1/2 flex flex-col justify-center items-center p-6 bg-white overflow-y-auto">
-        <div class="w-full max-w-md">
-            <div class="text-center mb-8 lg:hidden"><img src="img/logo.png" class="h-20 w-auto mx-auto mb-4"></div>
+
+    <div class="w-full lg:w-1/2 flex flex-col justify-center items-center p-6 bg-white overflow-y-auto relative">
+        
+        <a href="index.php" class="absolute top-6 left-6 md:top-10 md:left-10 flex items-center gap-2 text-slate-400 hover:text-blue-600 transition duration-300 font-bold text-xs uppercase tracking-widest group">
+            <span class="text-xl group-hover:-translate-x-1 transition-transform">&larr;</span> 
+            Beranda
+        </a>
+
+        <div class="w-full max-w-md mt-10 lg:mt-0">
+            <div class="text-center mb-8 lg:hidden">
+                <img src="img/logo.png" class="h-20 w-auto mx-auto mb-4">
+            </div>
+
             <div class="text-center mb-10">
                 <h2 class="text-3xl font-black text-slate-900 tracking-tight">Selamat Datang</h2>
                 <p class="text-slate-500 mt-2 text-sm font-medium">Masuk untuk mengelola kompetisi Anda.</p>
             </div>
+
             <?php if($error): ?>
                 <div class="bg-red-50 border-l-4 border-red-500 text-red-700 p-4 rounded-lg mb-6 text-sm flex items-center gap-3 animate-pulse">
                     <span class="font-bold"><?= $error ?></span>
                 </div>
             <?php endif; ?>
+
             <form method="POST" class="space-y-6">
                 <div>
                     <label class="block text-slate-700 font-bold mb-2 text-xs uppercase tracking-wide">Email atau Username</label>
@@ -100,11 +113,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 </div>
                 <button type="submit" class="w-full bg-[#0F172A] hover:bg-blue-700 text-white font-black py-4 rounded-xl shadow-lg transition transform hover:-translate-y-0.5 uppercase tracking-wide text-sm">Masuk Dashboard</button>
             </form>
+
             <div class="mt-8 pt-6 border-t border-slate-100 text-center">
                 <a href="register.php" class="inline-block border-2 border-slate-200 text-slate-700 hover:border-blue-600 font-bold py-2.5 px-6 rounded-lg transition text-sm">Buat Akun Baru</a>
             </div>
         </div>
     </div>
+
     <script>
         let currentSlide = 0;
         const slides = document.querySelectorAll('.bg-slide');

@@ -2,55 +2,29 @@
 session_start();
 require_once __DIR__ . '/../../src/config/database.php';
 
-// Proteksi Admin
-if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
-    header("Location: ../../public/login.php"); exit;
+// Cek Admin
+if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') { 
+    header("Location: ../../public/login.php"); exit; 
 }
 
-$uid = $_SESSION['user_id'];
-
-// --- 1. HANDLE TAMBAH NOMOR LOMBA ---
-if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_category'])) {
+// --- LOGIC HAPUS EVENT ---
+if (isset($_POST['delete_id'])) {
     try {
-        $event_no = $_POST['event_no'];
-        $event_date = $_POST['event_date'];
-        $gender = $_POST['gender'];
-        $distance = $_POST['distance'];
-        $style = $_POST['style'];
-        $age = $_POST['age_group'];
-        $price = $_POST['price'];
-
-        $sql = "INSERT INTO event_categories (user_id, event_no, event_date, gender, distance, style, age_group, price) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
-        $pdo->prepare($sql)->execute([$uid, $event_no, $event_date, $gender, $distance, $style, $age, $price]);
-
-        $_SESSION['toast_type'] = 'success'; $_SESSION['toast_message'] = 'Acara #' . $event_no . ' berhasil ditambahkan!';
+        $stmt = $pdo->prepare("DELETE FROM event_numbers WHERE id = ?");
+        $stmt->execute([$_POST['delete_id']]);
+        
+        $_SESSION['swal_type'] = 'success'; 
+        $_SESSION['swal_msg'] = 'Nomor lomba berhasil dihapus.';
+        
     } catch (Exception $e) {
-        $_SESSION['toast_type'] = 'error'; $_SESSION['toast_message'] = 'Gagal: ' . $e->getMessage();
+        $_SESSION['swal_type'] = 'error'; 
+        $_SESSION['swal_msg'] = 'Gagal menghapus: ' . $e->getMessage();
     }
     header("Location: index.php"); exit;
 }
 
-// --- 2. HANDLE HAPUS ---
-if (isset($_POST['delete_id'])) {
-    $pdo->prepare("DELETE FROM event_categories WHERE id = ? AND user_id = ?")->execute([$_POST['delete_id'], $uid]);
-    $_SESSION['toast_type'] = 'success'; $_SESSION['toast_message'] = 'Nomor lomba telah dihapus.';
-    header("Location: index.php"); exit;
-}
-
-// --- 3. AMBIL DATA PENDUKUNG ---
-// Ambil Tanggal Event dari profil untuk limitasi input
-$eventInfo = $pdo->query("SELECT event_start_date, event_end_date FROM users WHERE id = $uid")->fetch();
-
-// Ambil KU yang tersedia
-$stmtKU = $pdo->prepare("SELECT group_name FROM event_age_groups WHERE event_id = ? ORDER BY min_age DESC");
-$stmtKU->execute([$uid]);
-$availableKU = $stmtKU->fetchAll();
-
-// Ambil Daftar Nomor (Urut berdasarkan Nomor Acara)
-$items = $pdo->prepare("SELECT * FROM event_categories WHERE user_id = ? ORDER BY event_no ASC");
-$items->execute([$uid]);
-$categories = $items->fetchAll();
+// --- AMBIL DATA ---
+$events = $pdo->query("SELECT * FROM event_numbers ORDER BY event_number ASC")->fetchAll();
 
 include __DIR__ . '/../../views/layout/topbar.php'; 
 include __DIR__ . '/../../views/layout/sidebar.php'; 
@@ -58,152 +32,108 @@ include __DIR__ . '/../../views/layout/sidebar.php';
 
 <div class="p-6 sm:ml-64 pt-24 bg-slate-50 min-h-screen font-sans text-slate-800">
     
-    <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-4">
+    <div class="max-w-6xl mx-auto mb-10 flex flex-col md:flex-row justify-between items-end gap-4">
         <div>
-            <h1 class="text-3xl font-black text-slate-800 uppercase tracking-tighter italic">Order of Events</h1>
-            <p class="text-sm text-slate-500 font-bold uppercase tracking-widest">Susunan Nomor Acara Pertandingan</p>
+            <h1 class="text-4xl font-black uppercase tracking-tighter italic text-slate-900 leading-none">Database Nomor</h1>
+            <p class="text-sm text-slate-500 font-bold uppercase tracking-widest mt-2">Daftar Seluruh Event Perlombaan</p>
         </div>
-        <div class="bg-white border-2 border-slate-200 px-6 py-3 rounded-2xl font-black text-xs uppercase tracking-widest text-slate-600 shadow-sm">
-            Total: <?= count($categories) ?> Acara
-        </div>
+        
+        <a href="create.php" class="bg-blue-600 hover:bg-blue-700 text-white px-8 py-4 rounded-[2rem] shadow-xl shadow-blue-200 hover:-translate-y-1 transition transform flex items-center gap-3 group">
+            <div class="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center group-hover:bg-white group-hover:text-blue-600 transition">
+                <span class="font-black text-lg leading-none">+</span>
+            </div>
+            <span class="font-black text-xs uppercase tracking-[0.15em]">Buat Nomor Baru</span>
+        </a>
     </div>
 
-    <div class="grid grid-cols-1 xl:grid-cols-3 gap-10">
+    <div class="max-w-6xl mx-auto bg-white rounded-[2.5rem] shadow-sm border border-slate-200 overflow-hidden pb-10">
         
-        <div class="xl:col-span-1">
-            <div class="bg-white rounded-[2.5rem] shadow-sm border border-slate-200 overflow-hidden sticky top-28">
-                <div class="bg-slate-900 px-8 py-6 text-white">
-                    <h3 class="font-black text-xs uppercase tracking-[0.2em] italic">➕ Buat Acara Baru</h3>
-                </div>
-                
-                <form method="POST" class="p-8 space-y-5">
-                    <input type="hidden" name="add_category" value="1">
-                    
-                    <div class="grid grid-cols-2 gap-4">
-                        <div>
-                            <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">No. Acara</label>
-                            <input type="number" name="event_no" placeholder="Contoh: 1" class="w-full px-5 py-3 border-2 border-slate-50 bg-slate-50 rounded-2xl font-black text-lg focus:bg-white focus:border-blue-500 transition outline-none" required>
-                        </div>
-                        <div>
-                            <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Tanggal</label>
-                            <input type="date" name="event_date" value="<?= $eventInfo['event_start_date'] ?>" class="w-full px-4 py-3 border-2 border-slate-50 bg-slate-50 rounded-2xl font-bold text-xs focus:bg-white focus:border-blue-500 transition outline-none" required>
-                        </div>
-                    </div>
-
-                    <div>
-                        <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Kelompok Umur (KU)</label>
-                        <select name="age_group" class="w-full px-5 py-3 border-2 border-slate-50 bg-slate-50 rounded-2xl font-black text-xs uppercase tracking-widest focus:bg-white focus:border-blue-500 transition outline-none cursor-pointer" required>
-                            <option value="">-- PILIH KU --</option>
-                            <?php foreach($availableKU as $ku): ?>
-                                <option value="<?= htmlspecialchars($ku['group_name']) ?>"><?= htmlspecialchars($ku['group_name']) ?></option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-
-                    <div class="grid grid-cols-2 gap-4">
-                        <div>
-                            <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Gender</label>
-                            <select name="gender" class="w-full px-5 py-3 border-2 border-slate-50 bg-slate-50 rounded-2xl font-black text-[10px] uppercase tracking-widest focus:bg-white focus:border-blue-500 transition outline-none cursor-pointer" required>
-                                <option value="Male">Putra</option>
-                                <option value="Female">Putri</option>
-                                <option value="Mixed">Mixed</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Jarak</label>
-                            <select name="distance" class="w-full px-5 py-3 border-2 border-slate-50 bg-slate-50 rounded-2xl font-black text-xs uppercase focus:bg-white focus:border-blue-500 transition outline-none cursor-pointer" required>
-                                <option value="50">50m</option>
-                                <option value="100">100m</option>
-                                <option value="200">200m</option>
-                                <option value="400">400m</option>
-                                <option value="800">800m</option>
-                                <option value="1500">1500m</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <div>
-                        <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Gaya Renang</label>
-                        <select name="style" class="w-full px-5 py-3 border-2 border-slate-50 bg-slate-50 rounded-2xl font-black text-[10px] uppercase tracking-widest focus:bg-white focus:border-blue-500 transition outline-none cursor-pointer" required>
-                            <option value="Gaya Bebas">Gaya Bebas</option>
-                            <option value="Gaya Dada">Gaya Dada</option>
-                            <option value="Gaya Punggung">Gaya Punggung</option>
-                            <option value="Gaya Kupu-kupu">Gaya Kupu-kupu</option>
-                            <option value="Gaya Ganti">Gaya Ganti</option>
-                            <option value="Estafet Bebas">Estafet Bebas</option>
-                            <option value="Estafet Ganti">Estafet Ganti</option>
-                        </select>
-                    </div>
-
-                    <div>
-                        <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Biaya (Rp)</label>
-                        <input type="number" name="price" class="w-full px-5 py-3 border-2 border-slate-50 bg-slate-50 rounded-2xl font-black text-sm focus:bg-white focus:border-blue-500 transition outline-none" value="125000" required>
-                    </div>
-
-                    <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-black py-4 rounded-3xl shadow-xl shadow-blue-100 transition transform hover:-translate-y-1 uppercase tracking-widest text-xs mt-4">
-                        🚀 Simpan Acara
-                    </button>
-                </form>
+        <div class="p-10 border-b border-slate-100 flex items-center justify-between">
+            <h3 class="font-black uppercase text-sm flex items-center gap-3 text-slate-800 italic">
+                <span class="w-12 h-12 bg-slate-100 rounded-2xl flex items-center justify-center text-xl">📋</span> 
+                List Kategori Lomba (<?= count($events) ?>)
+            </h3>
+            
+            <div class="hidden md:flex gap-3">
+                <span class="flex items-center gap-1 text-[9px] font-bold uppercase text-slate-400"><span class="w-2 h-2 rounded-full bg-blue-500"></span> Putra</span>
+                <span class="flex items-center gap-1 text-[9px] font-bold uppercase text-slate-400"><span class="w-2 h-2 rounded-full bg-pink-500"></span> Putri</span>
+                <span class="flex items-center gap-1 text-[9px] font-bold uppercase text-slate-400"><span class="w-2 h-2 rounded-full bg-purple-500"></span> Mixed</span>
             </div>
         </div>
 
-        <div class="xl:col-span-2">
-            <div class="bg-white rounded-[2.5rem] shadow-sm border border-slate-200 overflow-hidden">
-                <div class="bg-slate-50 px-8 py-5 border-b border-slate-100 flex justify-between items-center">
-                    <h3 class="font-black text-slate-400 text-[10px] uppercase tracking-[0.2em] italic">Event Schedule List</h3>
+        <div class="px-6">
+            <?php if(empty($events)): ?>
+                <div class="flex flex-col items-center justify-center py-20 text-center opacity-50">
+                    <div class="text-6xl mb-4 grayscale">🏊</div>
+                    <h4 class="font-black text-slate-400 uppercase tracking-widest text-lg">Data Kosong</h4>
+                    <p class="text-xs font-bold text-slate-300 mt-1">Belum ada nomor lomba yang dibuat.</p>
                 </div>
-                
-                <div class="overflow-x-auto">
-                    <table class="w-full text-left">
-                        <thead class="bg-slate-50 text-[10px] font-black uppercase text-slate-400 border-b border-slate-100">
-                            <tr>
-                                <th class="px-8 py-4 text-center w-16">#</th>
-                                <th class="px-8 py-4">Tanggal / Sesi</th>
-                                <th class="px-8 py-4">KU</th>
-                                <th class="px-8 py-4">Pertandingan</th>
-                                <th class="px-8 py-4">Gender</th>
-                                <th class="px-8 py-4 text-right">Aksi</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-slate-50">
-                            <?php if(empty($categories)): ?>
-                                <tr><td colspan="6" class="p-20 text-center text-slate-300 font-black uppercase text-xs">Belum ada acara.</td></tr>
-                            <?php else: foreach($categories as $c): ?>
-                                <tr class="hover:bg-blue-50/50 transition">
-                                    <td class="px-8 py-5 text-center font-black text-slate-900 bg-slate-50/50">
-                                        <?= $c['event_no'] ?>
-                                    </td>
-                                    <td class="px-8 py-5">
-                                        <div class="text-[10px] font-black text-slate-700 uppercase">
-                                            <?= ($c['event_date']) ? date('d M Y', strtotime($c['event_date'])) : '-' ?>
-                                        </div>
-                                    </td>
-                                    <td class="px-8 py-5 font-black text-slate-800 text-[11px] italic">
-                                        <?= htmlspecialchars($c['age_group']) ?>
-                                    </td>
-                                    <td class="px-8 py-5">
-                                        <div class="font-black text-slate-900 text-sm uppercase italic tracking-tighter">
-                                            <?= $c['distance'] ?>m <?= htmlspecialchars($c['style']) ?>
-                                        </div>
-                                    </td>
-                                    <td class="px-8 py-5">
-                                        <span class="px-3 py-1 rounded-xl text-[9px] font-black uppercase border <?= $c['gender'] == 'Male' ? 'bg-blue-50 text-blue-600 border-blue-100' : 'bg-pink-50 text-pink-600 border-pink-100' ?>">
-                                            <?= $c['gender'] == 'Male' ? 'Putra' : ($c['gender'] == 'Female' ? 'Putri' : 'Mixed') ?>
-                                        </span>
-                                    </td>
-                                    <td class="px-8 py-5 text-right">
-                                        <form method="POST" onsubmit="return confirm('Hapus acara ini?')">
-                                            <input type="hidden" name="delete_id" value="<?= $c['id'] ?>">
-                                            <button class="w-10 h-10 bg-red-50 text-red-400 hover:bg-red-500 hover:text-white rounded-xl transition flex items-center justify-center mx-auto">✕</button>
-                                        </form>
-                                    </td>
-                                </tr>
-                            <?php endforeach; endif; ?>
-                        </tbody>
-                    </table>
+            <?php else: ?>
+                <div class="space-y-2 mt-4">
+                    <?php foreach($events as $ev): 
+                        // Logic Style Gender
+                        if($ev['jenis_kelamin'] == 'L') {
+                            $bgBadge = 'bg-blue-50 text-blue-600 border-blue-100';
+                            $icon = '👨';
+                            $labelGender = 'PUTRA';
+                        } elseif($ev['jenis_kelamin'] == 'P') {
+                            $bgBadge = 'bg-pink-50 text-pink-600 border-pink-100';
+                            $icon = '👩';
+                            $labelGender = 'PUTRI';
+                        } else {
+                            $bgBadge = 'bg-purple-50 text-purple-600 border-purple-100';
+                            $icon = '👫';
+                            $labelGender = 'MIXED';
+                        }
+                    ?>
+                    
+                    <div class="group flex flex-col md:flex-row items-center p-4 rounded-3xl border border-transparent hover:border-slate-200 hover:bg-slate-50 transition-all duration-300 gap-6">
+                        
+                        <div class="w-20 h-20 bg-slate-100 rounded-[1.5rem] flex flex-col items-center justify-center shrink-0 group-hover:bg-white group-hover:shadow-md transition">
+                            <span class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Event</span>
+                            <span class="text-3xl font-black text-slate-800 italic"><?= $ev['event_number'] ?></span>
+                        </div>
+
+                        <div class="flex-1 text-center md:text-left">
+                            <h4 class="text-lg font-black text-slate-800 uppercase italic tracking-tight mb-1 group-hover:text-blue-600 transition">
+                                <?= htmlspecialchars($ev['event_name']) ?>
+                            </h4>
+                            <div class="flex items-center justify-center md:justify-start gap-2 text-xs font-bold text-slate-400 uppercase tracking-wider">
+                                <span><?= $ev['age_group'] ?></span>
+                                <span>•</span>
+                                <span><?= $ev['distance'] ?> Meter</span>
+                            </div>
+                        </div>
+
+                        <div class="flex flex-col items-center justify-center w-24">
+                            <div class="w-full py-2 rounded-xl border <?= $bgBadge ?> flex flex-col items-center justify-center">
+                                <span class="text-lg leading-none mb-1"><?= $icon ?></span>
+                                <span class="text-[8px] font-black uppercase tracking-widest"><?= $labelGender ?></span>
+                            </div>
+                        </div>
+
+                        <div class="pl-0 md:pl-4 border-l-0 md:border-l border-slate-200">
+                            <form method="POST" onsubmit="return confirm('Yakin ingin menghapus Nomor <?= $ev['event_number'] ?>? Data seeding terkait akan hilang.')">
+                                <input type="hidden" name="delete_id" value="<?= $ev['id'] ?>">
+                                <button type="submit" class="w-12 h-12 rounded-2xl bg-white border border-slate-200 text-slate-300 hover:bg-red-50 hover:border-red-200 hover:text-red-500 flex items-center justify-center transition shadow-sm group/btn" title="Hapus">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 group-hover/btn:scale-110 transition" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                    </svg>
+                                </button>
+                            </form>
+                        </div>
+
+                    </div>
+                    <?php endforeach; ?>
                 </div>
-            </div>
+            <?php endif; ?>
+        </div>
+        
+        <div class="p-6 bg-slate-50 border-t border-slate-100 text-center">
+            <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total <?= count($events) ?> Nomor Lomba Terdaftar</p>
         </div>
 
     </div>
 </div>
+
+<?php include __DIR__ . '/../../views/layout/notification.php'; ?>

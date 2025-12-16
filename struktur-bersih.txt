@@ -3,6 +3,7 @@
 ├── package.json
 ├── postcss.config.js
 ├── public
+│   ├── Archive.zip
 │   ├── assets
 │   ├── change_password.php
 │   ├── events.php
@@ -15,11 +16,11 @@
 │   │   │   ├── hero_1765203416_0.jpg
 │   │   │   ├── hero_1765203427_0.jpg
 │   │   │   ├── slide_1765341732_640.jpg
-│   │   │   ├── slide_1765550442_208.jpg
 │   │   │   └── tix_slide_1765340189_697.jpg
 │   │   ├── logo footer.png
 │   │   ├── logo.png
 │   │   ├── logos
+│   │   │   ├── logo_11_1765851322.png
 │   │   │   └── logo_9_1765373933.png
 │   │   ├── profiles
 │   │   │   ├── profile_1_1765256297.png
@@ -32,6 +33,7 @@
 │   │   └── users
 │   │       ├── user_1_1765336304.png
 │   │       ├── user_10_1765550608.jpeg
+│   │       ├── user_11_1765851349.png
 │   │       ├── user_7_1765343374.png
 │   │       ├── user_8_1765373770.jpeg
 │   │       └── user_9_1765373942.png
@@ -43,6 +45,7 @@
 │   ├── profile_edit.php
 │   ├── register.php
 │   ├── results.php
+│   ├── src
 │   ├── uploads
 │   │   ├── banners
 │   │   ├── clubs
@@ -50,31 +53,70 @@
 │   │   ├── documents
 │   │   │   ├── DOC_Other_1765520549_7.pdf
 │   │   │   └── DOC_StartList_1765520583_7.pdf
+│   │   ├── logos
+│   │   │   ├── config_7_logo_sponsor_1765615814.png
+│   │   │   ├── logo_7_logo_left_1765614615.jpeg
+│   │   │   ├── logo_7_logo_right_1765614700.png
+│   │   │   ├── sp_7_1765616232.png
+│   │   │   └── sp_7_1765616452.png
+│   │   ├── proof_10_1765613598_doc_7_1765347172 (2).pdf
+│   │   ├── proof_10_1765849872_Screenshot 2025-12-15 at 8.50.57 PM.png
+│   │   ├── proof_10_1765850986_Screenshot 2025-12-10 at 8.38.34 PM.png
+│   │   ├── proof_11_1765851123_Screenshot 2025-12-15 at 8.50.57 PM.png
+│   │   ├── proof_8_1765612298_doc_7_1765347172 (3).pdf
+│   │   ├── proof_8_1765849702_Screenshot 2025-12-15 at 8.50.57 PM.png
+│   │   ├── proof_8_1765850690_Screenshot 2025-12-15 at 8.50.57 PM.png
+│   │   ├── proof_9_1765685000_full book.pdf
+│   │   ├── proof_9_1765849754_Screenshot 2025-12-12 at 10.35.07 AM.png
+│   │   ├── proof_9_1765850859_Screenshot 2025-12-10 at 8.38.34 PM.png
+│   │   ├── req_10_1765613598_doc_7_1765347172 (3).pdf
+│   │   ├── req_10_1765849872_Screenshot 2025-12-14 at 12.25.14 PM.png
+│   │   ├── req_10_1765850986_Screenshot 2025-12-13 at 12.24.12 PM.png
+│   │   ├── req_11_1765851123_Screenshot 2025-12-10 at 8.38.34 PM.png
+│   │   ├── req_8_1765612298_doc_7_1765347172 (2).pdf
+│   │   ├── req_8_1765849702_Screenshot 2025-12-12 at 10.35.07 AM.png
+│   │   ├── req_8_1765850690_Screenshot 2025-12-13 at 12.24.12 PM.png
+│   │   ├── req_9_1765685000_full book.pdf
+│   │   ├── req_9_1765849754_Screenshot 2025-12-12 at 10.35.07 AM.png
+│   │   ├── req_9_1765850859_Screenshot 2025-12-13 at 12.24.12 PM.png
 │   │   ├── results
 │   │   │   └── doc_7_1765347172.pdf
 │   │   └── swimmers
 │   └── view_result.php
+├── README.md
 ├── src
 │   ├── admin
 │   │   ├── dashboard.php
 │   │   ├── entries
-│   │   │   └── index.php
+│   │   │   ├── index.php
+│   │   │   ├── view_club_matrix.php
+│   │   │   └── view_matrix.php
 │   │   ├── keuangan
 │   │   │   └── index.php
 │   │   ├── preview_buku_acara.php
 │   │   ├── preview_buku_hasil.php
 │   │   ├── results
+│   │   │   ├── certificates.php
 │   │   │   ├── index.php
 │   │   │   ├── logic.php
+│   │   │   ├── medal_tally.php
+│   │   │   ├── print_cerificates.php
+│   │   │   ├── print_result.php
 │   │   │   └── print.php
 │   │   ├── seeding
+│   │   │   ├── final_logic.php
+│   │   │   ├── final.php
 │   │   │   ├── index.php
 │   │   │   ├── logic.php
-│   │   │   └── print.php
+│   │   │   ├── print_final.php
+│   │   │   ├── print_full_book.php
+│   │   │   ├── print.php
+│   │   │   └── view_startlist.php
 │   │   ├── settings
 │   │   │   └── event_profile.php
 │   │   ├── upload.php
 │   │   └── verifikasi.php
+│   ├── Archive.zip
 │   ├── common
 │   │   └── profile.php
 │   ├── config
@@ -151,6 +193,7 @@
 │       │   └── track_record.php
 │       ├── dashboard.php
 │       ├── kompetisi
+│       │   ├── checkout.php
 │       │   ├── detail.php
 │       │   ├── edit_entry.php
 │       │   ├── explore.php
@@ -160,14 +203,16 @@
 │       │   └── registration.php
 │       ├── pembayaran.php
 │       └── pengumuman.php
+├── src.zip
 ├── storage
 │   └── login_debug.log
 ├── struktur-bersih.txt
 ├── struktur.txt
 ├── tailwind.config.js
+├── user
 └── views
     └── layout
         ├── sidebar.php
         └── topbar.php
 
-46 directories, 125 files
+49 directories, 167 files

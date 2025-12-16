@@ -1,159 +1,149 @@
 <?php
 session_start();
-require_once __DIR__ . '/../../config/database.php';
+require_once __DIR__ . '/../../../src/config/database.php';
 
+// Cek Admin
 if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
     header("Location: ../../../public/login.php"); exit;
 }
 
-$uid = $_SESSION['user_id'];
-$search = $_GET['q'] ?? '';
-
-// --- 1. AMBIL DATA (REVISI: MENGHITUNG SEMUA STATUS) ---
-// Perbaikan: Menghapus "AND ee.status = 'Approved'" agar semua data yang masuk terbaca
-$sql = "SELECT ec.*, 
-        (SELECT COUNT(*) FROM race_heats rh WHERE rh.category_id = ec.id) as total_heats,
-        (SELECT COUNT(*) FROM event_entries ee WHERE ee.category_id = ec.id) as total_entries
-        FROM event_categories ec 
-        WHERE ec.user_id = ?";
-
-$params = [$uid];
-
-// Logika Pencarian
-if ($search) {
-    $sql .= " AND (ec.event_no LIKE ? OR ec.style LIKE ? OR ec.age_group LIKE ?)";
-    $params[] = "%$search%";
-    $params[] = "%$search%";
-    $params[] = "%$search%";
+// AMBIL DATA NOMOR LOMBA + JUMLAH ATLET VALID
+// Kita menggunakan Subquery untuk menghitung jumlah peserta yang valid (klub sudah verified)
+try {
+    $sql = "SELECT en.*, 
+            (
+                SELECT COUNT(*) 
+                FROM event_entries ee 
+                JOIN users u ON ee.user_id = u.id 
+                WHERE ee.event_id = en.id 
+                AND u.account_status = 'verified'
+            ) as total_athletes
+            FROM event_numbers en 
+            ORDER BY en.event_number ASC";
+            
+    $events = $pdo->query($sql)->fetchAll();
+} catch (PDOException $e) {
+    $events = [];
+    $error_msg = "Tabel belum siap: " . $e->getMessage();
 }
-
-$sql .= " ORDER BY ec.event_no ASC";
-$stmt = $pdo->prepare($sql); 
-$stmt->execute($params);
-$events = $stmt->fetchAll();
 
 include __DIR__ . '/../../../views/layout/topbar.php'; 
 include __DIR__ . '/../../../views/layout/sidebar.php'; 
 ?>
 
 <div class="p-6 sm:ml-64 pt-24 bg-slate-50 min-h-screen font-sans text-slate-800">
-    
-    <div class="mb-10 flex flex-col xl:flex-row justify-between items-center gap-6">
+
+    <div class="max-w-7xl mx-auto mb-10 flex flex-col lg:flex-row justify-between items-end gap-6">
         <div>
-            <h1 class="text-3xl font-black uppercase italic text-slate-900 leading-none tracking-tighter">Start List Manager</h1>
-            <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-2">Penyusunan Lintasan & Manajemen Acara</p>
+            <h1 class="text-4xl font-black uppercase tracking-tighter italic text-slate-900 leading-none">Seeding & Start List</h1>
+            <p class="text-sm text-slate-500 font-bold uppercase tracking-widest mt-2">Penyusunan Lintasan (Hanya Peserta Valid)</p>
         </div>
-        <div class="flex flex-wrap gap-3">
-            <a href="print_full_book.php" target="_blank" class="bg-blue-600 text-white font-black px-10 py-4 rounded-2xl text-[10px] uppercase shadow-xl shadow-blue-100 hover:bg-blue-700 transition flex items-center gap-3">
-                <span>📚</span> Cetak Buku Acara Lengkap
+        
+        <?php 
+            $total_all_entries = array_sum(array_column($events, 'total_athletes'));
+            $globalDisabled = $total_all_entries == 0 ? 'opacity-50 cursor-not-allowed grayscale' : 'hover:-translate-y-1 shadow-xl shadow-blue-200 hover:bg-blue-700';
+            $globalLink = $total_all_entries == 0 ? '#' : 'print_all.php';
+        ?>
+        <div class="flex gap-3">
+            <a href="<?= $globalLink ?>" class="bg-blue-600 text-white pl-6 pr-8 py-4 rounded-[2rem] transition flex items-center gap-4 group <?= $globalDisabled ?>">
+                <div class="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center group-hover:bg-white group-hover:text-blue-600 transition">
+                    📄
+                </div>
+                <div class="text-left">
+                    <span class="block text-[9px] font-bold text-blue-200 uppercase tracking-widest">Download Full</span>
+                    <span class="block font-black text-sm uppercase tracking-wider">Cetak Buku Acara</span>
+                </div>
             </a>
         </div>
     </div>
 
-    <div class="mb-10">
-        <form method="GET" action="" class="relative group max-w-2xl">
-            <div class="absolute inset-y-0 left-0 pl-6 flex items-center pointer-events-none">
-                <span class="text-xl text-slate-400 group-focus-within:text-blue-500 transition-colors">🔍</span>
-            </div>
-            <input type="text" name="q" value="<?= htmlspecialchars($search) ?>" 
-                   placeholder="Cari Nomor Acara (misal: 101), Gaya Renang, atau Kelompok Umur..." 
-                   class="w-full pl-16 pr-6 py-5 bg-white border border-slate-200 rounded-[2rem] font-bold text-sm shadow-sm outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all">
-            
-            <?php if($search): ?>
-                <a href="index.php" class="absolute inset-y-0 right-6 flex items-center text-[10px] font-black text-red-500 uppercase hover:text-red-700 transition">Reset</a>
-            <?php endif; ?>
-        </form>
-    </div>
-
-    <div class="bg-white rounded-[2.5rem] border border-slate-200 overflow-hidden shadow-sm">
-        <div class="overflow-x-auto">
-            <table class="w-full text-left text-sm">
-                <thead class="bg-slate-900 text-white text-[10px] font-black uppercase tracking-[0.2em]">
-                    <tr>
-                        <th class="px-8 py-6 text-center w-24">#</th>
-                        <th class="px-8 py-6">Event Description</th>
-                        <th class="px-8 py-6 text-center">Entries (All)</th>
-                        <th class="px-8 py-6 text-center">Status</th>
-                        <th class="px-8 py-6 text-right">Action</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-slate-100">
-                    <?php if(empty($events)): ?>
-                        <tr>
-                            <td colspan="5" class="px-8 py-20 text-center">
-                                <p class="text-slate-400 font-bold italic">Tidak ada acara yang ditemukan.</p>
-                            </td>
-                        </tr>
-                    <?php else: foreach($events as $e): 
-                        $hasHeats = $e['total_heats'] > 0;
-                        $hasEntries = $e['total_entries'] > 0;
-                    ?>
-                        <tr class="hover:bg-slate-50 transition">
-                            <td class="px-8 py-6 text-center font-black text-2xl text-slate-300 italic">#<?= $e['event_no'] ?></td>
-                            
-                            <td class="px-8 py-6">
-                                <div class="font-black text-slate-800 uppercase italic tracking-tighter text-lg">
-                                    <?= $e['distance'] ?>m <?= $e['style'] ?> (<?= $e['gender'] == 'Male' ? 'Putra' : 'Putri' ?>)
-                                </div>
-                                <div class="text-[10px] font-bold text-slate-400 mt-1 uppercase tracking-widest">
-                                    <?= $e['age_group'] ?>
-                                </div>
-                            </td>
-                            
-                            <td class="px-8 py-6 text-center">
-                                <div class="flex flex-col items-center">
-                                    <span class="font-black text-xl <?= $hasEntries ? 'text-blue-600' : 'text-slate-200' ?>">
-                                        <?= $e['total_entries'] ?>
-                                    </span>
-                                    <span class="text-[9px] font-bold uppercase text-slate-400">Swimmers</span>
-                                </div>
-                            </td>
-
-                            <td class="px-8 py-6 text-center">
-                                <?php if (!$hasEntries): ?>
-                                    <span class="px-4 py-2 rounded-full text-[9px] font-black uppercase tracking-tighter bg-slate-100 text-slate-400 border border-slate-200">
-                                        ⛔ Kosong
-                                    </span>
-                                <?php elseif ($hasHeats): ?>
-                                    <span class="px-4 py-2 rounded-full text-[9px] font-black uppercase tracking-tighter bg-emerald-100 text-emerald-700 border border-emerald-200">
-                                        ✅ Siap Lomba
-                                    </span>
-                                <?php else: ?>
-                                    <span class="px-4 py-2 rounded-full text-[9px] font-black uppercase tracking-tighter bg-blue-100 text-blue-700 border border-blue-200 animate-pulse">
-                                        ⚠️ Butuh Seeding
-                                    </span>
-                                <?php endif; ?>
-                            </td>
-
-                            <td class="px-8 py-6 text-right">
-                                <div class="flex justify-end gap-2">
-                                    <?php if ($hasEntries): ?>
-                                        <form action="logic.php" method="POST">
-                                            <input type="hidden" name="category_id" value="<?= $e['id'] ?>">
-                                            <button name="generate_startlist" class="bg-slate-900 text-white font-black px-6 py-3 rounded-2xl text-[9px] uppercase tracking-widest hover:bg-blue-600 transition shadow-lg shadow-slate-200">
-                                                ⚡ <?= $hasHeats ? 'RE-SEED' : 'SEED' ?>
-                                            </button>
-                                        </form>
-                                    <?php else: ?>
-                                        <button disabled class="bg-slate-50 text-slate-300 font-black px-6 py-3 rounded-2xl text-[9px] uppercase tracking-widest cursor-not-allowed">
-                                            Empty
-                                        </button>
-                                    <?php endif; ?>
-
-                                    <?php if($hasHeats): ?>
-                                        <a href="view_startlist.php?category_id=<?= $e['id'] ?>" class="bg-white border-2 border-slate-100 text-slate-400 font-black px-6 py-3 rounded-2xl text-[9px] uppercase tracking-widest hover:bg-slate-900 hover:text-white transition">👁️ View</a>
-                                    <?php endif; ?>
-                                </div>
-                            </td>
-                        </tr>
-                    <?php endforeach; endif; ?>
-                </tbody>
-            </table>
+    <?php if(isset($error_msg)): ?>
+        <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">
+            <strong class="font-bold">Error:</strong> <?= $error_msg ?>
         </div>
-    </div>
-    
-    <div class="mt-8 text-center text-[10px] text-slate-400">
-        Jika jumlah peserta muncul tapi status belum Approved, Seeding tetap bisa dilakukan dengan kode ini.
-    </div>
+    <?php endif; ?>
 
+    <div class="max-w-7xl mx-auto space-y-4 pb-20">
+        
+        <?php if(empty($events)): ?>
+            <div class="bg-white rounded-[2.5rem] p-10 text-center border border-slate-200">
+                <p class="font-bold text-slate-400">Belum ada nomor lomba yang dibuat.</p>
+            </div>
+        <?php else: ?>
+
+            <?php foreach($events as $ev): 
+                // Data Logic
+                $count = $ev['total_athletes'];
+                $isReady = $count > 0; // Siap jika ada minimal 1 atlet valid
+
+                // Styles
+                $cardOpacity = $isReady ? 'opacity-100' : 'opacity-70';
+                $cardBorder = $isReady ? 'border-slate-200 hover:shadow-lg' : 'border-slate-100 bg-slate-50';
+                
+                // Gender Styles
+                if($ev['jenis_kelamin'] == 'L') { $bg = 'bg-blue-50'; $txt = 'text-blue-600'; $icon='👨'; }
+                elseif($ev['jenis_kelamin'] == 'P') { $bg = 'bg-pink-50'; $txt = 'text-pink-600'; $icon='👩'; }
+                else { $bg = 'bg-purple-50'; $txt = 'text-purple-600'; $icon='👫'; }
+
+                // Status Badge Logic
+                if ($isReady) {
+                    $badgeClass = "bg-emerald-50 text-emerald-600 border-emerald-100";
+                    $badgeText = "✅ SIAP SEEDING ($count ATLET)";
+                } else {
+                    $badgeClass = "bg-slate-100 text-slate-400 border-slate-200";
+                    $badgeText = "⏳ MENUNGGU VALIDASI";
+                }
+            ?>
+
+            <div class="group relative rounded-[2rem] p-5 border transition flex flex-col md:flex-row items-center gap-6 <?= $cardOpacity ?> <?= $cardBorder ?>">
+                
+                <div class="shrink-0 w-20 h-20 rounded-3xl bg-slate-900 text-white flex flex-col items-center justify-center shadow-lg shadow-slate-200">
+                    <span class="text-[9px] font-bold text-slate-400 uppercase">Event</span>
+                    <span class="text-3xl font-black italic"><?= $ev['event_number'] ?></span>
+                </div>
+
+                <div class="flex-1 text-center md:text-left">
+                    <div class="inline-flex items-center gap-2 mb-1">
+                        <span class="px-2 py-1 rounded-md <?= $bg ?> <?= $txt ?> text-[9px] font-black uppercase tracking-widest border border-slate-100">
+                            <?= $icon ?> <?= $ev['jenis_kelamin'] == 'L' ? 'PUTRA' : ($ev['jenis_kelamin'] == 'P' ? 'PUTRI' : 'MIXED') ?>
+                        </span>
+                        <span class="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded-md">
+                            <?= $ev['age_group'] ?>
+                        </span>
+                    </div>
+                    <h3 class="text-xl font-black text-slate-800 uppercase italic tracking-tight">
+                        <?= htmlspecialchars($ev['event_name']) ?>
+                    </h3>
+                </div>
+
+                <div class="hidden md:block text-right px-4 border-r border-slate-100 min-w-[180px]">
+                    <span class="block text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Status Data</span>
+                    <span class="inline-block text-[10px] font-black px-3 py-1 rounded-full border <?= $badgeClass ?>">
+                        <?= $badgeText ?>
+                    </span>
+                </div>
+
+                <div class="flex gap-2 w-full md:w-auto">
+                    <?php if($isReady): ?>
+                        <a href="view_startlist.php?event_id=<?= $ev['id'] ?>" class="flex-1 md:flex-none px-6 py-3 bg-white hover:bg-slate-50 text-slate-600 rounded-xl font-bold text-xs uppercase tracking-wider border border-slate-200 transition shadow-sm" title="Lihat Start List">
+                            👁️ View
+                        </a>
+                        <a href="process_seeding.php?event_id=<?= $ev['id'] ?>" class="flex-1 md:flex-none px-6 py-3 bg-slate-900 hover:bg-blue-600 text-white rounded-xl font-bold text-xs uppercase tracking-wider shadow-lg hover:shadow-blue-200 transition" title="Lakukan Seeding">
+                            ⚙️ Seed
+                        </a>
+                    <?php else: ?>
+                        <button disabled class="flex-1 md:flex-none px-6 py-3 bg-slate-100 text-slate-400 rounded-xl font-bold text-xs uppercase tracking-wider border border-slate-200 cursor-not-allowed">
+                            👁️ View
+                        </button>
+                        <button disabled class="flex-1 md:flex-none px-6 py-3 bg-slate-100 text-slate-400 rounded-xl font-bold text-xs uppercase tracking-wider border border-slate-200 cursor-not-allowed">
+                            🚫 Empty
+                        </button>
+                    <?php endif; ?>
+                </div>
+
+            </div>
+            <?php endforeach; ?>
+
+        <?php endif; ?>
+    </div>
 </div>

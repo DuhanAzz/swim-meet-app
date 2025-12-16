@@ -1,129 +1,150 @@
 <?php
-session_start();
-require_once __DIR__ . '/../../src/config/database.php';
-
-if (!isset($_SESSION['role']) || ($_SESSION['role'] !== 'admin' && $_SESSION['role'] !== 'master')) die("Akses Ditolak.");
+// src/results/print_result.php
+require_once __DIR__ . '/../config/database.php';
 
 $event_id = $_GET['event_id'] ?? 0;
 
-// Data Event
+// 1. AMBIL INFO EVENT
 $stmt = $pdo->prepare("SELECT * FROM events WHERE id = ?");
 $stmt->execute([$event_id]);
 $event = $stmt->fetch();
-if (!$event) die("Event tidak ditemukan");
 
-// Data Hasil (Ranking) - Diurutkan berdasarkan Rank
-$stmt = $pdo->prepare("SELECT 
-    he.lane_number, he.final_time, he.rank, he.status,
-    s.nama_atlet, c.nama_klub 
+if (!$event) die("Event tidak ditemukan.");
+
+// 2. AMBIL HASIL - YANG SAH (Ranked)
+// Kita urutkan berdasarkan Rank yang sudah dihitung sebelumnya
+$stmtOk = $pdo->prepare("
+    SELECT he.*, s.nama_atlet, c.nama_klub 
     FROM heat_entries he
-    JOIN heats h ON he.heat_id = h.id
     JOIN swimmers s ON he.swimmer_id = s.id
-    JOIN clubs c ON s.club_id = c.id
-    WHERE h.event_id = ?
-    ORDER BY 
-        CASE WHEN he.rank IS NULL THEN 1 ELSE 0 END, -- Yang ada rank di atas
-        he.rank ASC, 
-        he.final_time ASC");
-$stmt->execute([$event_id]);
-$results = $stmt->fetchAll();
+    LEFT JOIN clubs c ON s.club_id = c.id
+    JOIN heats h ON he.heat_id = h.id
+    WHERE h.event_id = ? AND he.status = 'OK' AND he.rank IS NOT NULL
+    ORDER BY he.rank ASC
+");
+$stmtOk->execute([$event_id]);
+$resultsOK = $stmtOk->fetchAll();
+
+// 3. AMBIL HASIL - YANG GAGAL (DQ, DNS, DNF)
+$stmtFail = $pdo->prepare("
+    SELECT he.*, s.nama_atlet, c.nama_klub 
+    FROM heat_entries he
+    JOIN swimmers s ON he.swimmer_id = s.id
+    LEFT JOIN clubs c ON s.club_id = c.id
+    JOIN heats h ON he.heat_id = h.id
+    WHERE h.event_id = ? AND he.status != 'OK'
+    ORDER BY he.status ASC
+");
+$stmtFail->execute([$event_id]);
+$resultsFail = $stmtFail->fetchAll();
+
+// Format Tanggal Indonesia
+$tanggal = date('d F Y', strtotime($event['jadwal'] ?? date('Y-m-d')));
 ?>
 <!DOCTYPE html>
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <title>Official Result - <?= htmlspecialchars($event['nama_event']) ?></title>
+    <title>Hasil - <?= htmlspecialchars($event['nama_event']) ?></title>
+    <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body { font-family: 'Arial', sans-serif; font-size: 12px; color: #000; }
-        .header { text-align: center; margin-bottom: 25px; border-bottom: 3px double #000; padding-bottom: 10px; }
-        .header h1 { margin: 0; font-size: 20px; text-transform: uppercase; letter-spacing: 1px; }
-        .header h2 { margin: 5px 0; font-size: 14px; font-weight: normal; }
-        .info { display: flex; justify-content: space-between; margin-bottom: 15px; font-weight: bold; font-size: 11px; }
+        @import url('https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;700&family=Inter:wght@400;700;900&display=swap');
+        body { font-family: 'Inter', sans-serif; background: #fff; color: #000; }
+        .font-mono { font-family: 'Roboto Mono', monospace; }
         
-        table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-        th, td { border-bottom: 1px solid #ccc; padding: 6px 4px; text-align: left; }
-        th { border-top: 2px solid #000; border-bottom: 2px solid #000; font-weight: bold; text-transform: uppercase; font-size: 11px; }
-        
-        .rank-col { font-weight: bold; font-size: 13px; text-align: center; width: 40px; }
-        .time-col { font-family: 'Courier New', monospace; font-weight: bold; text-align: right; width: 100px; }
-        .status-dq { color: red; font-style: italic; }
-        
-        /* Footer Tanda Tangan */
-        .signature { margin-top: 50px; display: flex; justify-content: space-between; page-break-inside: avoid; }
-        .sig-box { text-align: center; width: 200px; }
-        .sig-line { margin-top: 60px; border-top: 1px solid #000; }
-
+        /* CSS KHUSUS PRINT A4 */
         @media print {
-            @page { margin: 1.5cm; size: A4; }
-            .no-print { display: none; }
-            body { background: #fff; }
+            @page { size: A4; margin: 1cm; }
+            body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            .no-print { display: none !important; }
+            table { font-size: 12px; width: 100%; border-collapse: collapse; }
+            th, td { border: 1px solid #000; padding: 4px 8px; }
+            th { background-color: #f0f0f0 !important; }
+            .page-break { page-break-before: always; }
         }
     </style>
 </head>
-<body onload="window.print()">
+<body class="p-8 max-w-[21cm] mx-auto">
 
-    <div class="no-print" style="margin-bottom: 20px; text-align: center; background: #f0f0f0; padding: 10px;">
-        <button onclick="window.history.back()" style="padding: 8px 15px; cursor: pointer;">&larr; Kembali</button>
-        <button onclick="window.print()" style="padding: 8px 15px; cursor: pointer; font-weight: bold; background: #000; color: #fff; border: none;">🖨️ CETAK HASIL</button>
+    <div class="fixed top-5 right-5 no-print flex gap-2">
+        <a href="input_result.php?event_id=<?= $event_id ?>" class="bg-gray-500 text-white px-4 py-2 rounded font-bold hover:bg-gray-600">Kembali</a>
+        <button onclick="window.print()" class="bg-blue-600 text-white px-4 py-2 rounded font-bold hover:bg-blue-700 shadow-lg">🖨️ Cetak Hasil</button>
     </div>
 
-    <div class="header">
-        <h1>HASIL RESMI (OFFICIAL RESULT)</h1>
-        <h2>SET SYSTEM CHAMPIONSHIP</h2>
+    <div class="text-center border-b-2 border-black pb-4 mb-6">
+        <h1 class="text-2xl font-black uppercase tracking-widest"><?= htmlspecialchars($event['nama_event']) ?></h1>
+        <p class="text-sm font-bold uppercase mt-1">Official Result</p>
     </div>
 
-    <div class="info">
-        <span>NOMOR: <?= htmlspecialchars($event['nama_event']) ?></span>
-        <span>KATEGORI: <?= $event['jenis_kelamin']=='L'?'PUTRA':'PUTRI' ?> (<?= $event['batas_umur_bawah'] ?>-<?= $event['batas_umur_atas'] ?> TH)</span>
-        <span>JARAK: <?= $event['jarak'] ?>M <?= $event['gaya'] ?></span>
+    <div class="flex justify-between items-end mb-4 text-sm font-bold border p-2 bg-gray-50">
+        <div>
+            <div class="text-gray-500 text-xs uppercase">Nomor Lomba</div>
+            <div class="text-lg"><?= $event['jarak'] ?>m <?= $event['gaya'] ?></div>
+        </div>
+        <div class="text-right">
+            <div class="text-gray-500 text-xs uppercase">Tanggal</div>
+            <div><?= $tanggal ?></div>
+        </div>
     </div>
 
-    <table>
+    <table class="w-full text-left border border-black mb-6">
         <thead>
-            <tr>
-                <th class="rank-col">Rank</th>
-                <th>Nama Atlet</th>
-                <th>Klub / Kontingen</th>
-                <th class="text-center" width="50">Ln</th>
-                <th class="time-col">Waktu</th>
+            <tr class="bg-gray-200 uppercase text-xs tracking-wider">
+                <th class="border border-black px-3 py-2 text-center w-12">Rank</th>
+                <th class="border border-black px-3 py-2">Nama Atlet</th>
+                <th class="border border-black px-3 py-2">Klub / Sekolah</th>
+                <th class="border border-black px-3 py-2 text-right w-32">Waktu</th>
             </tr>
         </thead>
         <tbody>
-            <?php foreach($results as $r): ?>
-            <tr>
-                <td class="rank-col">
-                    <?php 
-                        if ($r['status'] !== 'OK') echo '-';
-                        elseif ($r['rank']) echo $r['rank'];
-                        else echo '';
-                    ?>
-                </td>
-                <td><?= htmlspecialchars($r['nama_atlet']) ?></td>
-                <td><?= htmlspecialchars($r['nama_klub']) ?></td>
-                <td style="text-align: center; font-size: 10px; color: #666;"><?= $r['lane_number'] ?></td>
-                <td class="time-col">
-                    <?php 
-                        if ($r['status'] == 'OK') echo $r['final_time'];
-                        else echo "<span class='status-dq'>".$r['status']."</span>";
-                    ?>
-                </td>
-            </tr>
-            <?php endforeach; ?>
+            <?php if(empty($resultsOK)): ?>
+                <tr><td colspan="4" class="text-center py-4 italic">Belum ada hasil sah.</td></tr>
+            <?php else: ?>
+                <?php foreach($resultsOK as $row): ?>
+                <tr>
+                    <td class="border border-black px-3 py-1 text-center font-bold"><?= $row['rank'] ?></td>
+                    <td class="border border-black px-3 py-1 font-bold"><?= htmlspecialchars($row['nama_atlet']) ?></td>
+                    <td class="border border-black px-3 py-1 text-sm"><?= htmlspecialchars($row['nama_klub'] ?? '-') ?></td>
+                    <td class="border border-black px-3 py-1 text-right font-mono font-bold"><?= $row['final_time'] ?></td>
+                </tr>
+                <?php endforeach; ?>
+            <?php endif; ?>
         </tbody>
     </table>
 
-    <div style="font-size: 10px; margin-top: 5px;">
-        Total Peserta: <?= count($results) ?> | Dicetak: <?= date('d/m/Y H:i') ?>
-    </div>
+    <?php if(!empty($resultsFail)): ?>
+        <h3 class="text-sm font-bold uppercase mb-2 mt-6 border-b border-black inline-block">Tidak Sah / Absen</h3>
+        <table class="w-full text-left border border-black text-gray-600">
+             <thead>
+                <tr class="bg-gray-100 uppercase text-xs">
+                    <th class="border border-black px-3 py-2 w-12 text-center">STS</th>
+                    <th class="border border-black px-3 py-2">Nama Atlet</th>
+                    <th class="border border-black px-3 py-2">Klub</th>
+                    <th class="border border-black px-3 py-2 text-right w-32">Waktu</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach($resultsFail as $row): ?>
+                <tr>
+                    <td class="border border-black px-3 py-1 text-center font-bold text-red-600"><?= $row['status'] ?></td>
+                    <td class="border border-black px-3 py-1 italic"><?= htmlspecialchars($row['nama_atlet']) ?></td>
+                    <td class="border border-black px-3 py-1 text-sm italic"><?= htmlspecialchars($row['nama_klub'] ?? '-') ?></td>
+                    <td class="border border-black px-3 py-1 text-right font-mono text-sm">-</td>
+                </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+    <?php endif; ?>
 
-    <div class="signature">
-        <div class="sig-box">
-            <div>Ketua Perlombaan</div>
-            <div class="sig-line">Nama & Tanda Tangan</div>
+    <div class="mt-12 grid grid-cols-2 gap-20 page-break-inside-avoid">
+        <div class="text-center">
+            <p class="text-xs uppercase font-bold mb-16">Mengetahui,<br>Referee (Wasit Utama)</p>
+            <div class="border-b border-black w-2/3 mx-auto"></div>
         </div>
-        <div class="sig-box">
-            <div>Wasit Utama (Referee)</div>
-            <div class="sig-line">Nama & Tanda Tangan</div>
+        <div class="text-center">
+            <p class="text-xs uppercase font-bold mb-16">Dicetak Oleh,<br>Chief Recorder</p>
+            <div class="border-b border-black w-2/3 mx-auto"></div>
+            <p class="text-[10px] mt-1 text-gray-500">Waktu Cetak: <?= date('d/m/Y H:i') ?></p>
         </div>
     </div>
 

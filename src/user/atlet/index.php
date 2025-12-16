@@ -2,6 +2,7 @@
 session_start();
 require_once __DIR__ . '/../../config/database.php';
 
+// Cek User Login
 if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'user') {
     header("Location: ../../../public/login.php"); exit;
 }
@@ -15,9 +16,19 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     if (isset($_POST['add_athlete'])) {
         try {
             $sql = "INSERT INTO swimmers (user_id, nama_atlet, asal_sekolah, jenis_kelamin, tanggal_lahir) VALUES (?, ?, ?, ?, ?)";
-            $pdo->prepare($sql)->execute([$uid, strtoupper($_POST['nama_atlet']), strtoupper($_POST['asal_sekolah']), $_POST['jenis_kelamin'], $_POST['tanggal_lahir']]);
-            $_SESSION['toast_type'] = 'success'; $_SESSION['toast_message'] = 'Atlet berhasil ditambahkan!';
-        } catch (Exception $e) { $_SESSION['toast_type'] = 'error'; $_SESSION['toast_message'] = $e->getMessage(); }
+            $pdo->prepare($sql)->execute([
+                $uid, 
+                strtoupper($_POST['nama_atlet']), 
+                strtoupper($_POST['asal_sekolah']), 
+                $_POST['jenis_kelamin'], 
+                $_POST['tanggal_lahir']
+            ]);
+            $_SESSION['toast_type'] = 'success'; 
+            $_SESSION['toast_message'] = 'Atlet berhasil ditambahkan!';
+        } catch (Exception $e) { 
+            $_SESSION['toast_type'] = 'error'; 
+            $_SESSION['toast_message'] = 'Gagal: ' . $e->getMessage(); 
+        }
         header("Location: index.php"); exit;
     }
 
@@ -25,16 +36,33 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     if (isset($_POST['edit_athlete'])) {
         try {
             $sql = "UPDATE swimmers SET nama_atlet=?, asal_sekolah=?, jenis_kelamin=?, tanggal_lahir=? WHERE id=? AND user_id=?";
-            $pdo->prepare($sql)->execute([strtoupper($_POST['nama_atlet']), strtoupper($_POST['asal_sekolah']), $_POST['jenis_kelamin'], $_POST['tanggal_lahir'], $_POST['id_atlet'], $uid]);
-            $_SESSION['toast_type'] = 'success'; $_SESSION['toast_message'] = 'Data atlet diperbarui!';
-        } catch (Exception $e) { $_SESSION['toast_type'] = 'error'; $_SESSION['toast_message'] = $e->getMessage(); }
+            $pdo->prepare($sql)->execute([
+                strtoupper($_POST['nama_atlet']), 
+                strtoupper($_POST['asal_sekolah']), 
+                $_POST['jenis_kelamin'], 
+                $_POST['tanggal_lahir'], 
+                $_POST['id_atlet'], 
+                $uid
+            ]);
+            $_SESSION['toast_type'] = 'success'; 
+            $_SESSION['toast_message'] = 'Data atlet diperbarui!';
+        } catch (Exception $e) { 
+            $_SESSION['toast_type'] = 'error'; 
+            $_SESSION['toast_message'] = 'Gagal: ' . $e->getMessage(); 
+        }
         header("Location: index.php"); exit;
     }
 
     // 3. Hapus Atlet
     if (isset($_POST['delete_id'])) {
-        $pdo->prepare("DELETE FROM swimmers WHERE id = ? AND user_id = ?")->execute([$_POST['delete_id'], $uid]);
-        $_SESSION['toast_type'] = 'success'; $_SESSION['toast_message'] = 'Atlet dihapus.';
+        try {
+            $pdo->prepare("DELETE FROM swimmers WHERE id = ? AND user_id = ?")->execute([$_POST['delete_id'], $uid]);
+            $_SESSION['toast_type'] = 'success'; 
+            $_SESSION['toast_message'] = 'Data atlet dihapus.';
+        } catch (Exception $e) {
+            $_SESSION['toast_type'] = 'error'; 
+            $_SESSION['toast_message'] = 'Gagal menghapus data.';
+        }
         header("Location: index.php"); exit;
     }
 
@@ -61,7 +89,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $_SESSION['toast_type'] = 'success';
         } catch (Exception $e) { 
             $_SESSION['toast_type'] = 'error'; 
-            $_SESSION['toast_message'] = $e->getMessage(); 
+            $_SESSION['toast_message'] = 'Error: ' . $e->getMessage(); 
         }
         header("Location: index.php"); exit;
     }
@@ -69,7 +97,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     // 5. Hapus Record
     if (isset($_POST['delete_record_id'])) {
         $pdo->prepare("DELETE FROM athlete_records WHERE id = ?")->execute([$_POST['delete_record_id']]);
-        $_SESSION['toast_type'] = 'success'; $_SESSION['toast_message'] = 'Record dihapus.';
+        $_SESSION['toast_type'] = 'success'; 
+        $_SESSION['toast_message'] = 'Record dihapus.';
         header("Location: index.php"); exit;
     }
 }
@@ -79,6 +108,7 @@ $stmt = $pdo->prepare("SELECT * FROM swimmers WHERE user_id = ? ORDER BY nama_at
 $stmt->execute([$uid]);
 $swimmers = $stmt->fetchAll();
 
+// Ambil Records untuk semua atlet user ini (di-group by swimmer_id untuk efisiensi)
 $stmtRec = $pdo->prepare("
     SELECT ar.swimmer_id, ar.* FROM athlete_records ar 
     JOIN swimmers s ON ar.swimmer_id = s.id 
@@ -91,6 +121,16 @@ $allRecords = $stmtRec->fetchAll(PDO::FETCH_GROUP);
 include __DIR__ . '/../../../views/layout/topbar.php'; 
 include __DIR__ . '/../../../views/layout/sidebar.php'; 
 ?>
+
+<style>
+@keyframes fadeInDown {
+    from { opacity: 0; transform: translateY(-20px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in-down {
+    animation: fadeInDown 0.5s ease-out forwards;
+}
+</style>
 
 <div class="p-6 sm:ml-64 pt-24 bg-slate-50 min-h-screen font-sans">
     
@@ -109,6 +149,7 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
             <div class="p-12 text-center">
                 <span class="text-5xl block mb-4 grayscale opacity-30">🏊</span>
                 <h3 class="text-lg font-bold text-slate-700">Belum ada data atlet.</h3>
+                <p class="text-slate-400 text-sm mt-1">Silakan tambahkan atlet untuk mulai mendaftar lomba.</p>
             </div>
         <?php else: ?>
             <div class="overflow-x-auto">
@@ -162,6 +203,37 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
         <?php endif; ?>
     </div>
 </div>
+
+<?php if(isset($_SESSION['toast_message'])): ?>
+<div id="toast-notification" class="fixed top-24 right-6 z-[9999] flex items-center w-full max-w-xs p-4 space-x-4 text-slate-500 bg-white divide-x divide-slate-200 rounded-lg shadow-2xl border-l-4 <?= $_SESSION['toast_type'] == 'success' ? 'border-emerald-500' : 'border-red-500' ?> animate-fade-in-down transition-all" role="alert">
+    <div class="text-2xl">
+        <?= $_SESSION['toast_type'] == 'success' ? '✅' : '⚠️' ?>
+    </div>
+    <div class="pl-4 text-sm font-bold text-slate-700">
+        <?= $_SESSION['toast_message'] ?>
+    </div>
+    <button type="button" class="ml-auto -mx-1.5 -my-1.5 bg-white text-slate-400 hover:text-slate-900 rounded-lg focus:ring-2 focus:ring-slate-300 p-1.5 hover:bg-slate-100 inline-flex h-8 w-8" onclick="document.getElementById('toast-notification').remove()">
+        <span class="sr-only">Close</span>
+        ✖️
+    </button>
+</div>
+<script>
+    // Hilang otomatis setelah 3 detik
+    setTimeout(() => {
+        const toast = document.getElementById('toast-notification');
+        if(toast) {
+            toast.style.transition = 'opacity 0.5s ease';
+            toast.style.opacity = '0';
+            setTimeout(() => toast.remove(), 500);
+        }
+    }, 3000);
+</script>
+<?php 
+unset($_SESSION['toast_type']);
+unset($_SESSION['toast_message']);
+endif; 
+?>
+
 
 <div id="athleteModal" class="fixed inset-0 z-50 hidden bg-slate-900/80 backdrop-blur-sm flex justify-center items-center p-4 transition-opacity">
     <div class="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden transform scale-100 transition-all">
@@ -291,7 +363,14 @@ function openEditModal(data) {
     document.getElementById('inputId').value = data.id;
     document.getElementById('inputNama').value = data.nama_atlet;
     document.getElementById('inputSekolah').value = data.asal_sekolah;
-    document.getElementById('inputGender').value = data.jenis_kelamin;
+    
+    // Logic Radio Button
+    if(data.jenis_kelamin === 'Male') {
+        document.getElementById('genderMale').checked = true;
+    } else {
+        document.getElementById('genderFemale').checked = true;
+    }
+    
     document.getElementById('inputDob').value = data.tanggal_lahir;
     document.getElementById('modeAdd').disabled = true;
     document.getElementById('modeEdit').disabled = false;

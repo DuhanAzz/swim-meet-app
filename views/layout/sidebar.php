@@ -54,7 +54,7 @@ else $dashLink = '/swim-meet/public/login.php';
          
          <div class="px-8 mt-8 mb-2 text-[10px] font-black text-slate-600 uppercase tracking-widest">Race Management</div>
          <a href="/swim-meet/src/admin/entries/index.php" class="<?= (strpos($req,"entries")!==false) ? $activeLink : $baseLink ?>">
-            <span class="w-6 text-xl mr-3 text-center opacity-80">📋</span><span class="font-bold text-[11px] tracking-widest uppercase">Data Peserta</span>
+            <span class="w-6 text-xl mr-3 text-center opacity-80">📋</span><span class="font-bold text-[11px] tracking-widest uppercase">Verifikasi & Entries</span>
          </a>
 
          <a href="/swim-meet/src/admin/seeding/index.php" class="<?= (strpos($req,"seeding/index")!==false) ? $activeLink : $baseLink ?>">
@@ -80,15 +80,7 @@ else $dashLink = '/swim-meet/public/login.php';
             <span class="w-6 text-xl mr-3 text-center opacity-80">🥇</span><span class="font-bold text-[11px] tracking-widest uppercase">Rekap Medali</span>
          </a>
 
-         <a href="/swim-meet/src/admin/results/certificates.php" class="<?= (strpos($req,"certificates")!==false) ? $activeLink : $baseLink ?>">
-            <span class="w-6 text-xl mr-3 text-center opacity-80">📜</span><span class="font-bold text-[11px] tracking-widest uppercase">Cetak Piagam</span>
-         </a>
-
-         <div class="px-8 mt-8 mb-2 text-[10px] font-black text-slate-600 uppercase tracking-widest">Accounting</div>
-         <a href="/swim-meet/src/admin/keuangan/index.php" class="<?= (strpos($req,"keuangan")!==false) ? $activeLink : $baseLink ?>">
-            <span class="w-6 text-xl mr-3 text-center opacity-80">💰</span><span class="font-bold text-[11px] tracking-widest uppercase">Verifikasi Bayar</span>
-         </a>
-      <?php endif; ?>
+         <?php endif; ?>
 
       <?php if($role == 'user'): ?>
          <div class="px-8 mt-8 mb-2 text-[10px] font-black text-slate-600 uppercase tracking-widest">Club Management</div>
