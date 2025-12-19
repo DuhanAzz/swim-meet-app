@@ -7,14 +7,23 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
     header("Location: ../../public/login.php"); exit; 
 }
 
+$adminId = $_SESSION['user_id']; // ID Admin yang sedang login
+
 // --- LOGIC HAPUS EVENT ---
 if (isset($_POST['delete_id'])) {
     try {
-        $stmt = $pdo->prepare("DELETE FROM event_numbers WHERE id = ?");
-        $stmt->execute([$_POST['delete_id']]);
+        // UPDATE PENTING: Tambahkan WHERE organizer_id = ? 
+        // Agar admin tidak bisa menghapus event milik admin lain (keamanan)
+        $stmt = $pdo->prepare("DELETE FROM event_numbers WHERE id = ? AND organizer_id = ?");
+        $stmt->execute([$_POST['delete_id'], $adminId]);
         
-        $_SESSION['swal_type'] = 'success'; 
-        $_SESSION['swal_msg'] = 'Nomor lomba berhasil dihapus.';
+        if ($stmt->rowCount() > 0) {
+            $_SESSION['swal_type'] = 'success'; 
+            $_SESSION['swal_msg'] = 'Nomor lomba berhasil dihapus.';
+        } else {
+            $_SESSION['swal_type'] = 'error'; 
+            $_SESSION['swal_msg'] = 'Gagal menghapus atau data tidak ditemukan.';
+        }
         
     } catch (Exception $e) {
         $_SESSION['swal_type'] = 'error'; 
@@ -24,7 +33,10 @@ if (isset($_POST['delete_id'])) {
 }
 
 // --- AMBIL DATA ---
-$events = $pdo->query("SELECT * FROM event_numbers ORDER BY event_number ASC")->fetchAll();
+// UPDATE PENTING: Filter berdasarkan organizer_id
+$stmt = $pdo->prepare("SELECT * FROM event_numbers WHERE organizer_id = ? ORDER BY event_number ASC");
+$stmt->execute([$adminId]);
+$events = $stmt->fetchAll();
 
 include __DIR__ . '/../../views/layout/topbar.php'; 
 include __DIR__ . '/../../views/layout/sidebar.php'; 
@@ -35,7 +47,7 @@ include __DIR__ . '/../../views/layout/sidebar.php';
     <div class="max-w-6xl mx-auto mb-10 flex flex-col md:flex-row justify-between items-end gap-4">
         <div>
             <h1 class="text-4xl font-black uppercase tracking-tighter italic text-slate-900 leading-none">Database Nomor</h1>
-            <p class="text-sm text-slate-500 font-bold uppercase tracking-widest mt-2">Daftar Seluruh Event Perlombaan</p>
+            <p class="text-sm text-slate-500 font-bold uppercase tracking-widest mt-2">Daftar Event Perlombaan Saya</p>
         </div>
         
         <a href="create.php" class="bg-blue-600 hover:bg-blue-700 text-white px-8 py-4 rounded-[2rem] shadow-xl shadow-blue-200 hover:-translate-y-1 transition transform flex items-center gap-3 group">
@@ -66,7 +78,7 @@ include __DIR__ . '/../../views/layout/sidebar.php';
                 <div class="flex flex-col items-center justify-center py-20 text-center opacity-50">
                     <div class="text-6xl mb-4 grayscale">🏊</div>
                     <h4 class="font-black text-slate-400 uppercase tracking-widest text-lg">Data Kosong</h4>
-                    <p class="text-xs font-bold text-slate-300 mt-1">Belum ada nomor lomba yang dibuat.</p>
+                    <p class="text-xs font-bold text-slate-300 mt-1">Anda belum membuat nomor lomba.</p>
                 </div>
             <?php else: ?>
                 <div class="space-y-2 mt-4">

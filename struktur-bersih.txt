@@ -3,7 +3,6 @@
 ├── package.json
 ├── postcss.config.js
 ├── public
-│   ├── Archive.zip
 │   ├── assets
 │   ├── change_password.php
 │   ├── events.php
@@ -34,6 +33,8 @@
 │   │       ├── user_1_1765336304.png
 │   │       ├── user_10_1765550608.jpeg
 │   │       ├── user_11_1765851349.png
+│   │       ├── user_2_1765876881.png
+│   │       ├── user_3_1765948631.jpeg
 │   │       ├── user_7_1765343374.png
 │   │       ├── user_8_1765373770.jpeg
 │   │       └── user_9_1765373942.png
@@ -47,6 +48,9 @@
 │   ├── results.php
 │   ├── src
 │   ├── uploads
+│   │   ├── admin_files
+│   │   │   ├── 1765981809_ADM_Buku Acara Lengkap - Gadjah Mada Swimming Competition 2026.pdf
+│   │   │   └── ADM_2_3_1766024856.pdf
 │   │   ├── banners
 │   │   ├── clubs
 │   │   ├── doc_1765343443.txt
@@ -55,10 +59,15 @@
 │   │   │   └── DOC_StartList_1765520583_7.pdf
 │   │   ├── logos
 │   │   │   ├── config_7_logo_sponsor_1765615814.png
+│   │   │   ├── l_left_2_1765874829.png
+│   │   │   ├── l_right_2_1765874829.png
 │   │   │   ├── logo_7_logo_left_1765614615.jpeg
 │   │   │   ├── logo_7_logo_right_1765614700.png
 │   │   │   ├── sp_7_1765616232.png
 │   │   │   └── sp_7_1765616452.png
+│   │   ├── payments
+│   │   │   ├── 1765981809_PAY_o2sn.png
+│   │   │   └── PAY_2_3_1766024856.png
 │   │   ├── proof_10_1765613598_doc_7_1765347172 (2).pdf
 │   │   ├── proof_10_1765849872_Screenshot 2025-12-15 at 8.50.57 PM.png
 │   │   ├── proof_10_1765850986_Screenshot 2025-12-10 at 8.38.34 PM.png
@@ -66,6 +75,8 @@
 │   │   ├── proof_8_1765612298_doc_7_1765347172 (3).pdf
 │   │   ├── proof_8_1765849702_Screenshot 2025-12-15 at 8.50.57 PM.png
 │   │   ├── proof_8_1765850690_Screenshot 2025-12-15 at 8.50.57 PM.png
+│   │   ├── proof_8_1765858761_swim_meet (2).sql
+│   │   ├── proof_8_1765864436_uajaya.png
 │   │   ├── proof_9_1765685000_full book.pdf
 │   │   ├── proof_9_1765849754_Screenshot 2025-12-12 at 10.35.07 AM.png
 │   │   ├── proof_9_1765850859_Screenshot 2025-12-10 at 8.38.34 PM.png
@@ -76,6 +87,8 @@
 │   │   ├── req_8_1765612298_doc_7_1765347172 (2).pdf
 │   │   ├── req_8_1765849702_Screenshot 2025-12-12 at 10.35.07 AM.png
 │   │   ├── req_8_1765850690_Screenshot 2025-12-13 at 12.24.12 PM.png
+│   │   ├── req_8_1765858761_uajaya.png
+│   │   ├── req_8_1765864436_akuatik-indonesia-logo-.png
 │   │   ├── req_9_1765685000_full book.pdf
 │   │   ├── req_9_1765849754_Screenshot 2025-12-12 at 10.35.07 AM.png
 │   │   ├── req_9_1765850859_Screenshot 2025-12-13 at 12.24.12 PM.png
@@ -88,11 +101,10 @@
 │   ├── admin
 │   │   ├── dashboard.php
 │   │   ├── entries
+│   │   │   ├── detail_club.php
 │   │   │   ├── index.php
 │   │   │   ├── view_club_matrix.php
 │   │   │   └── view_matrix.php
-│   │   ├── keuangan
-│   │   │   └── index.php
 │   │   ├── preview_buku_acara.php
 │   │   ├── preview_buku_hasil.php
 │   │   ├── results
@@ -100,7 +112,6 @@
 │   │   │   ├── index.php
 │   │   │   ├── logic.php
 │   │   │   ├── medal_tally.php
-│   │   │   ├── print_cerificates.php
 │   │   │   ├── print_result.php
 │   │   │   └── print.php
 │   │   ├── seeding
@@ -116,7 +127,6 @@
 │   │   │   └── event_profile.php
 │   │   ├── upload.php
 │   │   └── verifikasi.php
-│   ├── Archive.zip
 │   ├── common
 │   │   └── profile.php
 │   ├── config
@@ -189,8 +199,7 @@
 │   │   └── view_ranking.php
 │   └── user
 │       ├── atlet
-│       │   ├── index.php
-│       │   └── track_record.php
+│       │   └── index.php
 │       ├── dashboard.php
 │       ├── kompetisi
 │       │   ├── checkout.php
@@ -203,16 +212,16 @@
 │       │   └── registration.php
 │       ├── pembayaran.php
 │       └── pengumuman.php
-├── src.zip
-├── storage
-│   └── login_debug.log
+├── struktur_project.txt
 ├── struktur-bersih.txt
 ├── struktur.txt
 ├── tailwind.config.js
 ├── user
 └── views
     └── layout
+        ├── footer.php
+        ├── notification.php
         ├── sidebar.php
         └── topbar.php
 
-49 directories, 167 files
+49 directories, 176 files

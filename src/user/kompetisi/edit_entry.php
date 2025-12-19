@@ -1,298 +1,274 @@
 <?php
+// MENGAKTIFKAN LAPORAN ERROR (Untuk Debugging)
+ini_set('display_errors', 1);
+error_reporting(E_ALL);
+
 session_start();
 require_once __DIR__ . '/../../config/database.php';
 
-// --- 1. CONFIG & VALIDASI ---
-$organizerId = $_GET['event_id'] ?? 0; // ID Kompetisi (Admin ID)
-$swimmerId   = $_GET['swimmer_id'] ?? 0;
-$uid         = $_SESSION['user_id'] ?? 0; 
-$isAjax      = isset($_GET['ajax']); 
-$isAdmin     = (isset($_SESSION['role']) && $_SESSION['role'] === 'admin');
+// Cek Login
+if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'user') exit('Akses ditolak');
 
-if (!$uid && !$isAdmin) exit("Akses ditolak");
+$uid = $_SESSION['user_id'];
+$organizerId = $_GET['event_id'] ?? 0;
+$swimmerId = $_GET['swimmer_id'] ?? 0;
 
-// --- 2. AMBIL DATA ATLET ---
-// Kita butuh ID Klub (user_id) pemilik atlet untuk disimpan di tabel entries
-if ($isAdmin) {
-    $stmtS = $pdo->prepare("SELECT * FROM swimmers WHERE id = ?");
-    $stmtS->execute([$swimmerId]);
+// Default waktu untuk No Time (NT)
+$defaultNoTime = '99:99.99'; 
+
+// --- 1. AMBIL DATA ATLET ---
+$stmtS = $pdo->prepare("SELECT * FROM swimmers WHERE id = ? AND user_id = ?");
+$stmtS->execute([$swimmerId, $uid]);
+$swimmer = $stmtS->fetch();
+
+if (!$swimmer) exit('<div class="p-6 text-red-500 text-center font-bold">Data atlet tidak ditemukan.</div>');
+
+// --- 2. DETEKSI GENDER ---
+$g = strtoupper($swimmer['jenis_kelamin']);
+$targetGender = [];
+if (in_array($g, ['L', 'M', 'MALE', 'LAKI-LAKI', 'PUTRA', 'PRIA'])) {
+    $targetGender = ['L', 'M', 'MALE', 'PUTRA', 'MIXED', 'MIX', 'CAMPURAN'];
+    $genderLabel = 'PUTRA';
+} elseif (in_array($g, ['P', 'F', 'FEMALE', 'PEREMPUAN', 'PUTRI', 'WANITA'])) {
+    $targetGender = ['P', 'F', 'FEMALE', 'PUTRI', 'MIXED', 'MIX', 'CAMPURAN'];
+    $genderLabel = 'PUTRI';
 } else {
-    $stmtS = $pdo->prepare("SELECT * FROM swimmers WHERE id = ? AND user_id = ?");
-    $stmtS->execute([$swimmerId, $uid]);
+    $targetGender = ['MIXED', 'MIX', 'CAMPURAN'];
+    $genderLabel = 'UMUM';
 }
-$s = $stmtS->fetch();
-if (!$s) exit("Data atlet tidak ditemukan/Akses ditolak.");
-
-$actualClubId = $s['user_id']; // ID Klub Asli
-$swimmerGender = strtoupper($s['jenis_kelamin']); // L/P
 
 // --- 3. PROSES SIMPAN DATA (POST) ---
-if ($_SERVER['REQUEST_METHOD'] == 'POST') {
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
         $pdo->beginTransaction();
         
-        // A. Hapus entry lama untuk atlet ini di event ini
-        //    PENTING: Kita hapus berdasarkan event_id (Organizer) dan swimmer_id
-        $del = $pdo->prepare("DELETE FROM event_entries WHERE event_id = ? AND swimmer_id = ?");
-        $del->execute([$organizerId, $swimmerId]);
+        // A. Hapus entry lama atlet ini di event ini (Reset clean)
+        $sqlDelete = "DELETE ee FROM event_entries ee 
+                      JOIN event_numbers en ON ee.category_id = en.id 
+                      WHERE ee.swimmer_id = ? AND en.organizer_id = ?";
+        $stmtDel = $pdo->prepare($sqlDelete);
+        $stmtDel->execute([$swimmerId, $organizerId]);
 
-        // B. Insert entry baru
-        if (!empty($_POST['categories'])) {
-            $ins = $pdo->prepare("INSERT INTO event_entries (event_id, club_id, swimmer_id, category_id, entry_time) VALUES (?, ?, ?, ?, ?)");
+        // B. Masukkan Entry Baru (Jika ada yang dicentang)
+        if (!empty($_POST['selected_events'])) {
+            $stmtInsert = $pdo->prepare("INSERT INTO event_entries 
+                (user_id, event_id, club_id, swimmer_id, category_id, entry_time, seed_time, status) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'Pending')");
             
-            foreach ($_POST['categories'] as $catId) {
-                // Ambil waktu dari input. Jika kosong/strip, set default 'NT'
-                $timeVal = trim($_POST['times'][$catId] ?? '');
-                if (empty($timeVal) || $timeVal == '-') $timeVal = 'NT';
+            foreach ($_POST['selected_events'] as $catId) {
+                // Ambil waktu dari input terpisah
+                $timeInputName = 'time_' . $catId;
+                $rawTime = $_POST[$timeInputName] ?? '';
                 
-                // PENTING:
-                // event_id    = ID Kompetisi ($organizerId)
-                // category_id = ID Nomor Lomba ($catId) dari tabel events
-                $ins->execute([$organizerId, $actualClubId, $swimmerId, $catId, $timeVal]);
+                // LOGIC FIX: Jika kosong atau 00:00.00, simpan sebagai 99:99.99 (NT)
+                if (empty($rawTime) || $rawTime === '00:00.00' || trim($rawTime) === '') {
+                    $finalTime = $defaultNoTime;
+                } else {
+                    $finalTime = strtoupper(trim($rawTime));
+                }
+                
+                // Simpan ke database
+                $stmtInsert->execute([$uid, $organizerId, $uid, $swimmerId, $catId, $finalTime, $finalTime]);
             }
         }
-        
+
         $pdo->commit();
-        if ($isAjax) { echo "OK_RELOAD"; exit; }
-        header("Location: register_event.php?event_id=$organizerId"); exit;
-        
-    } catch (Exception $e) { 
-        $pdo->rollBack(); 
-        if ($isAjax) { echo "Error Database: " . $e->getMessage(); exit; }
-        echo "Error: " . $e->getMessage(); exit; 
+
+        // C. LOGIKA PENGALIHAN HALAMAN
+        header("Location: register_event.php?event_id=" . $organizerId);
+        exit;
+
+    } catch (Exception $e) {
+        $pdo->rollBack();
+        echo "<div class='bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative'>Error: " . $e->getMessage() . "</div>";
+        exit;
     }
 }
 
-// --- 4. AMBIL DATA UNTUK TAMPILAN ---
+// --- 4. DATA UNTUK FORM (GET) ---
 
-// A. Ambil Daftar Nomor Lomba (Events)
-$stmtEv = $pdo->prepare("SELECT * FROM events WHERE user_id = ? ORDER BY nomor_acara ASC");
-$stmtEv->execute([$organizerId]);
-$allEvents = $stmtEv->fetchAll();
+// A. Ambil Nomor Lomba yang Tersedia sesuai Gender
+$availableEvents = [];
+if(!empty($targetGender)) {
+    $placeholders = implode(',', array_fill(0, count($targetGender), '?'));
+    $sqlEvents = "SELECT * FROM event_numbers 
+                  WHERE organizer_id = ? 
+                  AND UPPER(jenis_kelamin) IN ($placeholders) 
+                  ORDER BY distance ASC, stroke ASC";
+    $stmtEv = $pdo->prepare($sqlEvents);
+    $stmtEv->execute(array_merge([$organizerId], $targetGender));
+    $availableEvents = $stmtEv->fetchAll();
+}
 
-// B. Ambil Entry yang SUDAH ADA (Data yang baru saja disimpan)
-$stmtEntry = $pdo->prepare("SELECT category_id, entry_time FROM event_entries WHERE event_id = ? AND swimmer_id = ?");
-$stmtEntry->execute([$organizerId, $swimmerId]);
-$myEntries = $stmtEntry->fetchAll(PDO::FETCH_KEY_PAIR); // Hasil: [ID_LOMBA => WAKTU]
+// B. Ambil Entry yang sedang dipilih (Draft)
+$sqlExist = "SELECT ee.category_id, ee.entry_time 
+             FROM event_entries ee 
+             JOIN event_numbers en ON ee.category_id = en.id
+             WHERE ee.swimmer_id = ? AND en.organizer_id = ?";
+$stmtEx = $pdo->prepare($sqlExist);
+$stmtEx->execute([$swimmerId, $organizerId]);
+$currentDraft = $stmtEx->fetchAll(PDO::FETCH_KEY_PAIR);
 
-// C. Ambil PERSONAL BEST (Track Record) dari tabel records (JIKA ADA)
-//    Ini mengembalikan kode lama Anda supaya "Track Record" terbaca
-$pbRecords = [];
+// C. AMBIL TRACK RECORD MANUAL
+$manualRecords = [];
 try {
-    $stmtPB = $pdo->prepare("SELECT nomor_lomba, waktu_terbaik FROM athlete_records WHERE swimmer_id = ?");
-    $stmtPB->execute([$swimmerId]);
-    $pbRaw = $stmtPB->fetchAll(); // Kita olah manual nanti
-    
-    // Normalisasi array agar mudah dicari: [ "50M GAYA BEBAS" => "00.25.00" ]
-    foreach($pbRaw as $rec) {
-        $key = strtoupper(trim($rec['nomor_lomba'])); // Pastikan uppercase
-        $pbRecords[$key] = $rec['waktu_terbaik'];
-    }
-} catch (Exception $e) {
-    // Jika tabel athlete_records belum ada, abaikan error ini
-    $pbRecords = [];
-}
+    $stmtMan = $pdo->prepare("SELECT nomor_lomba, waktu_terbaik FROM athlete_records WHERE swimmer_id = ?");
+    $stmtMan->execute([$swimmerId]);
+    $manualRecords = $stmtMan->fetchAll(PDO::FETCH_KEY_PAIR);
+} catch (Exception $e) { /* Ignore */ }
 
+// D. Ambil History Lomba Lama (Best Time Logic)
+$historyMap = [];
+try {
+    $sqlHistory = "
+        SELECT en.distance, en.stroke, MIN(ee.entry_time) as best_time
+        FROM event_entries ee
+        JOIN event_numbers en ON ee.category_id = en.id
+        WHERE ee.swimmer_id = ? 
+        AND ee.entry_time NOT IN ('00:00.00', '99:99.99', '', 'NT')
+        GROUP BY en.distance, en.stroke
+    ";
+    $stmtHist = $pdo->prepare($sqlHistory);
+    $stmtHist->execute([$swimmerId]);
+    $historyData = $stmtHist->fetchAll();
+    foreach($historyData as $h) {
+        $historyMap[$h['distance'] . '-' . $h['stroke']] = $h['best_time'];
+    }
+} catch (Exception $e) { /* Ignore */ }
+
+// Hitung Umur
+$age = '-';
+if (!empty($swimmer['tanggal_lahir'])) {
+    $age = (date('Y') - date('Y', strtotime($swimmer['tanggal_lahir']))) . ' TH';
+}
 ?>
 
-<div class="bg-white rounded-2xl overflow-hidden shadow-2xl border border-slate-200 text-left font-sans">
+<div class="bg-white w-full max-h-[90vh] flex flex-col h-full rounded-2xl relative">
     
-    <div class="bg-slate-900 p-6 text-white flex justify-between items-start">
+    <div class="px-6 py-5 border-b border-slate-100 flex justify-between items-center bg-slate-900 text-white rounded-t-2xl shrink-0">
         <div>
-            <h1 class="text-xs font-black uppercase tracking-widest italic text-blue-400 mb-1">Entry Form</h1>
-            <h2 class="text-lg font-bold uppercase leading-none"><?= htmlspecialchars($s['nama_atlet']) ?></h2>
-            <div class="flex items-center gap-2 mt-2 text-[10px] font-bold text-slate-400 bg-slate-800 py-1 px-3 rounded-full w-fit">
-                <span><?= $swimmerGender ?></span>
-                <span>•</span>
-                <span><?= isset($s['tanggal_lahir']) ? (date('Y') - date('Y', strtotime($s['tanggal_lahir']))) : '-' ?> TH</span>
+            <h3 class="font-black text-xl uppercase italic tracking-wider">
+                ENTRY FORM
+            </h3>
+            <div class="flex items-center gap-3 text-[10px] font-bold mt-1 text-blue-200 opacity-90">
+                <span class="text-white uppercase"><?= htmlspecialchars($swimmer['nama_atlet']) ?></span>
+                <span class="w-1 h-1 bg-blue-500 rounded-full"></span>
+                <span><?= $genderLabel ?></span>
+                <span class="w-1 h-1 bg-blue-500 rounded-full"></span>
+                <span><?= $age ?></span>
             </div>
         </div>
-        <?php if($isAjax): ?>
-            <button type="button" onclick="closeModal()" class="text-slate-500 hover:text-white transition text-2xl leading-none">&times;</button>
-        <?php endif; ?>
+        <button type="button" onclick="closeEntryModal()" class="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 text-white hover:bg-red-500 transition font-bold">✕</button>
     </div>
 
-    <form id="formEditEntry" class="p-6 bg-slate-50/50">
-        <div class="space-y-3 max-h-[50vh] overflow-y-auto pr-2 custom-scrollbar">
-            
-            <?php if(empty($allEvents)): ?>
-                <div class="p-8 text-center border-2 border-dashed border-slate-300 rounded-xl">
-                    <p class="text-slate-400 font-bold text-xs uppercase">Event belum tersedia.</p>
-                </div>
-            <?php endif; ?>
-
-            <?php foreach($allEvents as $evt): 
-                // --- 1. LOGIKA GENDER ---
-                $evtGender = strtoupper($evt['gender'] ?? 'MIXED'); 
-                $isEligible = false;
-                
-                // Normalisasi string untuk pencocokan yang lebih luas
-                if ($evtGender == 'MIXED' || $evtGender == 'CAMPURAN') {
-                    $isEligible = true;
-                } elseif ((strpos($evtGender, 'PUTRA') !== false || $evtGender == 'L' || $evtGender == 'MALE') && in_array($swimmerGender, ['L', 'PRIA', 'MALE', 'PUTRA'])) {
-                    $isEligible = true;
-                } elseif ((strpos($evtGender, 'PUTRI') !== false || $evtGender == 'P' || $evtGender == 'FEMALE') && in_array($swimmerGender, ['P', 'WANITA', 'FEMALE', 'PUTRI'])) {
-                    $isEligible = true;
-                }
-
-                // --- 2. TENTUKAN WAKTU (PRIORITAS: Sudah Daftar > Personal Best > NT) ---
-                $catId = $evt['id'];
-                $isRegistered = isset($myEntries[$catId]);
-                
-                // Cari nama event bersih untuk mencocokkan dengan PB (misal: "101 - 50m Free" -> kita cari "50m Free" nya)
-                $cleanName = strtoupper($evt['nama_event'] ?? $evt['nama_acara']);
-                // Coba cari PB yang mengandung kata kunci jarak & gaya (Logika sederhana)
-                $pbTime = '';
-                // (Opsi: Jika nama event di PB persis sama dengan nama acara)
-                if (isset($pbRecords[$cleanName])) {
-                    $pbTime = $pbRecords[$cleanName];
-                }
-
-                // Value input: Jika sudah daftar pakai entry_time, jika belum pakai PB, jika gak ada PB pakai ''
-                $inputValue = $isRegistered ? $myEntries[$catId] : $pbTime;
-                
-                // Visual variables
-                $nomor = $evt['nomor_acara'] ?? '-';
-                $nama  = $evt['nama_event'] ?? $evt['nama_acara'];
-                $harga = number_format($evt['price'] ?? 0, 0, ',', '.');
-                
-                // Styling
-                $opacityClass = $isEligible ? 'opacity-100' : 'opacity-40 grayscale bg-slate-100';
-                $borderClass  = $isRegistered ? 'border-blue-600 ring-1 ring-blue-100 bg-white shadow-md' : 'border-slate-200 bg-white hover:border-blue-300';
-            ?>
-
-            <div class="flex items-center justify-between p-4 rounded-xl border-2 transition-all duration-200 group <?= $borderClass ?> <?= $opacityClass ?>">
-                
-                <div class="flex items-center gap-4 overflow-hidden">
-                    <div class="relative flex items-center justify-center">
-                        <input type="checkbox" 
-                               name="categories[]" 
-                               value="<?= $catId ?>" 
-                               id="chk_<?= $catId ?>"
-                               class="w-6 h-6 rounded-lg border-2 border-slate-300 text-blue-600 focus:ring-offset-0 focus:ring-0 cursor-pointer transition-transform active:scale-90"
-                               <?= $isRegistered ? 'checked' : '' ?>
-                               <?= !$isEligible ? 'disabled' : '' ?>
-                               onchange="toggleInput('<?= $catId ?>')">
-                    </div>
-
-                    <div class="flex flex-col min-w-0 cursor-pointer" onclick="<?= $isEligible ? "document.getElementById('chk_$catId').click()" : '' ?>">
-                        <label class="text-[10px] font-black text-blue-500 uppercase tracking-widest mb-0.5 pointer-events-none">
-                            NO. <?= $nomor ?> 
-                            <?php if(!$isEligible): ?><span class="text-red-500 ml-1 font-bold">(Beda Gender)</span><?php endif; ?>
-                        </label>
-                        <h3 class="font-bold text-slate-800 text-xs uppercase truncate w-full pr-4"><?= htmlspecialchars($nama) ?></h3>
-                        <p class="text-[9px] text-slate-400 font-bold mt-1">IDR <?= $harga ?></p>
-                    </div>
-                </div>
-                
-                <div class="flex flex-col items-end pl-2">
-                    <label class="text-[8px] font-bold text-slate-300 uppercase mb-1 tracking-wider">Entry Time</label>
-                    <input type="text" 
-                           name="times[<?= $catId ?>]" 
-                           id="inp_<?= $catId ?>"
-                           value="<?= $inputValue ?>"
-                           placeholder="NT"
-                           <?= (!$isRegistered) ? 'readonly' : '' // Kunci jika belum dicentang ?>
-                           class="w-24 h-9 rounded-lg border-2 text-center font-mono text-xs font-bold uppercase focus:outline-none transition-colors 
-                                  <?= $isRegistered ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-slate-100 bg-slate-100 text-slate-400' ?>">
-                    <?php if(!empty($pbTime) && !$isRegistered): ?>
-                        <span class="text-[8px] text-green-600 font-bold mt-1">PB: <?= $pbTime ?></span>
-                    <?php endif; ?>
-                </div>
+    <form id="entryForm" method="POST" action="edit_entry.php?event_id=<?= $organizerId ?>&swimmer_id=<?= $swimmerId ?>" class="flex-1 overflow-y-auto custom-scrollbar p-6 bg-slate-50">
+        
+        <?php if(empty($availableEvents)): ?>
+            <div class="flex flex-col items-center justify-center h-48 text-center text-slate-400">
+                <div class="text-4xl mb-2">📭</div>
+                <h4 class="font-bold text-slate-600">Tidak Ada Nomor Lomba</h4>
+                <p class="text-xs max-w-xs mt-1">Tidak ditemukan nomor lomba yang sesuai dengan gender/kelompok umur atlet ini.</p>
             </div>
-            <?php endforeach; ?>
+        <?php else: ?>
+            <p class="text-xs font-bold text-slate-500 mb-4 uppercase tracking-wide flex justify-between items-center">
+                <span>Pilih Nomor Lomba:</span>
+                <span class="text-[10px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded">Auto-Fill Aktif</span>
+            </p>
+            
+            <div class="grid grid-cols-1 gap-3 pb-20"> <?php foreach($availableEvents as $ev): 
+                    $catId = $ev['id'];
+                    $isRegistered = isset($currentDraft[$catId]);
+                    
+                    // LOGIKA PRIORITY WAKTU (Saved > Manual > History)
+                    $displayTime = '';
+                    $sourceLabel = 'SEED TIME'; 
+                    $sourceClass = 'text-slate-400';
+
+                    $recordKey = $ev['distance'] . 'm ' . ucwords($ev['stroke']);
+                    $historyKey = $ev['distance'] . '-' . $ev['stroke'];
+                    
+                    if ($isRegistered && !in_array($currentDraft[$catId], ['00:00.00', '99:99.99', ''])) {
+                        $displayTime = $currentDraft[$catId];
+                        $sourceLabel = 'TERSIMPAN'; $sourceClass = 'text-blue-500';
+                    } elseif (isset($manualRecords[$recordKey])) {
+                        $displayTime = $manualRecords[$recordKey];
+                        $sourceLabel = 'BEST TIME'; $sourceClass = 'text-emerald-500';
+                    } elseif (isset($historyMap[$historyKey])) {
+                        $displayTime = $historyMap[$historyKey];
+                        $sourceLabel = 'HISTORY'; $sourceClass = 'text-orange-500';
+                    }
+                ?>
+                <label class="flex items-center gap-4 p-3 rounded-xl border transition-all cursor-pointer bg-white shadow-sm hover:shadow-md <?= $isRegistered ? 'border-blue-500 ring-1 ring-blue-500 bg-blue-50/30' : 'border-slate-200' ?>">
+                    
+                    <div class="relative flex items-center pl-2">
+                        <input type="checkbox" 
+                               name="selected_events[]" 
+                               value="<?= $catId ?>" 
+                               class="peer w-5 h-5 border-2 border-slate-300 rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
+                               <?= $isRegistered ? 'checked' : '' ?>
+                               onchange="toggleInput(this)">
+                    </div>
+
+                    <div class="flex-1 px-2">
+                        <div class="font-black text-sm text-slate-700">
+                            <?= $ev['distance'] ?>M <?= strtoupper($ev['stroke']) ?>
+                        </div>
+                        <div class="text-[10px] text-slate-400 uppercase font-bold mt-0.5">
+                            <?= $ev['age_group'] ?> • <?= $ev['jenis_kelamin'] ?>
+                        </div>
+                    </div>
+
+                    <div class="<?= ($isRegistered || $displayTime != '') ? '' : 'opacity-40 pointer-events-none grayscale' ?> transition-opacity text-center min-w-[100px]" id="time-container-<?= $catId ?>">
+                        <span class="text-[9px] font-black block mb-1 uppercase tracking-wider <?= $sourceClass ?>"><?= $sourceLabel ?></span>
+                        <input type="text" 
+                               name="time_<?= $catId ?>"
+                               value="<?= htmlspecialchars($displayTime) ?>" 
+                               placeholder="99:99.99" 
+                               class="w-24 px-2 py-1.5 text-sm font-mono font-bold border border-slate-300 rounded focus:border-blue-500 outline-none text-center bg-white text-slate-700 placeholder:text-slate-300 uppercase">
+                    </div>
+                </label>
+                <?php endforeach; ?>
+            </div>
+        <?php endif; ?>
+
+        <div class="absolute bottom-0 left-0 right-0 bg-white border-t border-slate-200 p-4 flex justify-between items-center gap-3 rounded-b-2xl z-20">
+            
+            <a href="register_event.php?event_id=<?= $organizerId ?>&remove_swimmer=<?= $swimmerId ?>" 
+               onclick="return confirm('Yakin ingin menghapus atlet ini dari list pendaftaran? Data nomor yang sudah dicentang akan hilang.')"
+               class="flex items-center gap-2 text-red-500 hover:text-red-700 hover:bg-red-50 px-4 py-3 rounded-xl font-bold text-xs transition border border-transparent hover:border-red-100">
+                <span>🗑️</span> <span class="hidden sm:inline">Hapus Atlet</span>
+            </a>
+
+            <div class="flex gap-3 flex-1 justify-end">
+                <button type="button" onclick="closeEntryModal()" class="px-6 py-3 rounded-xl font-bold text-slate-500 hover:bg-slate-100 border border-transparent transition">Batal</button>
+                <button type="submit" class="px-6 py-3 rounded-xl font-bold bg-blue-600 text-white hover:bg-blue-700 shadow-lg shadow-blue-200 transition transform active:scale-95">
+                    Simpan & Daftar
+                </button>
+            </div>
         </div>
 
-        <div class="mt-6 flex gap-3 pt-4 border-t border-slate-100">
-            <button type="button" onclick="closeModal()" class="flex-1 py-3.5 rounded-xl border-2 border-slate-200 text-slate-500 font-bold text-[10px] uppercase hover:bg-slate-50 transition">
-                Batal
-            </button>
-            <button type="button" onclick="submitEntryForm()" id="btnSave" class="flex-[2] py-3.5 rounded-xl bg-blue-600 text-white font-bold text-[10px] uppercase shadow-lg shadow-blue-200 hover:bg-blue-700 active:scale-95 transition tracking-widest">
-                Simpan Perubahan
-            </button>
-        </div>
     </form>
 </div>
 
 <script>
-// Logic Toggle UI saat Checkbox diklik
-function toggleInput(id) {
-    const chk = document.getElementById('chk_' + id);
-    const inp = document.getElementById('inp_' + id);
-    const container = chk.closest('.border-2'); 
+function toggleInput(checkbox) {
+    const label = checkbox.closest('label');
+    const timeContainer = label.querySelector('[id^="time-container-"]');
+    const textInput = timeContainer.querySelector('input[type="text"]');
 
-    if (chk.checked) {
-        // Mode: DIPILIH
-        inp.readOnly = false;
-        // Ubah warna input jadi biru
-        inp.classList.remove('bg-slate-100', 'text-slate-400', 'border-slate-100');
-        inp.classList.add('bg-blue-50', 'text-blue-700', 'border-blue-200');
-        
-        // Ubah container jadi highlight
-        container.classList.remove('border-slate-200');
-        container.classList.add('border-blue-600', 'bg-white', 'shadow-md');
-        
-        // Auto isi NT jika kosong
-        if(inp.value.trim() === '') inp.value = 'NT';
-        inp.focus();
-    } else {
-        // Mode: BATAL PILIH
-        inp.readOnly = true;
-        // Reset warna input jadi abu
-        inp.classList.add('bg-slate-100', 'text-slate-400', 'border-slate-100');
-        inp.classList.remove('bg-blue-50', 'text-blue-700', 'border-blue-200');
-
-        // Reset container
-        container.classList.add('border-slate-200');
-        container.classList.remove('border-blue-600', 'bg-white', 'shadow-md');
-        
-        // Jangan hapus value total, agar jika user salah klik, angkanya masih ada (UX)
-        // Tapi secara visual terlihat disabled
-    }
-}
-
-// Logic Submit AJAX
-function submitEntryForm() {
-    const btn = document.getElementById('btnSave');
-    const form = document.getElementById('formEditEntry');
-    const formData = new FormData(form);
-    
-    // Validasi sederhana: Cek apakah ada checkbox yang dicentang
-    // (Opsional: Kalau mau allow hapus semua, hapus validasi ini)
-    
-    btn.disabled = true; 
-    btn.innerHTML = '⏳ MENYIMPAN...';
-
-    fetch(`../../user/kompetisi/edit_entry.php?event_id=<?= $organizerId ?>&swimmer_id=<?= $swimmerId ?>&ajax=1`, {
-        method: 'POST', 
-        body: formData
-    })
-    .then(res => res.text())
-    .then(data => {
-        if(data.trim() === 'OK_RELOAD') { 
-            // Sukses!
-            window.location.reload(); 
-        } else { 
-            // Gagal
-            alert('Gagal menyimpan: ' + data); 
-            console.error('Server Error:', data); // Cek console inspect element
-            btn.disabled = false; 
-            btn.innerText = 'SIMPAN PERUBAHAN'; 
+    if (checkbox.checked) {
+        timeContainer.classList.remove('opacity-40', 'pointer-events-none', 'grayscale');
+        // Jika kosong, isi default NT (99:99.99) agar user sadar
+        if(textInput.value === '') {
+            textInput.value = '99:99.99';
         }
-    })
-    .catch(err => {
-        alert("Terjadi kesalahan koneksi.");
-        console.error(err);
-        btn.disabled = false;
-        btn.innerText = 'SIMPAN PERUBAHAN';
-    });
-}
-
-function closeModal() {
-    if(typeof window.closeEntryModal === 'function') {
-        window.closeEntryModal();
+        textInput.focus();
+        label.classList.add('border-blue-500', 'ring-1', 'ring-blue-500', 'bg-blue-50/30');
+        label.classList.remove('border-slate-200');
     } else {
-        history.back();
+        timeContainer.classList.add('opacity-40', 'pointer-events-none', 'grayscale');
+        label.classList.remove('border-blue-500', 'ring-1', 'ring-blue-500', 'bg-blue-50/30');
+        label.classList.add('border-slate-200');
     }
 }
 </script>

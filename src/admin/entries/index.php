@@ -7,53 +7,67 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
     header("Location: ../../../public/login.php"); exit;
 }
 
+$biaya_per_nomor = 50000; // Default jika event tidak punya harga khusus
+
 // ==========================================
-// KONFIGURASI BIAYA (Bisa disesuaikan)
+// 1. HANDLE QUICK ACTION (Validasi Cepat)
 // ==========================================
-$biaya_per_nomor = 50000; // Contoh: Rp 50.000 per nomor lomba
-
-// 1. HANDLE VALIDASI AKUN (Verifikasi Pembayaran & Akun Sekaligus)
-if (isset($_POST['validate_club_id'])) {
-    try {
-        $stmt = $pdo->prepare("UPDATE users SET account_status = 'verified' WHERE id = ?");
-        $stmt->execute([$_POST['validate_club_id']]);
-        $_SESSION['swal_type'] = 'success'; 
-        $_SESSION['swal_msg'] = 'Pembayaran Diterima & Akun Diverifikasi!';
-    } catch (Exception $e) {
-        $_SESSION['swal_type'] = 'error'; 
-        $_SESSION['swal_msg'] = 'Gagal memvalidasi: ' . $e->getMessage();
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (isset($_POST['approve_payment_id'])) {
+        try {
+            // Update status di tabel PAYMENTS (Bukan Users)
+            $stmt = $pdo->prepare("UPDATE payments SET status = 'Paid', updated_at = NOW() WHERE id = ?");
+            $stmt->execute([$_POST['approve_payment_id']]);
+            
+            $_SESSION['swal_type'] = 'success'; 
+            $_SESSION['swal_msg'] = 'Pembayaran Berhasil Diterima (Lunas)!';
+        } catch (Exception $e) {
+            $_SESSION['swal_type'] = 'error'; 
+            $_SESSION['swal_msg'] = 'Error: ' . $e->getMessage();
+        }
+        header("Location: index.php"); exit;
     }
-    header("Location: index.php"); exit;
-}
-
-// 2. HANDLE BATAL VALIDASI (Jika salah klik)
-if (isset($_POST['unverify_club_id'])) {
-    try {
-        $stmt = $pdo->prepare("UPDATE users SET account_status = 'pending' WHERE id = ?");
-        $stmt->execute([$_POST['unverify_club_id']]);
-        $_SESSION['swal_type'] = 'warning'; 
-        $_SESSION['swal_msg'] = 'Status Akun dikembalikan ke Pending.';
-    } catch (Exception $e) {
-        // Silent error
-    }
-    header("Location: index.php"); exit;
-}
-
-// 3. AMBIL DATA GABUNGAN (User + Jumlah Entry + Status Bayar)
-try {
-    // Kita hitung juga jumlah event yang diikuti untuk estimasi tagihan
-    $sql = "SELECT DISTINCT u.*,
-            (SELECT COUNT(*) FROM event_entries WHERE user_id = u.id) as total_entries
-            FROM users u
-            LEFT JOIN event_entries e ON u.id = e.user_id
-            WHERE u.role = 'user' 
-            AND (u.payment_proof IS NOT NULL OR e.id IS NOT NULL)
-            ORDER BY u.created_at DESC";
     
-    $clubs = $pdo->query($sql)->fetchAll();
+    if (isset($_POST['reject_payment_id'])) {
+        try {
+            $stmt = $pdo->prepare("UPDATE payments SET status = 'Rejected', updated_at = NOW() WHERE id = ?");
+            $stmt->execute([$_POST['reject_payment_id']]);
+            
+            $_SESSION['swal_type'] = 'warning'; 
+            $_SESSION['swal_msg'] = 'Pembayaran Ditolak. User harus upload ulang.';
+        } catch (Exception $e) {}
+        header("Location: index.php"); exit;
+    }
+}
+
+// ==========================================
+// 2. AMBIL DATA (JOIN Users + Payments + Events)
+// ==========================================
+try {
+    // Kita mengambil data user yang SUDAH melakukan proses Checkout (ada di tabel payments)
+    // Supaya Admin hanya fokus pada yang butuh verifikasi
+    $sql = "SELECT 
+                p.id as payment_id,
+                p.status as payment_status,
+                p.file_path,
+                p.amount,
+                p.event_id,
+                u.id as user_id,
+                u.nama_lengkap,
+                u.email,
+                e.nama_event,
+                (SELECT COUNT(*) FROM event_entries WHERE user_id = u.id AND event_id = p.event_id) as total_entries
+            FROM payments p
+            JOIN users u ON p.user_id = u.id
+            JOIN events e ON p.event_id = e.id
+            ORDER BY 
+                CASE WHEN p.status = 'Pending' THEN 1 ELSE 2 END, -- Prioritaskan Pending di atas
+                p.created_at DESC";
+    
+    $listData = $pdo->query($sql)->fetchAll();
 
 } catch (PDOException $e) {
-    $clubs = [];
+    $listData = [];
     $error_msg = $e->getMessage();
 }
 
@@ -65,24 +79,32 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
 
     <div class="max-w-[95%] mx-auto mb-8 flex flex-col md:flex-row justify-between items-end gap-4">
         <div>
-            <h1 class="text-4xl font-black uppercase tracking-tighter italic text-slate-900 leading-none">Verifikasi & Entries</h1>
-            <p class="text-sm text-slate-500 font-bold uppercase tracking-widest mt-2">Validasi Pembayaran & Data Klub</p>
+            <h1 class="text-4xl font-black uppercase tracking-tighter italic text-slate-900 leading-none">Verifikasi Entries</h1>
+            <p class="text-sm text-slate-500 font-bold uppercase tracking-widest mt-2">Dashboard Pembayaran & Validasi</p>
         </div>
         
         <div class="flex gap-4">
             <div class="px-6 py-3 bg-white rounded-xl shadow-sm border border-slate-200 text-right">
-                <span class="block text-[9px] font-bold text-slate-400 uppercase tracking-widest">Total Pendaftar</span>
-                <span class="block text-xl font-black text-slate-800"><?= count($clubs) ?> Klub</span>
+                <span class="block text-[9px] font-bold text-slate-400 uppercase tracking-widest">Total Transaksi</span>
+                <span class="block text-xl font-black text-slate-800"><?= count($listData) ?></span>
             </div>
         </div>
     </div>
 
-    <div class="max-w-[95%] mx-auto bg-white rounded-[2.5rem] shadow-sm border border-slate-200 overflow-hidden">
+    <?php if(isset($_SESSION['swal_msg'])): ?>
+        <div class="max-w-[95%] mx-auto mb-6 px-6 py-4 rounded-xl shadow-lg font-bold text-white flex items-center gap-3 <?= $_SESSION['swal_type']=='success' ? 'bg-emerald-500' : 'bg-amber-500' ?>">
+            <span><?= $_SESSION['swal_type']=='success' ? '✅' : '⚠️' ?></span>
+            <?= $_SESSION['swal_msg']; unset($_SESSION['swal_msg']); unset($_SESSION['swal_type']); ?>
+        </div>
+    <?php endif; ?>
+
+    <div class="max-w-[95%] mx-auto bg-white rounded-[2.5rem] shadow-sm border border-slate-200 overflow-hidden min-h-[500px]">
         
-        <?php if(empty($clubs)): ?>
-            <div class="p-20 text-center">
-                <div class="text-5xl mb-4 grayscale opacity-30">📭</div>
-                <h3 class="font-black text-slate-400 uppercase tracking-widest text-lg">Belum Ada Data Masuk</h3>
+        <?php if(empty($listData)): ?>
+            <div class="flex flex-col items-center justify-center py-32 text-center opacity-50">
+                <div class="text-6xl mb-4 grayscale">📭</div>
+                <h3 class="font-black text-slate-400 uppercase tracking-widest text-xl">Belum Ada Transaksi</h3>
+                <p class="text-xs text-slate-400 mt-2">Data akan muncul setelah user melakukan checkout.</p>
             </div>
         <?php else: ?>
 
@@ -91,8 +113,8 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                     <thead class="bg-slate-50 border-b border-slate-100">
                         <tr>
                             <th class="py-6 px-6 text-[10px] font-black text-slate-400 uppercase tracking-widest w-12">#</th>
-                            <th class="py-6 px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest w-1/4">Identitas Klub</th>
-                            <th class="py-6 px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Statistik & Tagihan</th>
+                            <th class="py-6 px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest w-1/4">Klub & Event</th>
+                            <th class="py-6 px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Tagihan</th>
                             <th class="py-6 px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Bukti Transfer</th>
                             <th class="py-6 px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Status</th>
                             <th class="py-6 px-6 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Aksi</th>
@@ -100,13 +122,13 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                     </thead>
                     
                     <tbody class="divide-y divide-slate-100">
-                        <?php foreach($clubs as $i => $club): 
-                            $isVerified = ($club['account_status'] ?? 'pending') == 'verified';
-                            $hasPayment = !empty($club['payment_proof']);
-                            $totalEntries = $club['total_entries'];
-                            $estimasiTagihan = $totalEntries * $biaya_per_nomor;
+                        <?php foreach($listData as $i => $row): 
+                            $status = $row['payment_status'];
+                            $entriesCount = $row['total_entries'];
+                            // Tagihan diambil dari tabel payment (amount) agar akurat sesuai saat checkout
+                            $tagihan = $row['amount']; 
                         ?>
-                        <tr class="group hover:bg-slate-50/80 transition duration-200">
+                        <tr class="group hover:bg-slate-50/80 transition duration-200 <?= $status == 'Pending' ? 'bg-amber-50/30' : '' ?>">
                             
                             <td class="py-6 px-6 font-black text-slate-300 italic"><?= $i + 1 ?></td>
                             
@@ -117,11 +139,14 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                                     </div>
                                     <div>
                                         <h4 class="font-black text-slate-800 uppercase italic text-xs group-hover:text-blue-600 transition">
-                                            <?= htmlspecialchars($club['nama_lengkap'] ?? 'Tanpa Nama') ?>
+                                            <?= htmlspecialchars($row['nama_lengkap']) ?>
                                         </h4>
-                                        <span class="text-[10px] font-bold text-slate-400 block">
-                                            <?= htmlspecialchars($club['email']) ?>
-                                        </span>
+                                        <div class="text-[10px] font-bold text-slate-400 mt-0.5">
+                                            <?= htmlspecialchars($row['email']) ?>
+                                        </div>
+                                        <div class="text-[9px] font-bold text-blue-500 bg-blue-50 px-2 py-0.5 rounded inline-block mt-1">
+                                            Event: <?= htmlspecialchars($row['nama_event']) ?>
+                                        </div>
                                     </div>
                                 </div>
                             </td>
@@ -129,57 +154,60 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                             <td class="py-6 px-4">
                                 <div class="flex flex-col">
                                     <span class="text-xs font-black text-slate-700">
-                                        <?= $totalEntries ?> Nomor Lomba
+                                        <?= $entriesCount ?> Nomor Lomba
                                     </span>
                                     <span class="text-[10px] font-bold text-slate-400">
-                                        Est. Biaya: <span class="text-emerald-600">Rp <?= number_format($estimasiTagihan, 0, ',', '.') ?></span>
+                                        Total: <span class="text-emerald-600">Rp <?= number_format($tagihan, 0, ',', '.') ?></span>
                                     </span>
                                 </div>
                             </td>
 
                             <td class="py-6 px-4">
-                                <?php if($hasPayment): ?>
-                                    <a href="../../../public/<?= htmlspecialchars($club['payment_proof']) ?>" target="_blank" class="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white transition group/btn border border-blue-100">
+                                <?php if(!empty($row['file_path'])): ?>
+                                    <a href="../../../public/uploads/payments/<?= htmlspecialchars($row['file_path']) ?>" target="_blank" class="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-slate-200 text-slate-600 hover:border-blue-300 hover:text-blue-600 transition group/btn shadow-sm">
                                         <span class="text-lg">🧾</span>
                                         <div class="flex flex-col text-left">
-                                            <span class="text-[9px] font-bold uppercase tracking-wider">Cek Bukti</span>
-                                            <span class="text-[8px] opacity-70">Klik untuk melihat</span>
+                                            <span class="text-[9px] font-bold uppercase tracking-wider">Lihat Bukti</span>
                                         </div>
                                     </a>
                                 <?php else: ?>
-                                    <span class="text-[10px] font-bold text-red-400 bg-red-50 px-2 py-1 rounded">Belum Upload</span>
+                                    <span class="text-[10px] font-bold text-slate-400 border border-dashed border-slate-300 px-2 py-1 rounded">No File</span>
                                 <?php endif; ?>
                             </td>
 
                             <td class="py-6 px-4 text-center">
-                                <?php if($isVerified): ?>
-                                    <span class="inline-block px-3 py-1 rounded-full bg-emerald-100 text-emerald-600 text-[9px] font-black uppercase tracking-widest border border-emerald-200">
-                                        ✅ Lunas / Verified
-                                    </span>
-                                <?php else: ?>
-                                    <span class="inline-block px-3 py-1 rounded-full bg-amber-100 text-amber-600 text-[9px] font-black uppercase tracking-widest border border-amber-200 animate-pulse">
-                                        ⏳ Menunggu Validasi
-                                    </span>
-                                <?php endif; ?>
+                                <?php 
+                                $badgeClass = match($status) {
+                                    'Paid' => 'bg-emerald-100 text-emerald-600 border-emerald-200',
+                                    'Pending' => 'bg-amber-100 text-amber-600 border-amber-200 animate-pulse',
+                                    'Rejected' => 'bg-red-100 text-red-600 border-red-200',
+                                    default => 'bg-slate-100 text-slate-500 border-slate-200'
+                                };
+                                ?>
+                                <span class="inline-block px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border <?= $badgeClass ?>">
+                                    <?= $status ?>
+                                </span>
                             </td>
 
                             <td class="py-6 px-6 text-right">
                                 <div class="flex items-center justify-end gap-2">
                                     
-                                    <a href="detail_club.php?id=<?= $club['id'] ?>" class="px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-blue-600 text-[10px] font-black uppercase transition" title="Lihat Detail Atlet">
+                                    <a href="detail_club.php?id=<?= $row['user_id'] ?>&event_id=<?= $row['event_id'] ?>" class="px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-blue-600 text-[10px] font-black uppercase transition shadow-sm" title="Lihat Detail Lengkap">
                                         👁️ Detail
                                     </a>
 
-                                    <?php if(!$isVerified): ?>
-                                        <form method="POST" onsubmit="return confirm('Apakah bukti pembayaran sudah valid? Klik OK untuk memverifikasi akun ini.');">
-                                            <input type="hidden" name="validate_club_id" value="<?= $club['id'] ?>">
+                                    <?php if($status == 'Pending'): ?>
+                                        <form method="POST" onsubmit="return confirm('Verifikasi pembayaran ini sebagai LUNAS?');">
+                                            <input type="hidden" name="approve_payment_id" value="<?= $row['payment_id'] ?>">
                                             <button type="submit" class="px-4 py-2 rounded-lg bg-emerald-500 text-white hover:bg-emerald-600 text-[10px] font-black uppercase tracking-wider transition shadow-md shadow-emerald-200">
-                                                ✓ Terima & Validasi
+                                                ✓ Terima
                                             </button>
                                         </form>
-                                    <?php else: ?>
-                                        <form method="POST" onsubmit="return confirm('Batalkan validasi akun ini?');">
-                                            <input type="hidden" name="unverify_club_id" value="<?= $club['id'] ?>">
+                                    <?php endif; ?>
+
+                                    <?php if($status == 'Paid'): ?>
+                                        <form method="POST" onsubmit="return confirm('Batalkan status lunas? User harus upload ulang.');">
+                                            <input type="hidden" name="reject_payment_id" value="<?= $row['payment_id'] ?>">
                                             <button type="submit" class="px-3 py-2 rounded-lg border border-red-100 text-red-400 hover:bg-red-50 hover:text-red-600 text-[10px] font-bold uppercase transition" title="Batalkan Validasi">
                                                 ✕ Batal
                                             </button>
