@@ -1,148 +1,398 @@
 <?php
+// src/admin/results/medal_tally.php
 session_start();
 require_once __DIR__ . '/../../../src/config/database.php';
 
-// Cek Admin
+// 1. CEK KEAMANAN
 if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
     header("Location: ../../../public/login.php"); exit;
 }
 
-// HITUNG PEROLEHAN MEDALI
-// Logika:
-// 1. Ambil data User (Klub)
-// 2. Join ke event_entries (Atlet)
-// 3. Join ke race_results (Hasil)
-// 4. Hitung jumlah Rank 1 (Emas), Rank 2 (Perak), Rank 3 (Perunggu)
-// 5. Urutkan berdasarkan Emas terbanyak, lalu Perak, lalu Perunggu.
+// 2. PARAMETER & FILTER
+$uid = $_SESSION['user_id'];
+$mode = $_GET['mode'] ?? 'team'; // 'team' atau 'athlete'
+$filter_gender = $_GET['gender'] ?? 'all';
+$filter_ku = $_GET['ku'] ?? 'all';
 
-try {
-    $sql = "SELECT 
-                u.nama_lengkap as nama_klub,
-                COALESCE(SUM(CASE WHEN rr.rank = 1 THEN 1 ELSE 0 END), 0) as emas,
-                COALESCE(SUM(CASE WHEN rr.rank = 2 THEN 1 ELSE 0 END), 0) as perak,
-                COALESCE(SUM(CASE WHEN rr.rank = 3 THEN 1 ELSE 0 END), 0) as perunggu
-            FROM users u
-            JOIN event_entries ee ON u.id = ee.user_id
-            JOIN race_results rr ON ee.id = rr.entry_id
-            WHERE u.role = 'user' 
-            AND rr.disqualified = 0
-            GROUP BY u.id
-            HAVING (emas + perak + perunggu) > 0
-            ORDER BY emas DESC, perak DESC, perunggu DESC";
+// 3. AMBIL DATA PROFIL & EVENT
+$stmtProfile = $pdo->prepare("SELECT * FROM users WHERE id = ?");
+$stmtProfile->execute([$uid]);
+$profile = $stmtProfile->fetch();
 
-    $tally = $pdo->query($sql)->fetchAll();
+$header_title    = $profile['nama_lengkap'] ?? 'KEJUARAAN RENANG';
+$raw_date        = strtotime($profile['event_start_date']);
+$event_year      = date('Y', $raw_date);
+$display_date    = date('d F Y', $raw_date);
 
-} catch (PDOException $e) {
-    $tally = [];
-    $error_msg = "Error Database: " . $e->getMessage();
+if(strtotime($profile['event_start_date']) != strtotime($profile['event_end_date'])) {
+    $header_date_range = date('d', $raw_date) . ' - ' . date('d F Y', strtotime($profile['event_end_date']));
+} else {
+    $header_date_range = $display_date;
 }
 
-include __DIR__ . '/../../../views/layout/topbar.php'; 
-include __DIR__ . '/../../../views/layout/sidebar.php'; 
+$logo_left  = !empty($profile['logo_left']) ? '../../../public/' . $profile['logo_left'] : null;
+$logo_right = !empty($profile['logo_right']) ? '../../../public/' . $profile['logo_right'] : null;
+
+// 4. AMBIL SPONSOR FOOTER
+$stmtFooter = $pdo->prepare("SELECT * FROM event_footer_logos WHERE user_id = ? ORDER BY id ASC");
+$stmtFooter->execute([$uid]);
+$footerSponsors = $stmtFooter->fetchAll(PDO::FETCH_ASSOC);
+
+// 5. HELPER: HITUNG KU (Untuk Mode Atlet)
+function getKU($tgl_lahir, $event_year) {
+    if (!$tgl_lahir || $tgl_lahir == '0000-00-00') return '-';
+    $born_year = date('Y', strtotime($tgl_lahir));
+    $age = $event_year - $born_year;
+    
+    if ($age <= 10) return 'KU 4 (≤10)';
+    if ($age <= 12) return 'KU 3 (11-12)';
+    if ($age <= 14) return 'KU 2 (13-14)';
+    if ($age <= 17) return 'KU 1 (15-17)';
+    return 'SENIOR (18+)';
+}
+
+// 6. LOGIC QUERY DATABASE
+$tally = [];
+$title_main = "";
+$title_sub = "";
+
+if ($mode == 'team') {
+    // --- MODE JUARA UMUM (TIM) ---
+    $title_main = "KLASEMEN JUARA UMUM";
+    $title_sub = "PEROLEHAN MEDALI TIM / KLUB";
+    
+    $sql = "SELECT 
+                COALESCE(NULLIF(s.asal_sekolah, ''), u.nama_lengkap, 'Unattached') as name,
+                SUM(CASE WHEN ee.final_rank = 1 THEN 1 ELSE 0 END) as gold,
+                SUM(CASE WHEN ee.final_rank = 2 THEN 1 ELSE 0 END) as silver,
+                SUM(CASE WHEN ee.final_rank = 3 THEN 1 ELSE 0 END) as bronze,
+                COUNT(ee.id) as total_medals
+            FROM event_entries ee
+            JOIN swimmers s ON ee.swimmer_id = s.id
+            LEFT JOIN users u ON ee.user_id = u.id
+            WHERE ee.final_rank IN (1, 2, 3)
+            GROUP BY name
+            ORDER BY gold DESC, silver DESC, bronze DESC";
+            
+    $tally = $pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC);
+
+} else {
+    // --- MODE PERENANG TERBAIK (ATLET) ---
+    $title_main = "PERENANG TERBAIK";
+    $label_gender = ($filter_gender == 'all') ? 'PUTRA & PUTRI' : ($filter_gender == 'L' ? 'PUTRA' : 'PUTRI');
+    $label_ku = ($filter_ku == 'all') ? 'SEMUA UMUR' : strtoupper($filter_ku);
+    $title_sub = "$label_ku - $label_gender";
+
+    // Filter Query
+    $whereClause = "WHERE ee.final_rank IN (1, 2, 3)";
+    $params = [];
+
+    if ($filter_gender !== 'all') {
+        $whereClause .= " AND s.jenis_kelamin = ?";
+        $params[] = $filter_gender;
+    }
+
+    $sql = "SELECT 
+                s.nama_atlet, 
+                s.jenis_kelamin, 
+                s.tanggal_lahir,
+                COALESCE(NULLIF(s.asal_sekolah, ''), u.nama_lengkap) as team,
+                SUM(CASE WHEN ee.final_rank = 1 THEN 1 ELSE 0 END) as gold,
+                SUM(CASE WHEN ee.final_rank = 2 THEN 1 ELSE 0 END) as silver,
+                SUM(CASE WHEN ee.final_rank = 3 THEN 1 ELSE 0 END) as bronze,
+                COUNT(ee.id) as total_medals
+            FROM event_entries ee
+            JOIN swimmers s ON ee.swimmer_id = s.id
+            LEFT JOIN users u ON ee.user_id = u.id
+            $whereClause
+            GROUP BY s.id
+            ORDER BY gold DESC, silver DESC, bronze DESC";
+
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
+    $raw_data = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    // Filter KU via PHP
+    foreach ($raw_data as $row) {
+        $ku = getKU($row['tanggal_lahir'], $event_year);
+        if ($filter_ku !== 'all') {
+            $pass = false;
+            if ($filter_ku == 'ku4' && strpos($ku, 'KU 4') !== false) $pass = true;
+            if ($filter_ku == 'ku3' && strpos($ku, 'KU 3') !== false) $pass = true;
+            if ($filter_ku == 'ku2' && strpos($ku, 'KU 2') !== false) $pass = true;
+            if ($filter_ku == 'ku1' && strpos($ku, 'KU 1') !== false) $pass = true;
+            if ($filter_ku == 'senior' && strpos($ku, 'SENIOR') !== false) $pass = true;
+            if (!$pass) continue;
+        }
+        $row['ku_label'] = $ku;
+        $tally[] = $row;
+    }
+}
 ?>
 
-<div class="p-6 sm:ml-64 pt-24 bg-slate-50 min-h-screen font-sans text-slate-800">
-
-    <div class="max-w-5xl mx-auto mb-10 flex flex-col md:flex-row justify-between items-end gap-6">
-        <div>
-            <h1 class="text-4xl font-black uppercase tracking-tighter italic text-slate-900 leading-none">Klasemen Medali</h1>
-            <p class="text-sm text-slate-500 font-bold uppercase tracking-widest mt-2">Perolehan Juara Antar Klub</p>
-        </div>
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <title>Medal Tally</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto+Condensed:wght@400;700&family=Courier+Prime:wght@400;700&display=swap" rel="stylesheet">
+    
+    <style>
+        /* === STYLE SERAGAM (SAMA SEPERTI print_result.php) === */
+        .font-condensed { font-family: 'Roboto Condensed', sans-serif; }
+        .font-mono { font-family: 'Courier Prime', monospace; }
         
-        <button onclick="window.print()" class="px-6 py-3 bg-white border border-slate-200 text-slate-600 rounded-xl font-bold text-xs uppercase tracking-wider shadow-sm hover:bg-slate-50 transition flex items-center gap-2">
-            🖨️ Cetak Klasemen
-        </button>
-    </div>
-
-    <?php if(isset($error_msg)): ?>
-        <div class="max-w-5xl mx-auto mb-6 bg-red-100 border border-red-200 text-red-700 px-4 py-3 rounded-xl">
-            <strong class="font-bold">Terjadi Kesalahan:</strong> <?= $error_msg ?>
-        </div>
-    <?php endif; ?>
-
-    <div class="max-w-5xl mx-auto">
+        body { background: #525659; margin: 0; padding: 20px; min-height: 100vh; display: flex; flex-direction: column; align-items: center; }
         
-        <?php if(empty($tally)): ?>
-            <div class="bg-white rounded-[2.5rem] p-16 text-center border border-slate-200 shadow-sm">
-                <div class="text-6xl mb-4 grayscale opacity-30">🏆</div>
-                <h3 class="font-black text-slate-400 uppercase tracking-widest text-lg">Belum Ada Juara</h3>
-                <p class="text-xs font-bold text-slate-300 mt-2">
-                    Klasemen akan muncul otomatis setelah Anda menginput hasil lomba (Juara 1, 2, 3).
-                </p>
-                <a href="index.php" class="inline-block mt-6 px-6 py-3 bg-blue-600 text-white rounded-xl font-bold text-xs uppercase tracking-wider hover:bg-blue-700 transition">
-                    Input Hasil Lomba
+        /* LAYOUT KERTAS A4 */
+        .paper-sheet {
+            width: 210mm; min-height: 297mm; background: white; 
+            padding: 10mm; 
+            color: #000; position: relative; font-family: 'Roboto Condensed', sans-serif;
+            box-shadow: 0 0 10px rgba(0,0,0,0.5);
+            display: flex; flex-direction: column;
+        }
+
+        /* HEADER KOP SURAT */
+        .page-header {
+            padding: 10px 0 20px 0; border-bottom: 3px double #000; margin-bottom: 20px;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .logo-box { width: 80px; height: 80px; display: flex; align-items: center; justify-content: center; }
+        
+        /* HEADER ACARA GRID (ADAPTASI UNTUK MEDALI) */
+        .event-header-grid {
+            display: grid; grid-template-columns: 120px 1fr 120px; align-items: center;
+            border-bottom: 2px solid #000; margin-bottom: 15px; padding-bottom: 5px;
+        }
+        .event-info-box { text-align: left; } 
+        .event-info-title { font-size: 8pt; font-weight: bold; color: #444; text-transform: uppercase; }
+        .event-info-val { font-size: 11pt; font-weight: 900; line-height: 1.2; text-transform: uppercase; }
+        
+        .event-title-box { text-align: center; } 
+        .event-title { font-size: 16pt; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; }
+        
+        .event-round-box { text-align: right; }
+
+        /* TABEL DATA (STYLE SAMA) */
+        .result-table { width: 100%; border-collapse: collapse; font-size: 9pt; table-layout: fixed; }
+        
+        .result-table th { 
+            background: #f0f0f0; border-bottom: 1px solid #000; border-top: 1px solid #000;
+            padding: 6px 8px; font-weight: bold; font-size: 9pt; vertical-align: middle;
+            text-transform: uppercase;
+        }
+        .result-table td { 
+            border-bottom: 1px solid #ddd; padding: 4px 8px; 
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; 
+        }
+
+        /* Highlight untuk kolom medali */
+        .bg-gold { background-color: #fffbe6; }
+        .bg-silver { background-color: #f4f4f5; }
+        .bg-bronze { background-color: #fff1e6; }
+        .bg-total { background-color: #fafafa; font-weight: 900; }
+
+        /* Alignment */
+        .col-center { text-align: center; } 
+        .col-left { text-align: left; } 
+        .col-right { text-align: right; }
+        .font-black { font-weight: 900; }
+        
+        /* Footer Sponsor */
+        .page-footer {
+            margin-top: auto; padding-top: 10px; border-top: 2px solid #000;
+            height: 70px; display: flex; align-items: center; justify-content: center; gap: 30px;
+        }
+        .page-footer img { height: 100%; width: auto; max-width: 150px; object-fit: contain; }
+
+        /* Styling Form Filter di No-Print */
+        .filter-select {
+            background: white; border: 1px solid #cbd5e1; padding: 4px 8px; border-radius: 4px;
+            font-size: 0.8rem; font-weight: bold; color: #334155;
+        }
+
+        @media print {
+            body { background: white; padding: 0; display: block; }
+            .no-print { display: none !important; }
+            .paper-sheet { width: 100%; box-shadow: none; margin: 0; padding: 0; min-height: 100vh; }
+            /* Paksa cetak background color untuk kolom medali */
+            * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="no-print w-[210mm] mb-6 flex flex-col gap-4">
+        
+        <div class="bg-white p-4 rounded-xl shadow border border-gray-300 flex justify-between items-center">
+            <div>
+                <h1 class="font-bold text-lg text-slate-800">REKAPITULASI MEDALI</h1>
+                <p class="text-xs text-slate-500">Pilih mode tampilan:</p>
+            </div>
+            <div class="flex gap-2 bg-slate-100 p-1 rounded-lg">
+                <a href="?mode=team" class="px-4 py-1.5 rounded-md text-xs font-bold uppercase transition <?= $mode=='team' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-800' ?>">
+                    🏆 Tim / Klub
+                </a>
+                <a href="?mode=athlete" class="px-4 py-1.5 rounded-md text-xs font-bold uppercase transition <?= $mode=='athlete' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-800' ?>">
+                    🏊 Perenang Terbaik
                 </a>
             </div>
+        </div>
 
-        <?php else: ?>
+        <div class="bg-white p-4 rounded-xl shadow border border-gray-300 flex justify-between items-center">
             
-            <div class="bg-white rounded-[2.5rem] shadow-sm border border-slate-200 overflow-hidden">
-                <div class="overflow-x-auto">
-                    <table class="w-full text-left border-collapse">
-                        <thead class="bg-slate-900 text-white">
-                            <tr>
-                                <th class="py-5 px-6 text-[10px] font-black uppercase tracking-widest w-16 text-center">Rank</th>
-                                <th class="py-5 px-6 text-[10px] font-black uppercase tracking-widest">Nama Klub</th>
-                                <th class="py-5 px-6 text-[10px] font-black uppercase tracking-widest text-center w-24 bg-yellow-500 text-yellow-900">🥇 Emas</th>
-                                <th class="py-5 px-6 text-[10px] font-black uppercase tracking-widest text-center w-24 bg-slate-400 text-slate-900">🥈 Perak</th>
-                                <th class="py-5 px-6 text-[10px] font-black uppercase tracking-widest text-center w-24 bg-orange-400 text-orange-900">🥉 Perunggu</th>
-                                <th class="py-5 px-6 text-[10px] font-black uppercase tracking-widest text-center w-24 bg-slate-800 text-slate-400">Total</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-slate-100">
-                            <?php foreach($tally as $i => $row): 
-                                $rank = $i + 1;
-                                $total = $row['emas'] + $row['perak'] + $row['perunggu'];
-                                
-                                // Highlight Juara 1, 2, 3
-                                $rankClass = "text-slate-400";
-                                if($rank == 1) $rankClass = "text-yellow-500 text-2xl";
-                                if($rank == 2) $rankClass = "text-slate-400 text-xl";
-                                if($rank == 3) $rankClass = "text-orange-400 text-lg";
-                            ?>
-                            <tr class="hover:bg-slate-50 transition group">
-                                <td class="py-4 px-6 text-center font-black italic <?= $rankClass ?>">
-                                    <?= $rank ?>
-                                </td>
-                                <td class="py-4 px-6">
-                                    <span class="block font-black text-slate-800 uppercase italic text-sm group-hover:text-blue-600 transition">
-                                        <?= htmlspecialchars($row['nama_klub']) ?>
-                                    </span>
-                                </td>
-                                <td class="py-4 px-6 text-center font-black text-slate-700 bg-yellow-50 group-hover:bg-yellow-100 transition">
-                                    <?= $row['emas'] ?>
-                                </td>
-                                <td class="py-4 px-6 text-center font-black text-slate-700 bg-slate-50 group-hover:bg-slate-100 transition">
-                                    <?= $row['perak'] ?>
-                                </td>
-                                <td class="py-4 px-6 text-center font-black text-slate-700 bg-orange-50 group-hover:bg-orange-100 transition">
-                                    <?= $row['perunggu'] ?>
-                                </td>
-                                <td class="py-4 px-6 text-center font-black text-white bg-slate-900">
-                                    <?= $total ?>
-                                </td>
-                            </tr>
-                            <?php endforeach; ?>
-                        </tbody>
-                    </table>
+            <?php if($mode == 'athlete'): ?>
+                <form class="flex items-center gap-3">
+                    <input type="hidden" name="mode" value="athlete">
+                    <div class="flex flex-col">
+                        <label class="text-[10px] font-bold text-slate-400 uppercase">Kelompok Umur</label>
+                        <select name="ku" class="filter-select">
+                            <option value="all">SEMUA UMUR</option>
+                            <option value="senior" <?= $filter_ku=='senior'?'selected':'' ?>>SENIOR</option>
+                            <option value="ku1" <?= $filter_ku=='ku1'?'selected':'' ?>>KU 1</option>
+                            <option value="ku2" <?= $filter_ku=='ku2'?'selected':'' ?>>KU 2</option>
+                            <option value="ku3" <?= $filter_ku=='ku3'?'selected':'' ?>>KU 3</option>
+                            <option value="ku4" <?= $filter_ku=='ku4'?'selected':'' ?>>KU 4</option>
+                        </select>
+                    </div>
+                    <div class="flex flex-col">
+                        <label class="text-[10px] font-bold text-slate-400 uppercase">Gender</label>
+                        <select name="gender" class="filter-select">
+                            <option value="all">SEMUA</option>
+                            <option value="L" <?= $filter_gender=='L'?'selected':'' ?>>PUTRA</option>
+                            <option value="P" <?= $filter_gender=='P'?'selected':'' ?>>PUTRI</option>
+                        </select>
+                    </div>
+                    <button type="submit" class="mt-4 px-4 py-1 bg-blue-600 text-white text-xs font-bold rounded hover:bg-blue-700">FILTER</button>
+                </form>
+            <?php else: ?>
+                <div class="text-xs text-slate-400 italic">Filter tidak tersedia untuk mode Tim.</div>
+            <?php endif; ?>
+
+            <div class="flex gap-2">
+                <a href="index.php" class="px-4 py-2 bg-slate-100 text-slate-600 rounded font-bold text-xs uppercase hover:bg-slate-200">Kembali</a>
+                <button onclick="window.print()" class="px-6 py-2 bg-slate-900 text-white rounded font-bold text-xs uppercase hover:bg-slate-800 flex items-center gap-2">🖨️ Cetak</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="paper-sheet">
+        
+        <div class="page-header">
+            <div class="logo-box">
+                <?php if($logo_left): ?><img src="<?= $logo_left ?>" class="max-h-full max-w-full object-contain"><?php endif; ?>
+            </div>
+            <div class="text-center flex-1 px-4">
+                <h1 class="text-xl font-black uppercase leading-tight tracking-wide"><?= htmlspecialchars($header_title) ?></h1>
+                <p class="text-sm font-bold uppercase text-gray-600 mt-1"><?= htmlspecialchars($header_date_range) ?></p>
+                <div class="inline-block border-2 border-black px-6 py-1 mt-2">
+                    <p class="text-xl font-black uppercase tracking-[0.2em] leading-none">MEDAL TALLY</p>
                 </div>
             </div>
-
-            <div class="mt-6 text-center">
-                 <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                    * Klasemen dihitung otomatis berdasarkan hasil input lomba
-                </p>
+            <div class="logo-box">
+                <?php if($logo_right): ?><img src="<?= $logo_right ?>" class="max-h-full max-w-full object-contain"><?php endif; ?>
             </div>
+        </div>
 
+        <div class="event-header-grid">
+            <div class="event-info-box">
+                <div class="event-info-title">LAST UPDATE</div>
+                <div class="event-info-val"><?= date('d/m H:i') ?></div>
+            </div>
+            <div class="event-title-box">
+                <div class="event-title"><?= $title_main ?></div>
+            </div>
+            <div class="event-round-box">
+                <div class="event-info-title">KATEGORI</div>
+                <div class="event-info-val" style="font-size: 9pt;"><?= $title_sub ?></div>
+            </div>
+        </div>
+
+        <?php if(empty($tally)): ?>
+            <div class="text-center py-20 italic text-gray-400">
+                Belum ada data medali untuk kategori ini.
+            </div>
+        <?php else: ?>
+            <table class="result-table">
+                <colgroup>
+                    <col style="width: 8%;">   <?php if($mode == 'team'): ?>
+                        <col style="width: 52%;">  <?php else: ?>
+                        <col style="width: 32%;">  <col style="width: 20%;">  <?php endif; ?>
+                    
+                    <col style="width: 10%;">  <col style="width: 10%;">  <col style="width: 10%;">  <col style="width: 10%;">  </colgroup>
+                <thead>
+                    <tr>
+                        <th class="col-center">RANK</th>
+                        
+                        <?php if($mode == 'team'): ?>
+                            <th class="col-left">TIM / KONTINGEN</th>
+                        <?php else: ?>
+                            <th class="col-left">NAMA ATLET</th>
+                            <th class="col-left">TIM / KONTINGEN</th>
+                        <?php endif; ?>
+
+                        <th class="col-center bg-gold">EMAS</th>
+                        <th class="col-center bg-silver">PERAK</th>
+                        <th class="col-center bg-bronze">PRG</th>
+                        <th class="col-center bg-total">TOTAL</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php 
+                    $rank = 1;
+                    foreach($tally as $row): 
+                    ?>
+                    <tr>
+                        <td class="col-center font-black text-sm"><?= $rank++ ?></td>
+                        
+                        <?php if($mode == 'team'): ?>
+                            <td class="col-left font-bold text-black"><?= htmlspecialchars($row['name']) ?></td>
+                        <?php else: ?>
+                            <td class="col-left font-bold text-black">
+                                <?= htmlspecialchars($row['nama_atlet']) ?>
+                                <span class="text-[8px] text-gray-500 block font-normal">
+                                    <?= $row['jenis_kelamin'] ?> | <?= $row['ku_label'] ?>
+                                </span>
+                            </td>
+                            <td class="col-left text-xs text-gray-700"><?= htmlspecialchars($row['team']) ?></td>
+                        <?php endif; ?>
+
+                        <td class="col-center font-mono font-bold bg-gold"><?= $row['gold'] ?></td>
+                        <td class="col-center font-mono font-bold bg-silver"><?= $row['silver'] ?></td>
+                        <td class="col-center font-mono font-bold bg-bronze"><?= $row['bronze'] ?></td>
+                        <td class="col-center font-mono font-black bg-total"><?= $row['total_medals'] ?></td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
         <?php endif; ?>
-    </div>
-</div>
 
-<style>
-    @media print {
-        .sm\:ml-64 { margin-left: 0 !important; }
-        button, a { display: none !important; }
-        body { background: white !important; }
-        .shadow-sm { box-shadow: none !important; border: 1px solid #ccc !important; }
-    }
-</style>
+        <div class="mt-12 flex justify-between px-10">
+            <div class="text-center w-40">
+                </div>
+            <div class="text-center w-40">
+                <p class="text-[10px] font-bold uppercase text-gray-500">Ketua Panitia</p>
+                <div class="border-bottom border-black mt-12 border-b"></div>
+            </div>
+        </div>
+
+        <div class="page-footer">
+            <?php if(!empty($footerSponsors)): ?>
+                <?php foreach($footerSponsors as $fs): ?>
+                    <img src="../../../public/<?= $fs['image_path'] ?>" alt="Sponsor">
+                <?php endforeach; ?>
+            <?php else: ?>
+                <span class="text-xs text-gray-300 italic">Supported by Swim Event System</span>
+            <?php endif; ?>
+        </div>
+        
+        <div class="absolute bottom-2 left-10 text-[8px] text-gray-400 uppercase">
+            Printed: <?= date('d/m/Y H:i') ?>
+        </div>
+
+    </div>
+
+</body>
+</html>

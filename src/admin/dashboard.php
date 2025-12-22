@@ -1,15 +1,24 @@
 <?php
+// src/admin/dashboard.php
 session_start();
 require_once __DIR__ . '/../../src/config/database.php';
 
+// 1. CEK KEAMANAN
 if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
     header("Location: ../../public/login.php"); exit;
 }
 
 $uid = $_SESSION['user_id'];
-$adminMode = $_SESSION['event_type'] ?? 'Langsung Final'; // Mode dari Master
 
-// --- 1. HITUNG STATISTIK ---
+// 2. AMBIL DATA EVENT & MODE
+// Kita ambil mode (Langsung Final / Penyisihan) langsung dari DB agar realtime
+$stmtProfile = $pdo->prepare("SELECT event_type FROM users WHERE id = ?");
+$stmtProfile->execute([$uid]);
+$prof = $stmtProfile->fetch();
+$adminMode = $prof['event_type'] ?? 'Langsung Final'; 
+
+// --- 3. HITUNG STATISTIK ---
+
 // Total Atlet
 $stmt = $pdo->prepare("SELECT COUNT(DISTINCT swimmer_id) FROM event_entries WHERE event_id = ?");
 $stmt->execute([$uid]);
@@ -119,11 +128,13 @@ include __DIR__ . '/../../views/layout/sidebar.php';
                     <a href="seeding/index.php" class="bg-white text-slate-900 px-8 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-blue-500 hover:text-white transition shadow-lg shadow-white/5">
                         Start List Utama
                     </a>
+                    
                     <?php if($adminMode == 'Babak Penyisihan'): ?>
                         <a href="seeding/final.php" class="bg-orange-500 text-white px-8 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-orange-600 transition shadow-lg shadow-orange-500/20 italic">
                             Seeding Babak Final 🏆
                         </a>
                     <?php endif; ?>
+
                     <a href="results/index.php" class="bg-slate-800 text-slate-300 px-8 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-700 transition">
                         Input Hasil Waktu
                     </a>
