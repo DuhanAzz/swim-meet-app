@@ -1,14 +1,13 @@
 <?php
 session_start();
-// Sesuaikan path config database
-require_once __DIR__ . '/../config/database.php';
+require_once __DIR__ . '/../../src/config/database.php'; // Pastikan path ini benar
 
 // 1. Cek Login & Role Admin
 if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
     header("Location: ../../public/login.php"); exit;
 }
 
-$uid = $_SESSION['user_id']; // ID Admin (Contoh: 2)
+$uid = $_SESSION['user_id']; 
 
 // 2. HANDLE SIMPAN DATA (CREATE)
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
@@ -20,36 +19,39 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $jk_raw = $_POST['jenis_kelamin']; // L, P, atau Campuran
         $bawah  = $_POST['batas_umur_bawah'];
         $atas   = $_POST['batas_umur_atas'];
-        $harga  = $_POST['biaya_pendaftaran'] ?? 50000; // Default 50rb jika kosong
+        $harga  = $_POST['biaya_pendaftaran'] ?? 50000;
         
-        // Mapping Gender sesuai Enum Database (Putra, Putri, Mixed, L, P, Male, Female)
-        $gender = $jk_raw;
-        if($jk_raw == 'Campuran') $gender = 'Mixed';
+        // Buat Label Gender untuk Nama Event
+        $labelJK = ($jk_raw == 'L') ? 'Putra' : (($jk_raw == 'P') ? 'Putri' : 'Mixed');
 
-        // Format Nama Event: "50M Gaya Bebas KU 10-12 Th"
-        // Kita gabungkan umur ke nama event karena tabel 'events' tidak punya kolom age_group
-        $nama_event = "$jarak" . "M " . "$gaya KU $bawah-$atas Th"; 
+        // Format Nama Event: "50 M Gaya Bebas Putra KU 10-12"
+        $nama_event = "$jarak M $gaya $labelJK KU $bawah-$atas Th"; 
+        
+        // Format Age Group String (untuk tampilan index)
+        $age_group_str = "KU $bawah - $atas Th";
 
-        // 3. QUERY INSERT KE TABEL 'events' (YANG BENAR)
-        // Pastikan menyertakan 'user_id' agar terhubung ke Admin & Rekening Bank
-        $sql = "INSERT INTO events 
-                (user_id, nomor_acara, nama_event, gender, jarak, gaya, price, created_at) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, NOW())";
+        // 3. QUERY INSERT KE TABEL 'event_numbers' (FIXED)
+        $sql = "INSERT INTO event_numbers 
+                (organizer_id, event_number, event_name, distance, stroke, jenis_kelamin, age_group, age_min, age_max, price, created_at) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())";
         
         $stmt = $pdo->prepare($sql);
         $stmt->execute([
-            $uid,           // user_id (KUNCI PERBAIKAN: Agar rekening muncul)
-            $nomor,         // nomor_acara
-            $nama_event,    // nama_event
-            $gender,        // gender
-            $jarak,         // jarak
-            $gaya,          // gaya
+            $uid,           // organizer_id (Sesuai index.php)
+            $nomor,         // event_number
+            $nama_event,    // event_name
+            $jarak,         // distance
+            $gaya,          // stroke
+            $jk_raw,        // jenis_kelamin (L/P/Campuran)
+            $age_group_str, // age_group (String)
+            $bawah,         // age_min (Int)
+            $atas,          // age_max (Int)
             $harga          // price
         ]);
         
         // Notifikasi Sukses
         $_SESSION['swal_type'] = 'success'; 
-        $_SESSION['swal_msg'] = 'Nomor ' . $nomor . ' (' . $nama_event . ') berhasil ditambahkan!';
+        $_SESSION['swal_msg'] = 'Nomor ' . $nomor . ' berhasil ditambahkan!';
         
         // Refresh halaman
         header("Location: create.php"); exit();
