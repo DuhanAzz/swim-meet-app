@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <title>SET Timer Sistem</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="overlay"></div>
+
+  <div class="page-wrapper">
+    <h1>SET Timer Sistem</h1>
+
+    <div class="filename-input">
+      <label for="filename">Nomor acara:</label>
+      <input type="text" id="filename" placeholder="_ _ _ : _" />
+    </div>
+
+    <div style="display: flex; gap: 40px; flex-wrap: wrap; justify-content: center;">
+      <div class="main-layout">
+        <div class="stopwatch-container" id="stopwatchContainer">
+          <!-- Stopwatch lintasan dibuat via JS -->
+        </div>
+      </div>
+
+      <div class="controls">
+        <button onclick="startAll()">START</button>
+        <button onclick="resetAll()">RESET</button>
+        <button onclick="saveResults()">SAVE</button>
+        <button id="connectBtn">Connect Arduino</button>
+      </div>
+    </div>
+
+    <footer>
+      Made with love <strong>SET System</strong>
+    </footer>
+  </div>
+
+  <script>
+    // ================== LOGIKA STOPWATCH ==================
+    const stopwatches = [];
+    const intervals = [];
+    const container = document.getElementById("stopwatchContainer");
+
+    // Buat 10 stopwatch lintasan (0–9)
+    for (let i = 0; i < 10; i++) {
+      const row = document.createElement("div");
+      row.className = "stopwatch-row";
+
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.checked = true;
+      checkbox.className = "checkbox";
+      checkbox.id = "check" + i;
+
+      const checkboxWrapper = document.createElement("label");
+      checkboxWrapper.appendChild(checkbox);
+
+      const label = document.createElement("div");
+      label.className = "label";
+      label.textContent = "Lintasan " + (i);
+
+      const time = document.createElement("div");
+      time.className = "time";
+      time.id = "sw" + i;
+      time.textContent = "00:00:00";
+
+      const stopBtn = document.createElement("button");
+      stopBtn.className = "btn-stop";
+      stopBtn.textContent = "Stop";
+      stopBtn.onclick = () => stopOne(i);
+
+      row.appendChild(checkboxWrapper);
+      row.appendChild(label);
+      row.appendChild(time);
+      row.appendChild(stopBtn);
+      container.appendChild(row);
+
+      stopwatches.push({ id: i, startTime: null, elapsed: 0, running: false });
+      intervals.push(null);
+    }
+
+    function formatTime(ms) {
+      const minutes = Math.floor(ms / 60000);
+      const seconds = Math.floor((ms % 60000) / 1000);
+      const milliseconds = Math.floor((ms % 1000) / 10);
+      return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}:${String(milliseconds).padStart(2, "0")}`;
+    }
+
+    function startAll() {
+      stopwatches.forEach((sw, i) => {
+        const check = document.getElementById("check" + i);
+        if (check.checked && !sw.running) {
+          sw.startTime = Date.now() - sw.elapsed;
+          sw.running = true;
+          intervals[i] = setInterval(() => {
+            sw.elapsed = Date.now() - sw.startTime;
+            const timeElem = document.getElementById("sw" + i);
+            timeElem.textContent = formatTime(sw.elapsed);
+            timeElem.classList.add("active");
+          }, 50);
+        }
+      });
+    }
+
+    function stopOne(index) {
+      const sw = stopwatches[index];
+      if (sw.running) {
+        clearInterval(intervals[index]);
+        sw.running = false;
+        sw.elapsed = Date.now() - sw.startTime;
+        document.getElementById("sw" + index).classList.remove("active");
+      }
+    }
+
+    function resetAll() {
+      stopwatches.forEach((sw, i) => {
+        clearInterval(intervals[i]);
+        sw.running = false;
+        sw.elapsed = 0;
+        sw.startTime = null;
+        const timeElem = document.getElementById("sw" + i);
+        timeElem.textContent = "00:00:00";
+        timeElem.classList.remove("active");
+      });
+    }
+
+    function saveResults() {
+      const filenameInput = document.getElementById("filename");
+      let namaFile = filenameInput.value.trim();
+
+      if (!namaFile) {
+        alert("Silakan isi nama file sebelum menyimpan.");
+        filenameInput.focus();
+        return;
+      }
+
+      namaFile = namaFile.replace(/[\\/:*?"<>|]/g, "_");
+      if (!namaFile.endsWith(".txt")) namaFile += ".txt";
+
+      const judulTanpaEkstensi = namaFile.replace(/\.txt$/, "");
+      let hasil = `=== Hasil Perlombaan ${judulTanpaEkstensi} ===\n\n`;
+
+      stopwatches.forEach((sw, i) => {
+        const checkbox = document.getElementById("check" + i);
+        let waktu;
+        if (!checkbox.checked) {
+          waktu = "00:00:00 (NS/NF)";
+        } else if (!sw.running && sw.elapsed > 0) {
+          waktu = formatTime(sw.elapsed);
+        } else {
+          waktu = "00:00:00 (NS/NF)";
+        }
+        hasil += `Lintasan ${i+1}: ${waktu}\n`;
+      });
+
+      const blob = new Blob([hasil], { type: "text/plain" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = namaFile;
+      link.click();
+    }
+
+    // ============== SHORTCUT KEYBOARD DI BROWSER ==============
+    document.addEventListener("keydown", function (e) {
+      const activeElement = document.activeElement;
+      const isInputFocused =
+        activeElement &&
+        (activeElement.tagName === "INPUT" || activeElement.tagName === "TEXTAREA");
+
+      if (isInputFocused) return;
+
+      if (e.key === "s" || e.key === "S") {
+        startAll();
+      } else if (e.key === "r" || e.key === "R") {
+        resetAll();
+      } else if (e.key >= "1" && e.key <= "9") {
+        stopOne(parseInt(e.key) - 1);
+      } else if (e.key === "0") {
+        stopOne(9);
+      }
+    });
+
+    // ============== WEB SERIAL API: ARDUINO ==============
+    let port;
+    let reader;
+    let keepReading = false;
+
+    async function connectArduino() {
+      const connectBtn = document.getElementById("connectBtn");
+
+      if (port && port.readable) {
+        keepReading = false;
+        try {
+          if (reader) await reader.cancel();
+        } catch (e) {
+          console.warn("Cancel reader:", e);
+        }
+        try {
+          await port.close();
+          console.log("Arduino disconnected");
+        } catch (err) {
+          console.error("Error disconnecting:", err);
+        }
+        port = null;
+        connectBtn.classList.remove("connected", "error");
+        connectBtn.textContent = "Connect Arduino";
+        return;
+      }
+
+      try {
+        port = await navigator.serial.requestPort();
+        await port.open({ baudRate: 9600 });
+        keepReading = true;
+        connectBtn.classList.remove("error");
+        connectBtn.classList.add("connected");
+        connectBtn.textContent = "Disconnect Arduino";
+        readLoop();
+        console.log("Arduino connected");
+      } catch (err) {
+        connectBtn.classList.remove("connected");
+        connectBtn.classList.add("error");
+        connectBtn.textContent = "Connection Failed ❌";
+        alert("Gagal membuka port serial: " + err);
+      }
+    }
+
+    async function readLoop() {
+      const textDecoder = new TextDecoderStream();
+      const readableStreamClosed = port.readable.pipeTo(textDecoder.writable);
+      reader = textDecoder.readable.getReader();
+
+      let buffer = "";
+      try {
+        while (keepReading) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          if (value) {
+            buffer += value;
+            let lines = buffer.split("\n");
+            buffer = lines.pop();
+            for (const line of lines) {
+              handleArduinoData(line.trim());
+            }
+          }
+        }
+      } catch (error) {
+        console.error("Read error:", error);
+      } finally {
+        try { reader.releaseLock(); } catch {}
+      }
+    }
+
+    function handleArduinoData(line) {
+      console.log("Arduino Data:", line);
+      try {
+        const data = JSON.parse(line);
+
+        if (data.event === "START") {
+          // Tidak reset, hanya start
+          startAll();
+        } 
+        else if (data.lane && data.time) {
+          const laneIndex = data.lane - 1;
+          const sw = stopwatches[laneIndex];
+          clearInterval(intervals[laneIndex]);
+          sw.running = false;
+          sw.elapsed = data.time * 1000;
+          const timeElem = document.getElementById("sw" + laneIndex);
+          timeElem.textContent = formatTime(sw.elapsed);
+          timeElem.classList.remove("active");
+        }
+      } catch (e) {
+        console.warn("Bukan JSON valid:", line);
+      }
+    }
+
+    document.getElementById("connectBtn").addEventListener("click", () => {
+      if (!navigator.serial) {
+        alert("Browser ini tidak mendukung Web Serial API.");
+        return;
+      }
+      connectArduino();
+    });
+  </script>
+</body>
+</html>
