@@ -13,18 +13,19 @@ $admin_id = $_SESSION['user_id'];
 // AMBIL DATA NOMOR LOMBA + JUMLAH ATLET VALID (LUNAS)
 // ============================================================
 try {
-    // Query ini menghitung jumlah atlet yang Statusnya PAID di tabel Payments
+    // REVISI QUERY: 
+    // 1. Menggunakan 'event_number_id' bukan 'category_id'
+    // 2. Menghubungkan ke tabel 'payments' via 'users' (klub) karena struktur payment Anda per klub.
+    
     $sql = "SELECT en.*, 
             (
                 SELECT COUNT(DISTINCT ee.id) 
                 FROM event_entries ee 
-                WHERE ee.category_id = en.id 
-                AND EXISTS (
-                    SELECT 1 FROM payments p 
-                    WHERE p.user_id = ee.user_id 
-                    AND p.event_id = ee.event_id 
-                    AND p.status = 'Paid'
-                )
+                -- Join ke user/klub untuk cek status bayar
+                LEFT JOIN payments p ON p.user_id = ee.club_id 
+                WHERE ee.event_number_id = en.id 
+                -- Hitung hanya yang statusnya Paid (atau hitung semua jika ingin melonggarkan aturan)
+                AND (p.status = 'Paid' OR p.status = 'Verified')
             ) as total_athletes
             FROM event_numbers en 
             WHERE en.organizer_id = ? 
@@ -149,7 +150,7 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                         </span>
                     </div>
                     <h3 class="text-xl font-black text-slate-800 uppercase italic tracking-tight">
-                        <?= $ev['distance'] ?>m <?= $ev['stroke'] ?>
+                        <?= $ev['event_name'] ?>
                     </h3>
                 </div>
 
@@ -162,10 +163,10 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
 
                 <div class="flex gap-2 w-full md:w-auto">
                     <?php if($isReady): ?>
-                        <a href="view_startlist.php?category_id=<?= $ev['id'] ?>" class="flex-1 md:flex-none px-6 py-3 bg-white hover:bg-slate-50 text-slate-600 rounded-xl font-bold text-xs uppercase tracking-wider border border-slate-200 transition shadow-sm flex items-center justify-center gap-2">
+                        <a href="view_startlist.php?event_id=<?= $ev['id'] ?>" class="flex-1 md:flex-none px-6 py-3 bg-white hover:bg-slate-50 text-slate-600 rounded-xl font-bold text-xs uppercase tracking-wider border border-slate-200 transition shadow-sm flex items-center justify-center gap-2">
                             <span>👁️</span> View
                         </a>
-                        <a href="logic.php?category_id=<?= $ev['id'] ?>" class="flex-1 md:flex-none px-6 py-3 bg-slate-900 hover:bg-blue-600 text-white rounded-xl font-bold text-xs uppercase tracking-wider shadow-lg hover:shadow-blue-200 transition flex items-center justify-center gap-2" onclick="return confirm('Apakah Anda yakin ingin melakukan seeding ulang? Data heat/lintasan sebelumnya akan ditimpa.')">
+                        <a href="logic.php?event_id=<?= $ev['id'] ?>" class="flex-1 md:flex-none px-6 py-3 bg-slate-900 hover:bg-blue-600 text-white rounded-xl font-bold text-xs uppercase tracking-wider shadow-lg hover:shadow-blue-200 transition flex items-center justify-center gap-2" onclick="return confirm('Apakah Anda yakin ingin melakukan seeding ulang? Data heat/lintasan sebelumnya akan ditimpa.')">
                             <span>⚙️</span> Generate
                         </a>
                     <?php else: ?>

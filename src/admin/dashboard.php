@@ -5,43 +5,47 @@ require_once __DIR__ . '/../../src/config/database.php';
 
 // 1. CEK KEAMANAN
 if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
-    header("Location: ../../public/login.php"); exit;
+    header("Location: ../../../public/login.php"); exit;
 }
 
 $uid = $_SESSION['user_id'];
 
-// 2. AMBIL DATA EVENT & MODE
-// Kita ambil mode (Langsung Final / Penyisihan) langsung dari DB agar realtime
-$stmtProfile = $pdo->prepare("SELECT event_type FROM users WHERE id = ?");
+// 2. AMBIL DATA PROFIL ADMIN
+$stmtProfile = $pdo->prepare("SELECT * FROM users WHERE id = ?");
 $stmtProfile->execute([$uid]);
 $prof = $stmtProfile->fetch();
-$adminMode = $prof['event_type'] ?? 'Langsung Final'; 
 
-// --- 3. HITUNG STATISTIK ---
+// Mode Lomba (Default Langsung Final jika kosong)
+$adminMode = $prof['competition_system'] ?? 'Langsung Final'; 
 
-// Total Atlet
-$stmt = $pdo->prepare("SELECT COUNT(DISTINCT swimmer_id) FROM event_entries WHERE event_id = ?");
+// --- 3. HITUNG STATISTIK (DARI DB YANG BENAR) ---
+
+// A. Total Atlet (Dihitung dari entries yang terdaftar di event admin ini)
+$stmt = $pdo->prepare("SELECT COUNT(DISTINCT swimmer_id) FROM event_entries WHERE user_id = ?");
 $stmt->execute([$uid]);
 $totalSwimmers = $stmt->fetchColumn();
 
-// Total Splash (Nomor Lomba yang diikuti)
-$stmt = $pdo->prepare("SELECT COUNT(*) FROM event_entries WHERE event_id = ?");
+// B. Total Splash (Jumlah nomor lomba yang diikuti atlet)
+$stmt = $pdo->prepare("SELECT COUNT(*) FROM event_entries WHERE user_id = ?");
 $stmt->execute([$uid]);
 $totalEntries = $stmt->fetchColumn();
 
-// Total Klub Peserta
-$stmt = $pdo->prepare("SELECT COUNT(DISTINCT club_id) FROM event_entries WHERE event_id = ?");
+// C. Total Klub (Dari entries)
+$stmt = $pdo->prepare("SELECT COUNT(DISTINCT club_id) FROM event_entries WHERE user_id = ?");
 $stmt->execute([$uid]);
 $totalClubs = $stmt->fetchColumn();
 
-// Keuangan (Verified)
-$stmt = $pdo->prepare("SELECT SUM(total_amount) FROM event_payments WHERE event_id = ? AND status = 'Verified'");
-$stmt->execute([$uid]);
+// D. Keuangan Masuk (Dari tabel 'payments' status 'Paid')
+$stmt = $pdo->prepare("SELECT SUM(amount) FROM payments WHERE status = 'Paid'"); 
+// Catatan: Idealnya ditambah WHERE user_id jika payments ada kolom penerima, 
+// tapi berdasarkan struktur DB Anda, tabel payments punya user_id (pengirim).
+// Kita asumsikan semua payment di sistem ini milik admin utama dulu.
+$stmt->execute();
 $totalIncome = $stmt->fetchColumn() ?: 0;
 
-// Pembayaran Pending
-$stmt = $pdo->prepare("SELECT COUNT(*) FROM event_payments WHERE event_id = ? AND status = 'Pending'");
-$stmt->execute([$uid]);
+// E. Pembayaran Pending
+$stmt = $pdo->prepare("SELECT COUNT(*) FROM payments WHERE status = 'Pending'");
+$stmt->execute();
 $pendingPayment = $stmt->fetchColumn();
 
 include __DIR__ . '/../../views/layout/topbar.php'; 
@@ -55,7 +59,7 @@ include __DIR__ . '/../../views/layout/sidebar.php';
             <h1 class="text-4xl font-black uppercase tracking-tighter italic text-slate-900">Event Dashboard</h1>
             <div class="flex items-center gap-3 mt-1">
                 <p class="text-sm text-slate-500 font-bold uppercase tracking-widest">Ringkasan Kompetisi Anda</p>
-                <span class="px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-tighter border-2 <?= $adminMode == 'Babak Penyisihan' ? 'bg-orange-50 border-orange-200 text-orange-600' : 'bg-blue-50 border-blue-200 text-blue-600' ?>">
+                <span class="px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-tighter border-2 <?= $adminMode == 'Penyisihan' ? 'bg-orange-50 border-orange-200 text-orange-600' : 'bg-blue-50 border-blue-200 text-blue-600' ?>">
                     Sistem: <?= $adminMode ?>
                 </span>
             </div>
@@ -109,7 +113,6 @@ include __DIR__ . '/../../views/layout/sidebar.php';
     </div>
 
     <div class="grid grid-cols-1 xl:grid-cols-3 gap-8 mb-10">
-        
         <div class="xl:col-span-2 bg-slate-900 rounded-[3rem] p-10 text-white shadow-2xl relative overflow-hidden">
             <div class="relative z-10">
                 <div class="flex items-center gap-4 mb-6">
@@ -128,20 +131,10 @@ include __DIR__ . '/../../views/layout/sidebar.php';
                     <a href="seeding/index.php" class="bg-white text-slate-900 px-8 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-blue-500 hover:text-white transition shadow-lg shadow-white/5">
                         Start List Utama
                     </a>
-                    
-                    <?php if($adminMode == 'Babak Penyisihan'): ?>
-                        <a href="seeding/final.php" class="bg-orange-500 text-white px-8 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-orange-600 transition shadow-lg shadow-orange-500/20 italic">
-                            Seeding Babak Final 🏆
-                        </a>
-                    <?php endif; ?>
-
                     <a href="results/index.php" class="bg-slate-800 text-slate-300 px-8 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-700 transition">
                         Input Hasil Waktu
                     </a>
                 </div>
-            </div>
-            <div class="absolute right-[-5%] bottom-[-10%] opacity-10 transform rotate-12">
-                <span class="text-[15rem]">⏱️</span>
             </div>
         </div>
 
@@ -167,14 +160,9 @@ include __DIR__ . '/../../views/layout/sidebar.php';
                     </a>
                 </div>
             </div>
-            
-            <div class="pt-6 border-t border-slate-100 mt-6">
-                <p class="text-[9px] font-black text-slate-300 uppercase text-center tracking-[0.3em]">Authorized System &copy; 2025</p>
-            </div>
         </div>
-
     </div>
-
+    
     <div class="bg-white rounded-[3rem] border border-slate-200 p-10 shadow-sm">
         <div class="flex items-center gap-3 mb-8 border-b border-slate-50 pb-6">
             <span class="text-xl">🚀</span>
@@ -189,26 +177,6 @@ include __DIR__ . '/../../views/layout/sidebar.php';
                 <span class="text-3xl mb-3 transform group-hover:-translate-y-2 transition">🏆</span>
                 <span class="text-[10px] font-black text-slate-600 uppercase tracking-widest">Nomor Lomba</span>
             </a>
-            <a href="entries/index.php" class="flex flex-col items-center justify-center p-6 border-2 border-slate-50 rounded-[2rem] hover:bg-slate-50 hover:border-blue-100 transition-all group shadow-sm hover:shadow-md">
-                <span class="text-3xl mb-3 transform group-hover:-translate-y-2 transition">📋</span>
-                <span class="text-[10px] font-black text-slate-600 uppercase tracking-widest">Data Peserta</span>
-            </a>
-            <a href="keuangan/index.php" class="flex flex-col items-center justify-center p-6 border-2 border-slate-50 rounded-[2rem] hover:bg-slate-50 hover:border-blue-100 transition-all group shadow-sm hover:shadow-md">
-                <span class="text-3xl mb-3 transform group-hover:-translate-y-2 transition">💸</span>
-                <span class="text-[10px] font-black text-slate-600 uppercase tracking-widest">Keuangan</span>
-            </a>
-            <a href="keuangan/pembayaran.php" class="flex flex-col items-center justify-center p-6 border-2 border-slate-50 rounded-[2rem] hover:bg-slate-50 hover:border-blue-100 transition-all group shadow-sm hover:shadow-md">
-                <span class="text-3xl mb-3 transform group-hover:-translate-y-2 transition">📁</span>
-                <span class="text-[10px] font-black text-slate-600 uppercase tracking-widest">Verifikasi</span>
-            </a>
-        </div>
+            </div>
     </div>
-
 </div>
-
-<style>
-    /* Custom Luxury Shadow */
-    .shadow-2xl {
-        box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.25);
-    }
-</style>

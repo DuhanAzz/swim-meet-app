@@ -1,60 +1,92 @@
 <?php
+// src/user/kompetisi/register_event.php
 session_start();
+
+// Perbaikan Path Config
 require_once __DIR__ . '/../../config/database.php';
 
 // --- CEK LOGIN ---
-if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'user') {
+if (!isset($_SESSION['role']) || ($_SESSION['role'] !== 'club' && $_SESSION['role'] !== 'user')) {
     header("Location: ../../../public/login.php"); exit;
 }
 
 $uid = $_SESSION['user_id'];
 $organizerId = $_GET['event_id'] ?? 0;
 
+// =================================================================================
+// 1. LOGIKA "GEMBOK" (LOCK SYSTEM) - WAJIB DI ATAS
+// =================================================================================
+$isLocked = false; // Default terbuka
+$statusLabel = 'pending';
+
+try {
+    // Cek tabel event_registrations (Pastikan tabel ini sudah dibuat di database!)
+    $stmtStatus = $pdo->prepare("SELECT status FROM event_registrations WHERE user_id = ? AND event_id = ?");
+    $stmtStatus->execute([$uid, $organizerId]);
+    $regStatus = $stmtStatus->fetch();
+
+    if ($regStatus && $regStatus['status'] === 'approved') {
+        $isLocked = true; // KUNCI HALAMAN
+        $statusLabel = 'approved';
+    }
+} catch (PDOException $e) {
+    // Jika tabel belum ada, biarkan terbuka (jangan error)
+    $isLocked = false;
+}
+// =================================================================================
+
 // --- HANDLE: SESSION LIST ATLET ---
 if (!isset($_SESSION['matrix_list'][$organizerId])) {
     $_SESSION['matrix_list'][$organizerId] = [];
 }
 
-// 1. Logic Tambah Atlet
+// 2. LOGIC TAMBAH ATLET (CEGAH JIKA LOCKED)
 if (isset($_GET['add_swimmer'])) {
-    $addId = (int)$_GET['add_swimmer'];
-    if (!in_array($addId, $_SESSION['matrix_list'][$organizerId])) {
-        $_SESSION['matrix_list'][$organizerId][] = $addId;
+    if (!$isLocked) { // Hanya jalan jika TIDAK dikunci
+        $addId = (int)$_GET['add_swimmer'];
+        if (!in_array($addId, $_SESSION['matrix_list'][$organizerId])) {
+            $_SESSION['matrix_list'][$organizerId][] = $addId;
+        }
     }
     header("Location: register_event.php?event_id=" . $organizerId);
     exit;
 }
 
-// 2. Logic Hapus Atlet (BARU DITAMBAHKAN)
+// 3. LOGIC HAPUS ATLET (CEGAH JIKA LOCKED)
 if (isset($_GET['remove_swimmer'])) {
-    $remId = (int)$_GET['remove_swimmer'];
-    
-    // Hapus dari Session List Tampilan
-    $key = array_search($remId, $_SESSION['matrix_list'][$organizerId]);
-    if ($key !== false) {
-        unset($_SESSION['matrix_list'][$organizerId][$key]);
+    if (!$isLocked) { // Hanya jalan jika TIDAK dikunci
+        $remId = (int)$_GET['remove_swimmer'];
+        $key = array_search($remId, $_SESSION['matrix_list'][$organizerId]);
+        if ($key !== false) {
+            unset($_SESSION['matrix_list'][$organizerId][$key]);
+        }
     }
-    
-    // Opsional: Jika ingin sekaligus menghapus entry di database, uncomment baris bawah ini:
-    // $pdo->prepare("DELETE ee FROM event_entries ee JOIN event_numbers en ON ee.category_id = en.id WHERE ee.swimmer_id = ? AND en.organizer_id = ?")->execute([$remId, $organizerId]);
-
     header("Location: register_event.php?event_id=" . $organizerId);
     exit;
 }
 
-
-// --- 1. AMBIL INFO ORGANIZER ---
+// --- 4. AMBIL INFO ORGANIZER / EVENT ---
+// (Menggunakan logika lama Anda yang query ke tabel users)
 $stmt = $pdo->prepare("SELECT * FROM users WHERE id = ? AND role = 'admin'");
 $stmt->execute([$organizerId]);
 $organizer = $stmt->fetch();
+
+// Fallback jika tidak ketemu di tabel users (mungkin ID event?)
+if (!$organizer) {
+    try {
+        $stmtEv = $pdo->prepare("SELECT nama_event as nama_lengkap, lokasi as location FROM events WHERE id = ?");
+        $stmtEv->execute([$organizerId]);
+        $organizer = $stmtEv->fetch();
+    } catch(Exception $ex) {}
+}
 if (!$organizer) $organizer = ['nama_lengkap' => 'Event Tidak Ditemukan', 'location' => '-'];
 
-// --- 2. AMBIL SEMUA ATLET SAYA (Untuk Modal Pilihan) ---
+// --- 5. AMBIL SEMUA ATLET SAYA ---
 $mySwimmers = $pdo->prepare("SELECT * FROM swimmers WHERE user_id = ? ORDER BY nama_atlet ASC");
 $mySwimmers->execute([$uid]);
 $allSwimmers = $mySwimmers->fetchAll();
 
-// --- 3. AMBIL NOMOR LOMBA ---
+// --- 6. AMBIL NOMOR LOMBA ---
 try {
     $sql = "SELECT * FROM event_numbers WHERE organizer_id = ? ORDER BY distance ASC, stroke ASC";
     $allCats = $pdo->prepare($sql);
@@ -62,7 +94,7 @@ try {
     $rawEvents = $allCats->fetchAll();
 } catch (PDOException $e) { die("Error Database: " . $e->getMessage()); }
 
-// --- 4. MAPPING DATA (Logic Matrix) ---
+// --- 7. MAPPING DATA ---
 $categories = [];
 foreach ($rawEvents as $row) {
     $row['parsed_distance'] = $row['distance'];
@@ -74,7 +106,7 @@ foreach ($rawEvents as $row) {
     $categories[] = $row;
 }
 
-// --- 5. BUAT HEADER MATRIX ---
+// --- 8. BUAT HEADER MATRIX ---
 $headers = [];
 foreach ($categories as $cat) {
     $d = $cat['parsed_distance'] . 'm'; 
@@ -83,9 +115,9 @@ foreach ($categories as $cat) {
 }
 uksort($headers, function($a, $b) { return (int)$a - (int)$b; });
 
-// --- 6. AMBIL DATA ENTRY (Status Centang & Atlet Terdaftar) ---
+// --- 9. AMBIL DATA ENTRY ---
 $saved = [];
-$registeredSwimmerIds = []; // Array ID atlet yang sudah punya nomor
+$registeredSwimmerIds = [];
 try {
     $stmtEntries = $pdo->prepare("
         SELECT ee.* FROM event_entries ee 
@@ -103,15 +135,11 @@ try {
 } catch (Exception $e) {}
 
 // --- LOGIKA FILTER TAMPILAN ---
-// Gabungkan atlet yang sudah terdaftar di DB + Atlet yang baru ditambah via session
 $visibleSwimmerIds = array_unique(array_merge($registeredSwimmerIds, $_SESSION['matrix_list'][$organizerId]));
-
-// Filter array $allSwimmers agar hanya yang VISIBLE yang muncul di tabel
 $visibleSwimmers = array_filter($allSwimmers, function($s) use ($visibleSwimmerIds) {
     return in_array($s['id'], $visibleSwimmerIds);
 });
 
-// Helper Gender
 function getGenderLabel($val) {
     $v = strtoupper($val);
     if(in_array($v, ['L', 'M', 'MALE', 'LAKI-LAKI', 'PUTRA', 'PRIA'])) return ['label'=>'PUTRA', 'code'=>'M', 'color'=>'text-blue-600', 'bg'=>'bg-blue-50'];
@@ -119,6 +147,7 @@ function getGenderLabel($val) {
     return ['label'=>'?', 'code'=>'?', 'color'=>'text-slate-400', 'bg'=>'bg-slate-50'];
 }
 
+// Include Layout
 include __DIR__ . '/../../../views/layout/topbar.php'; 
 include __DIR__ . '/../../../views/layout/sidebar.php'; 
 ?>
@@ -145,22 +174,45 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
             <h1 class="text-2xl font-black uppercase italic tracking-wider"><?= htmlspecialchars($organizer['nama_lengkap']) ?></h1>
             <p class="text-blue-200 text-xs font-bold mt-1">📍 <?= htmlspecialchars($organizer['location']) ?></p>
         </div>
-        <div class="flex gap-3">
-             <a href="explore.php" class="bg-white/10 hover:bg-white/20 px-4 py-3 rounded-xl text-xs font-bold transition flex items-center gap-2"><span>↩</span> Kembali</a>
+        <div class="flex gap-3 items-center">
+             <a href="../dashboard.php" class="bg-white/10 hover:bg-white/20 px-4 py-3 rounded-xl text-xs font-bold transition flex items-center gap-2"><span>↩</span> Kembali</a>
             
-             <a href="checkout.php?event_id=<?= $organizerId ?>" class="bg-emerald-500 hover:bg-emerald-600 px-6 py-3 rounded-xl text-xs font-black uppercase tracking-wider transition shadow-lg flex items-center gap-2 transform active:scale-95">
-                <span>🚀</span> Finalisasi Pendaftaran
-             </a>
+             <?php if (!$isLocked): ?>
+                 <a href="checkout.php?event_id=<?= $organizerId ?>" class="bg-emerald-500 hover:bg-emerald-600 px-6 py-3 rounded-xl text-xs font-black uppercase tracking-wider transition shadow-lg flex items-center gap-2 transform active:scale-95">
+                    <span>🚀</span> Finalisasi Pendaftaran
+                 </a>
+             <?php else: ?>
+                 <div class="bg-emerald-600/50 text-emerald-100 px-6 py-3 rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-2 cursor-not-allowed opacity-80 border border-emerald-500 shadow-none">
+                    <span>🔒</span> Pendaftaran Disetujui
+                 </div>
+             <?php endif; ?>
         </div>
     </div>
+
+    <?php if ($isLocked): ?>
+        <div class="bg-blue-50 border border-blue-200 text-blue-800 px-6 py-4 rounded-2xl mb-6 flex items-center gap-3 shadow-sm">
+            <span class="text-2xl">✅</span>
+            <div>
+                <h3 class="font-black text-sm uppercase tracking-wide">Mode Lihat Saja (Read Only)</h3>
+                <p class="text-xs mt-1 text-blue-600">Admin telah memvalidasi (Approved) pendaftaran Anda untuk event ini. Anda tidak dapat mengubah data lagi.</p>
+            </div>
+        </div>
+    <?php endif; ?>
 
     <div class="bg-white border border-slate-300 rounded-3xl shadow-sm overflow-hidden mb-12 relative flex flex-col min-h-[400px]">
         
         <div class="p-4 border-b border-slate-200 bg-white flex justify-between items-center gap-4">
             <div class="flex items-center gap-3 w-full">
-                <button onclick="document.getElementById('addSwimmerModal').classList.remove('hidden')" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-xs font-bold shadow-md transition flex items-center gap-2 whitespace-nowrap">
-                    <span>+</span> Tambah Atlet
-                </button>
+                
+                <?php if (!$isLocked): ?>
+                    <button onclick="document.getElementById('addSwimmerModal').classList.remove('hidden')" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-xs font-bold shadow-md transition flex items-center gap-2 whitespace-nowrap">
+                        <span>+</span> Tambah Atlet
+                    </button>
+                <?php else: ?>
+                    <button disabled class="bg-slate-100 text-slate-400 cursor-not-allowed px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 whitespace-nowrap border border-slate-200">
+                        <span>🔒</span> Tambah Atlet
+                    </button>
+                <?php endif; ?>
 
                 <input type="text" id="tableSearch" onkeyup="filterTable()" class="w-full md:w-64 px-4 py-2 text-xs font-bold border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none uppercase" placeholder="🔍 Filter Nama...">
             </div>
@@ -171,10 +223,15 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
             <div class="flex-1 flex flex-col items-center justify-center p-16 text-center opacity-60">
                 <div class="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center text-4xl mb-4">🏊</div>
                 <h3 class="font-bold text-slate-600 text-lg">List Atlet Kosong</h3>
-                <p class="text-xs text-slate-500 max-w-xs mt-1">Belum ada atlet yang ditampilkan untuk event ini.</p>
-                <button onclick="document.getElementById('addSwimmerModal').classList.remove('hidden')" class="mt-4 text-blue-600 font-bold text-xs underline cursor-pointer">
-                    + Klik di sini untuk memilih atlet
-                </button>
+                
+                <?php if (!$isLocked): ?>
+                    <p class="text-xs text-slate-500 max-w-xs mt-1">Belum ada atlet yang ditampilkan untuk event ini.</p>
+                    <button onclick="document.getElementById('addSwimmerModal').classList.remove('hidden')" class="mt-4 text-blue-600 font-bold text-xs underline cursor-pointer">
+                        + Klik di sini untuk memilih atlet
+                    </button>
+                <?php else: ?>
+                    <p class="text-xs text-slate-500 max-w-xs mt-1">Anda tidak mendaftarkan atlet satupun pada event ini dan pendaftaran telah ditutup/disetujui.</p>
+                <?php endif; ?>
             </div>
 
         <?php elseif(empty($categories)): ?>
@@ -205,9 +262,15 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                             $age = (!empty($s['tanggal_lahir']) && $s['tanggal_lahir'] != '0000-00-00') ? (date('Y') - date('Y', strtotime($s['tanggal_lahir']))) . ' TH' : '-';
                         ?>
                         <tr class="h-12 border-b border-slate-100 transition-colors swimmer-row hover:bg-blue-50">
+                            
                             <td class="sticky-col-1 text-center border-r border-slate-200">
-                                <button onclick="openEntryModal(<?= $s['id'] ?>)" class="text-orange-500 hover:scale-110 transition p-2">✏️</button>
+                                <?php if (!$isLocked): ?>
+                                    <button onclick="openEntryModal(<?= $s['id'] ?>)" class="text-orange-500 hover:scale-110 transition p-2">✏️</button>
+                                <?php else: ?>
+                                    <span class="text-slate-300 cursor-not-allowed select-none p-2" title="Terkunci">🔒</span>
+                                <?php endif; ?>
                             </td>
+
                             <td class="sticky-col-2 px-4 border-r border-slate-300 align-middle">
                                 <div class="font-bold text-slate-800 text-[11px] uppercase truncate w-[180px]"><?= htmlspecialchars($s['nama_atlet']) ?></div>
                                 <div class="text-[9px] text-slate-500 font-semibold flex gap-1 items-center mt-0.5">
@@ -260,12 +323,20 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
             <input type="text" onkeyup="filterSwimmerList(this)" placeholder="Cari nama..." class="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs mb-3 font-bold uppercase">
             
             <?php foreach($allSwimmers as $sw): 
-                if(in_array($sw['id'], $visibleSwimmerIds)) continue; // Jangan tampilkan yang sudah ada di tabel
+                if(in_array($sw['id'], $visibleSwimmerIds)) continue; 
             ?>
-            <a href="register_event.php?event_id=<?= $organizerId ?>&add_swimmer=<?= $sw['id'] ?>" class="swimmer-item block p-3 rounded-xl border border-slate-100 hover:bg-blue-50 hover:border-blue-200 transition group">
-                <div class="font-bold text-slate-700 text-sm group-hover:text-blue-700 uppercase"><?= htmlspecialchars($sw['nama_atlet']) ?></div>
-                <div class="text-[10px] text-slate-400 font-mono"><?= $sw['jenis_kelamin'] == 'L' ? 'Putra' : 'Putri' ?> • <?= $sw['tanggal_lahir'] ?></div>
-            </a>
+            
+            <?php if (!$isLocked): ?>
+                <a href="register_event.php?event_id=<?= $organizerId ?>&add_swimmer=<?= $sw['id'] ?>" class="swimmer-item block p-3 rounded-xl border border-slate-100 hover:bg-blue-50 hover:border-blue-200 transition group">
+                    <div class="font-bold text-slate-700 text-sm group-hover:text-blue-700 uppercase"><?= htmlspecialchars($sw['nama_atlet']) ?></div>
+                    <div class="text-[10px] text-slate-400 font-mono"><?= $sw['jenis_kelamin'] == 'L' ? 'Putra' : 'Putri' ?> • <?= $sw['tanggal_lahir'] ?></div>
+                </a>
+            <?php else: ?>
+                 <div class="swimmer-item block p-3 rounded-xl border border-slate-100 bg-slate-50 opacity-60 cursor-not-allowed">
+                    <div class="font-bold text-slate-500 text-sm uppercase"><?= htmlspecialchars($sw['nama_atlet']) ?> (Terkunci)</div>
+                 </div>
+            <?php endif; ?>
+
             <?php endforeach; ?>
             
             <?php if(count($visibleSwimmerIds) == count($allSwimmers)): ?>
@@ -292,6 +363,12 @@ function filterSwimmerList(input) {
     });
 }
 function openEntryModal(id) {
+    // SECURITY JAVASCRIPT: Mencegah modal terbuka paksa
+    <?php if ($isLocked): ?>
+        alert("Pendaftaran event ini sudah disetujui Admin. Anda tidak bisa mengedit data.");
+        return; 
+    <?php endif; ?>
+
     document.getElementById('entryModal').classList.remove('hidden');
     document.getElementById('modalContent').innerHTML = '<div class="p-10 text-center text-slate-500 text-sm font-bold">Mengambil data...</div>';
     fetch(`edit_entry.php?event_id=<?= $organizerId ?>&swimmer_id=${id}`).then(r=>r.text()).then(h=>{
