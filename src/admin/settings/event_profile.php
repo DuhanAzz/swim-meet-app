@@ -1,4 +1,5 @@
 <?php
+// src/admin/settings/event_profile.php
 session_start();
 require_once __DIR__ . '/../../../src/config/database.php';
 
@@ -9,133 +10,164 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
 
 $uid = $_SESSION['user_id'];
 
+// --- LOGIKA ID EVENT ---
+// Kita coba ambil ID dari URL, jika tidak ada, ambil event terakhir milik user ini.
+$eventId = $_GET['event_id'] ?? 0;
+
+if ($eventId == 0) {
+    $stmtFind = $pdo->prepare("SELECT id FROM events WHERE user_id = ? ORDER BY id DESC LIMIT 1");
+    $stmtFind->execute([$uid]);
+    $lastEvent = $stmtFind->fetch();
+    if ($lastEvent) {
+        $eventId = $lastEvent['id'];
+    } else {
+        die("Anda belum memiliki Event. Silakan buat event baru terlebih dahulu.");
+    }
+}
+
 // --- 1. HANDLE SEMUA PROSES UPDATE ---
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     try {
         $pdo->beginTransaction();
-        $targetDir = "../../../public/uploads/logos/";
+        $targetDir = __DIR__ . "/../../../public/uploads/logos/";
         if (!is_dir($targetDir)) mkdir($targetDir, 0777, true);
 
-        // A. UPDATE INFO UTAMA & SETTING TEKNIS BARU
-        // Tambahkan is_mixed_seeding dan separate_result_by_ku
-        $sql = "UPDATE users SET 
-                nama_lengkap = ?, location = ?, venue_name = ?, 
-                event_start_date = ?, event_end_date = ?,
-                lane_count = ?, age_calculation_type = ?, event_type = ?, event_status = ?,
-                bank_name = ?, bank_account_number = ?, bank_account_name = ?,
-                is_mixed_seeding = ?, separate_result_by_ku = ?
-                WHERE id = ?";
+        // A. UPDATE INFO UTAMA & SPESIFIKASI KE TABEL EVENTS
+        $sql = "UPDATE events SET 
+                nama_event = ?, lokasi = ?, venue_name = ?, 
+                event_start_date = ?, event_end_date = ?, tanggal_pelaksanaan = ?,
+                lane_count = ?, pool_type = ?, age_calculation_type = ?, event_type = ?, status = ?,
+                bank_name = ?, bank_account_number = ?, bank_account_name = ?
+                WHERE id = ? AND user_id = ?";
         
+        // Kita samakan tanggal_pelaksanaan dengan start_date agar konsisten
         $pdo->prepare($sql)->execute([
-            $_POST['nama_lengkap'] ?? '', $_POST['location'] ?? '', $_POST['venue_name'] ?? '', 
-            $_POST['event_start_date'] ?? '', $_POST['event_end_date'] ?? '',
-            (int)($_POST['lane_count'] ?? 8), $_POST['age_calculation_type'] ?? 'Dec 31', 
-            $_POST['event_type'] ?? 'Langsung Final', $_POST['event_status'] ?? 'Registration',
-            $_POST['bank_name'] ?? '', $_POST['bank_account_number'] ?? '', $_POST['bank_account_name'] ?? '',
-            // Input Baru (Default 0 jika tidak ada)
-            $_POST['is_mixed_seeding'] ?? 0, 
-            $_POST['separate_result_by_ku'] ?? 0,
+            $_POST['nama_event'] ?? '', 
+            $_POST['lokasi'] ?? '', 
+            $_POST['venue_name'] ?? '', 
+            $_POST['event_start_date'] ?? NULL, 
+            $_POST['event_end_date'] ?? NULL,
+            $_POST['event_start_date'] ?? NULL, // Update juga kolom tanggal_pelaksanaan utama
+            (int)($_POST['lane_count'] ?? 8), 
+            $_POST['pool_type'] ?? 'LCM',
+            $_POST['age_calculation_type'] ?? 'Dec 31', 
+            $_POST['event_type'] ?? 'Standard', 
+            $_POST['status'] ?? 'upcoming',
+            $_POST['bank_name'] ?? '', 
+            $_POST['bank_account_number'] ?? '', 
+            $_POST['bank_account_name'] ?? '',
+            $eventId,
             $uid
         ]);
 
-        $_SESSION['event_type'] = $_POST['event_type'];
-
-        // B. UPDATE KELOMPOK UMUR
-        $pdo->prepare("DELETE FROM event_age_groups WHERE event_id = ?")->execute([$uid]);
-        if (!empty($_POST['ku_name'])) {
-            $insKU = $pdo->prepare("INSERT INTO event_age_groups (event_id, group_name, min_age, max_age) VALUES (?, ?, ?, ?)");
-            foreach ($_POST['ku_name'] as $i => $name) {
-                if (!empty(trim($name))) {
-                    $insKU->execute([$uid, trim($name), (int)$_POST['ku_min'][$i], (int)$_POST['ku_max'][$i]]);
-                }
-            }
-        }
-
-        // C. HANDLE LOGO KIRI & KANAN (HEADER)
+        // B. HANDLE LOGO KIRI & KANAN
+        // Rename file pakai event_id biar tidak tertukar
         if (!empty($_FILES['logo_left']['name'])) {
             $ext = pathinfo($_FILES['logo_left']['name'], PATHINFO_EXTENSION);
-            $fn = "l_left_" . $uid . "_" . time() . "." . $ext;
+            $fn = "LOGO_L_" . $eventId . "_" . time() . "." . $ext;
             if(move_uploaded_file($_FILES['logo_left']['tmp_name'], $targetDir . $fn)) {
-                $pdo->prepare("UPDATE users SET logo_left = ? WHERE id = ?")->execute(["uploads/logos/" . $fn, $uid]);
+                $pdo->prepare("UPDATE events SET logo_left = ? WHERE id = ?")->execute(["uploads/logos/" . $fn, $eventId]);
             }
         }
         if (!empty($_FILES['logo_right']['name'])) {
             $ext = pathinfo($_FILES['logo_right']['name'], PATHINFO_EXTENSION);
-            $fn = "l_right_" . $uid . "_" . time() . "." . $ext;
+            $fn = "LOGO_R_" . $eventId . "_" . time() . "." . $ext;
             if(move_uploaded_file($_FILES['logo_right']['tmp_name'], $targetDir . $fn)) {
-                $pdo->prepare("UPDATE users SET logo_right = ? WHERE id = ?")->execute(["uploads/logos/" . $fn, $uid]);
+                $pdo->prepare("UPDATE events SET logo_right = ? WHERE id = ?")->execute(["uploads/logos/" . $fn, $eventId]);
             }
         }
 
-        // D. HANDLE MULTIPLE FOOTER SPONSORS
+        // C. HANDLE MULTIPLE FOOTER SPONSORS (Tabel: event_sponsors)
         if (!empty($_FILES['footer_logos']['name'][0])) {
-            $insFooter = $pdo->prepare("INSERT INTO event_footer_logos (user_id, image_path) VALUES (?, ?)");
+            $insFooter = $pdo->prepare("INSERT INTO event_sponsors (event_id, image_path) VALUES (?, ?)");
             foreach ($_FILES['footer_logos']['name'] as $key => $name) {
                 if ($_FILES['footer_logos']['error'][$key] === 0) {
                     $ext = pathinfo($name, PATHINFO_EXTENSION);
-                    $fn = "footer_" . $uid . "_" . time() . "_" . $key . "." . $ext;
+                    $fn = "SPONSOR_" . $eventId . "_" . time() . "_" . $key . "." . $ext;
                     if(move_uploaded_file($_FILES['footer_logos']['tmp_name'][$key], $targetDir . $fn)) {
-                        $insFooter->execute([$uid, "uploads/logos/" . $fn]);
+                        $insFooter->execute([$eventId, "uploads/logos/" . $fn]);
                     }
                 }
             }
         }
 
-        // E. HAPUS LOGO FOOTER TERTENTU
+        // D. HAPUS LOGO FOOTER TERTENTU
         if (isset($_POST['delete_footer_id'])) {
-            $pdo->prepare("DELETE FROM event_footer_logos WHERE id = ? AND user_id = ?")->execute([$_POST['delete_footer_id'], $uid]);
-        }
-
-        // F. HANDLE EVENT POSTER
-        if (!empty($_FILES['banner']['name'])) {
-            $ext = pathinfo($_FILES['banner']['name'], PATHINFO_EXTENSION);
-            $fn = "poster_" . $uid . "_" . time() . "." . $ext;
-            if(move_uploaded_file($_FILES['banner']['tmp_name'], $targetDir . $fn)) {
-                $pdo->prepare("UPDATE users SET profile_image = ? WHERE id = ?")->execute(["uploads/logos/" . $fn, $uid]);
-            }
+            $pdo->prepare("DELETE FROM event_sponsors WHERE id = ? AND event_id = ?")->execute([$_POST['delete_footer_id'], $eventId]);
         }
 
         $pdo->commit();
-        $_SESSION['toast_type'] = 'success'; $_SESSION['toast_message'] = 'Perubahan & Aturan Lomba tersimpan!';
+        $_SESSION['toast_type'] = 'success'; $_SESSION['toast_message'] = 'Konfigurasi Event Berhasil Disimpan!';
+        
+        // Refresh halaman dengan ID yang benar
+        header("Location: event_profile.php?event_id=" . $eventId); exit;
+
     } catch (Exception $e) {
         if ($pdo->inTransaction()) $pdo->rollBack();
         $_SESSION['toast_type'] = 'error'; $_SESSION['toast_message'] = 'Gagal: ' . $e->getMessage();
     }
-    header("Location: event_profile.php"); exit;
 }
 
-// --- 2. AMBIL DATA ---
-$row = $pdo->query("SELECT * FROM users WHERE id = $uid")->fetch();
-$footerLogos = $pdo->query("SELECT * FROM event_footer_logos WHERE user_id = $uid")->fetchAll(); 
+// --- 2. AMBIL DATA DARI TABEL EVENTS ---
+$stmt = $pdo->prepare("SELECT * FROM events WHERE id = ? AND user_id = ?");
+$stmt->execute([$eventId, $uid]);
+$row = $stmt->fetch();
+
+if (!$row) die("Data Event tidak ditemukan.");
+
+// Ambil Sponsors
+$footerLogos = $pdo->prepare("SELECT * FROM event_sponsors WHERE event_id = ?");
+$footerLogos->execute([$eventId]);
+$footerLogos = $footerLogos->fetchAll();
 
 include __DIR__ . '/../../../views/layout/topbar.php'; 
 include __DIR__ . '/../../../views/layout/sidebar.php'; 
 ?>
 
 <div class="p-6 sm:ml-64 pt-24 bg-slate-50 min-h-screen font-sans text-slate-800">
+    
     <div class="max-w-5xl mx-auto mb-10 flex justify-between items-end">
         <div>
+            <a href="../kompetisi/manage_entries.php?event_id=<?= $eventId ?>" class="text-xs font-bold text-slate-400 hover:text-blue-600 uppercase mb-2 block">← Kembali ke Dashboard</a>
+            
             <h1 class="text-4xl font-black uppercase italic text-slate-900 leading-none">Event Settings</h1>
-            <p class="text-sm text-slate-500 font-bold uppercase tracking-widest mt-2">Identitas, Aturan & Status Operasional</p>
+            <p class="text-sm text-slate-500 font-bold uppercase tracking-widest mt-2">Identitas, Spesifikasi & Status</p>
         </div>
-        <div class="bg-white px-5 py-2 rounded-2xl border border-slate-200 shadow-sm text-[10px] font-black uppercase text-blue-600">
-            <?= htmlspecialchars($row['event_type'] ?? 'Standard') ?>
+        <div class="flex gap-2">
+            <div class="bg-white px-5 py-2 rounded-2xl border border-slate-200 shadow-sm text-[10px] font-black uppercase text-blue-600">
+                <?= htmlspecialchars($row['event_type'] ?? 'Standard') ?>
+            </div>
         </div>
     </div>
 
-    <form method="POST" enctype="multipart/form-data" class="max-w-5xl mx-auto space-y-8 pb-32">
+    <?php if(isset($_SESSION['toast_message'])): ?>
+        <div class="max-w-5xl mx-auto mb-6 p-4 rounded-xl font-bold text-sm shadow-sm flex items-center gap-3 <?= $_SESSION['toast_type'] == 'success' ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-red-100 text-red-800 border border-red-300' ?>">
+            <span><?= $_SESSION['toast_type'] == 'success' ? '✅' : '⚠️' ?></span>
+            <?= $_SESSION['toast_message'] ?>
+        </div>
+        <?php unset($_SESSION['toast_message'], $_SESSION['toast_type']); ?>
+    <?php endif; ?>
+
+    <form method="POST" action="?event_id=<?= $eventId ?>" enctype="multipart/form-data" class="max-w-5xl mx-auto space-y-8 pb-32">
         
-        <div class="bg-slate-900 rounded-[2.5rem] shadow-2xl p-8 text-white">
-            <h3 class="font-black uppercase text-sm mb-6 flex items-center gap-3 italic">📡 Status Event</h3>
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div class="bg-slate-900 rounded-[2.5rem] shadow-2xl p-8 text-white relative overflow-hidden">
+            <div class="absolute top-0 right-0 p-10 opacity-10 text-9xl rotate-12">📡</div>
+            <h3 class="font-black uppercase text-sm mb-6 flex items-center gap-3 italic relative z-10">Status Event</h3>
+            
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 relative z-10">
                 <?php 
-                $statuses = ['Registration' => '📝 Pendaftaran', 'Running' => '🏊 Live / Jalan', 'Finished' => '🏁 Selesai'];
+                $statuses = [
+                    'upcoming' => '📅 Upcoming', 
+                    'open' => '🟢 Open Registration', 
+                    'closed' => '🔴 Closed / Running', 
+                    'done' => '🏁 Finished'
+                ];
                 foreach($statuses as $val => $label): 
                 ?>
                 <label class="cursor-pointer group">
-                    <input type="radio" name="event_status" value="<?= $val ?>" class="hidden peer" <?= ($row['event_status']??'') == $val ? 'checked' : '' ?>>
-                    <div class="p-4 rounded-2xl border border-white/10 bg-white/5 peer-checked:bg-blue-600 peer-checked:border-blue-500 text-center transition">
-                        <span class="font-bold uppercase text-xs"><?= $label ?></span>
+                    <input type="radio" name="status" value="<?= $val ?>" class="hidden peer" <?= ($row['status']??'upcoming') == $val ? 'checked' : '' ?>>
+                    <div class="p-4 rounded-2xl border border-white/10 bg-white/5 peer-checked:bg-blue-600 peer-checked:border-blue-500 text-center transition hover:bg-white/10">
+                        <span class="font-bold uppercase text-xs tracking-wider"><?= $label ?></span>
                     </div>
                 </label>
                 <?php endforeach; ?>
@@ -145,117 +177,151 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
         <div class="bg-white rounded-[2.5rem] shadow-sm border border-slate-200 p-10">
             <h3 class="font-black uppercase text-sm mb-8 text-blue-600 italic">📝 Info Utama</h3>
             <div class="grid gap-6">
-                <input type="text" name="nama_lengkap" value="<?= htmlspecialchars($row['nama_lengkap'] ?? '') ?>" placeholder="Nama Event" class="w-full px-6 py-4 border-2 border-slate-100 bg-slate-50 rounded-2xl font-black text-lg uppercase outline-none focus:bg-white focus:border-blue-500 transition">
-                <div class="grid grid-cols-2 gap-6">
-                    <input type="date" name="event_start_date" value="<?= $row['event_start_date'] ?? '' ?>" class="w-full px-4 py-3 border border-slate-200 rounded-xl">
-                    <input type="date" name="event_end_date" value="<?= $row['event_end_date'] ?? '' ?>" class="w-full px-4 py-3 border border-slate-200 rounded-xl">
+                <div>
+                    <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Nama Lengkap Event</label>
+                    <input type="text" name="nama_event" value="<?= htmlspecialchars($row['nama_event'] ?? '') ?>" placeholder="Contoh: KEJURKAB RENANG 2025" class="w-full px-6 py-4 border-2 border-slate-100 bg-slate-50 rounded-2xl font-black text-lg uppercase outline-none focus:bg-white focus:border-blue-500 transition">
                 </div>
+                
                 <div class="grid grid-cols-2 gap-6">
-                    <input type="text" name="location" value="<?= htmlspecialchars($row['location'] ?? '') ?>" placeholder="Kota" class="w-full px-4 py-3 border border-slate-200 rounded-xl font-bold uppercase">
-                    <input type="text" name="venue_name" value="<?= htmlspecialchars($row['venue_name'] ?? '') ?>" placeholder="Kolam Renang" class="w-full px-4 py-3 border border-slate-200 rounded-xl font-bold uppercase">
+                    <div>
+                        <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Tanggal Mulai</label>
+                        <input type="date" name="event_start_date" value="<?= $row['event_start_date'] ?? '' ?>" class="w-full px-4 py-3 border border-slate-200 rounded-xl font-bold text-slate-700">
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Tanggal Selesai</label>
+                        <input type="date" name="event_end_date" value="<?= $row['event_end_date'] ?? '' ?>" class="w-full px-4 py-3 border border-slate-200 rounded-xl font-bold text-slate-700">
+                    </div>
                 </div>
+
+                <div class="grid grid-cols-2 gap-6">
+                    <div>
+                        <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Kota / Lokasi</label>
+                        <input type="text" name="lokasi" value="<?= htmlspecialchars($row['lokasi'] ?? '') ?>" placeholder="Contoh: JAKARTA" class="w-full px-4 py-3 border border-slate-200 rounded-xl font-bold uppercase">
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Nama Kolam (Venue)</label>
+                        <input type="text" name="venue_name" value="<?= htmlspecialchars($row['venue_name'] ?? '') ?>" placeholder="Contoh: STADION AQUATIC GBK" class="w-full px-4 py-3 border border-slate-200 rounded-xl font-bold uppercase">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-indigo-50 rounded-[2.5rem] shadow-sm border border-indigo-200 p-10 relative overflow-hidden">
+             <div class="absolute top-0 right-0 p-10 opacity-5 text-9xl">🏊</div>
+            <h3 class="font-black uppercase text-sm mb-8 text-indigo-700 italic flex items-center gap-2 relative z-10">
+                <span>⚙️</span> Spesifikasi Teknis & Kolam
+            </h3>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-8 relative z-10">
+                
+                <div class="space-y-6">
+                    <div>
+                        <label class="block text-[10px] font-bold text-slate-500 uppercase mb-2">Jumlah Lintasan (Lanes)</label>
+                        <div class="flex items-center gap-3">
+                            <input type="number" name="lane_count" value="<?= $row['lane_count'] ?: 8 ?>" min="4" max="10" class="w-24 text-center font-black text-2xl border-2 border-indigo-200 rounded-xl py-2 focus:border-indigo-600 focus:ring-0 text-indigo-900">
+                            <span class="text-xs font-bold text-indigo-400 uppercase">Lintasan Aktif</span>
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <label class="block text-[10px] font-bold text-slate-500 uppercase mb-2">Perhitungan Umur Peserta</label>
+                        <select name="age_calculation_type" class="w-full px-4 py-3 border border-indigo-200 rounded-xl text-sm font-bold text-slate-700">
+                            <option value="Dec 31" <?= ($row['age_calculation_type']=='Dec 31')?'selected':'' ?>>Per 31 Desember (Tahun Berjalan)</option>
+                            <option value="Meet Start" <?= ($row['age_calculation_type']=='Meet Start')?'selected':'' ?>>Per Hari H Lomba (Actual Age)</option>
+                        </select>
+                    </div>
+                    
+                    <input type="hidden" name="event_type" value="<?= htmlspecialchars($row['event_type']) ?>">
+                </div>
+
+                <div class="bg-white p-6 rounded-2xl border border-indigo-100 shadow-sm">
+                    <label class="block text-xs font-bold text-slate-500 uppercase mb-4">Tipe & Panjang Kolam (Pool Type)</label>
+                    
+                    <div class="flex flex-col gap-3">
+                        <label class="relative flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all <?= ($row['pool_type'] == 'SCM') ? 'border-indigo-600 bg-indigo-50' : 'border-slate-100 hover:border-slate-300' ?>">
+                            <input type="radio" name="pool_type" value="SCM" class="hidden peer" <?= ($row['pool_type'] == 'SCM') ? 'checked' : '' ?>>
+                            <div class="w-5 h-5 rounded-full border-2 border-slate-300 peer-checked:border-indigo-600 peer-checked:bg-indigo-600 flex items-center justify-center">
+                                <div class="w-2 h-2 bg-white rounded-full"></div>
+                            </div>
+                            <div>
+                                <span class="block font-black text-slate-800 text-sm">25m (Short Course)</span>
+                                <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">SCM • Semi-Olympic</span>
+                            </div>
+                        </label>
+
+                        <label class="relative flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all <?= ($row['pool_type'] == 'LCM' || !$row['pool_type']) ? 'border-indigo-600 bg-indigo-50' : 'border-slate-100 hover:border-slate-300' ?>">
+                            <input type="radio" name="pool_type" value="LCM" class="hidden peer" <?= ($row['pool_type'] == 'LCM' || !$row['pool_type']) ? 'checked' : '' ?>>
+                            <div class="w-5 h-5 rounded-full border-2 border-slate-300 peer-checked:border-indigo-600 peer-checked:bg-indigo-600 flex items-center justify-center">
+                                <div class="w-2 h-2 bg-white rounded-full"></div>
+                            </div>
+                            <div>
+                                <span class="block font-black text-slate-800 text-sm">50m (Long Course)</span>
+                                <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">LCM • Olympic Standard</span>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+
             </div>
         </div>
 
         <div class="bg-white rounded-[2.5rem] shadow-sm border border-slate-200 p-10">
-            <h3 class="font-black uppercase text-sm mb-8 text-orange-600 italic">⚙️ Konfigurasi Kolam</h3>
-            <div class="grid grid-cols-3 gap-6">
+            <h3 class="font-black uppercase text-sm mb-8 text-emerald-600 italic">💳 Info Pembayaran</h3>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div>
-                    <label class="block text-[10px] font-bold text-slate-400 uppercase mb-2">Lintasan</label>
-                    <input type="number" name="lane_count" value="<?= $row['lane_count'] ?: 8 ?>" min="4" max="10" class="w-full px-4 py-3 border-2 border-slate-100 bg-slate-50 rounded-xl font-black text-center">
-                </div>
-                <div>
-                    <label class="block text-[10px] font-bold text-slate-400 uppercase mb-2">Usia Per</label>
-                    <select name="age_calculation_type" class="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm"><option value="Dec 31">31 Des</option><option value="Meet Start">Hari H</option></select>
+                    <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Nama Bank</label>
+                    <input type="text" name="bank_name" value="<?= htmlspecialchars($row['bank_name'] ?? '') ?>" placeholder="BCA / MANDIRI" class="w-full px-4 py-3 border border-slate-200 rounded-xl font-bold">
                 </div>
                 <div>
-                     <label class="block text-[10px] font-bold text-slate-400 uppercase mb-2">Sistem</label>
-                     <input type="text" readonly value="<?= htmlspecialchars($row['event_type']) ?>" class="w-full px-4 py-3 bg-slate-100 border border-slate-200 rounded-xl text-xs font-bold text-slate-500 uppercase">
-                     <input type="hidden" name="event_type" value="<?= htmlspecialchars($row['event_type']) ?>">
+                    <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Nomor Rekening</label>
+                    <input type="text" name="bank_account_number" value="<?= htmlspecialchars($row['bank_account_number'] ?? '') ?>" placeholder="123xxxxx" class="w-full px-4 py-3 border border-slate-200 rounded-xl font-bold font-mono">
                 </div>
-            </div>
-        </div>
-
-        <div class="bg-indigo-50 rounded-[2.5rem] shadow-sm border border-indigo-200 p-10">
-            <h3 class="font-black uppercase text-sm mb-8 text-indigo-700 italic flex items-center gap-2">
-                <span>⚡</span> Aturan Lomba (Juknis)
-            </h3>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
-                
-                <div class="bg-white p-6 rounded-2xl border border-indigo-100 shadow-sm">
-                    <label class="block text-xs font-bold text-slate-500 uppercase mb-3">Mode Penentuan Seri (Seeding)</label>
-                    <div class="space-y-3">
-                        <label class="flex items-center gap-3 p-3 rounded-xl border border-slate-100 hover:bg-slate-50 cursor-pointer">
-                            <input type="radio" name="is_mixed_seeding" value="0" class="accent-indigo-600 w-5 h-5" <?= ($row['is_mixed_seeding'] ?? 0) == 0 ? 'checked' : '' ?>>
-                            <div>
-                                <span class="block text-sm font-bold text-slate-800">Normal / Standar</span>
-                                <span class="text-[10px] text-slate-400">Seri dipisah per Kelompok Umur (KU)</span>
-                            </div>
-                        </label>
-                        <label class="flex items-center gap-3 p-3 rounded-xl border border-indigo-100 bg-indigo-50/50 hover:bg-indigo-50 cursor-pointer">
-                            <input type="radio" name="is_mixed_seeding" value="1" class="accent-indigo-600 w-5 h-5" <?= ($row['is_mixed_seeding'] ?? 0) == 1 ? 'checked' : '' ?>>
-                            <div>
-                                <span class="block text-sm font-bold text-indigo-800">Time Trial (Mixed)</span>
-                                <span class="text-[10px] text-indigo-500">Gabung KU di seri yang sama berdasarkan kecepatan waktu</span>
-                            </div>
-                        </label>
-                    </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Atas Nama</label>
+                    <input type="text" name="bank_account_name" value="<?= htmlspecialchars($row['bank_account_name'] ?? '') ?>" placeholder="Nama Pemilik Rekening" class="w-full px-4 py-3 border border-slate-200 rounded-xl font-bold">
                 </div>
-
-                <div class="bg-white p-6 rounded-2xl border border-indigo-100 shadow-sm">
-                    <label class="block text-xs font-bold text-slate-500 uppercase mb-3">Mode Laporan Hasil (Result)</label>
-                    <div class="space-y-3">
-                        <label class="flex items-center gap-3 p-3 rounded-xl border border-slate-100 hover:bg-slate-50 cursor-pointer">
-                            <input type="radio" name="separate_result_by_ku" value="0" class="accent-indigo-600 w-5 h-5" <?= ($row['separate_result_by_ku'] ?? 0) == 0 ? 'checked' : '' ?>>
-                            <div>
-                                <span class="block text-sm font-bold text-slate-800">Gabung (Overall)</span>
-                                <span class="text-[10px] text-slate-400">Satu podium juara untuk semua peserta event ini</span>
-                            </div>
-                        </label>
-                        <label class="flex items-center gap-3 p-3 rounded-xl border border-indigo-100 bg-indigo-50/50 hover:bg-indigo-50 cursor-pointer">
-                            <input type="radio" name="separate_result_by_ku" value="1" class="accent-indigo-600 w-5 h-5" <?= ($row['separate_result_by_ku'] ?? 0) == 1 ? 'checked' : '' ?>>
-                            <div>
-                                <span class="block text-sm font-bold text-indigo-800">Pisah per Umur (Split)</span>
-                                <span class="text-[10px] text-indigo-500">Otomatis pisah juara per Tahun Lahir/KU meski renang bareng</span>
-                            </div>
-                        </label>
-                    </div>
-                </div>
-
             </div>
         </div>
 
         <div class="bg-white rounded-[2.5rem] shadow-sm border border-slate-200 p-10">
             <h3 class="font-black uppercase text-sm mb-8 text-slate-800 italic flex items-center gap-2">
-                <span>🖼️</span> Layout Buku Acara
+                <span>🖼️</span> Branding & Layout
             </h3>
             
             <div class="grid grid-cols-2 gap-8 mb-10 border-b border-dashed border-slate-200 pb-10">
                 <div>
                     <label class="block text-[10px] font-bold text-slate-400 uppercase mb-2">Header Kiri (Logo)</label>
-                    <div class="h-32 bg-slate-50 rounded-2xl border-2 border-dashed flex items-center justify-center overflow-hidden mb-2">
-                        <?php if(!empty($row['logo_left'])): ?><img src="../../../public/<?= $row['logo_left'] ?>" class="h-24 object-contain"><?php else: ?><span class="text-xs text-slate-300">Kosong</span><?php endif; ?>
+                    <div class="h-32 bg-slate-50 rounded-2xl border-2 border-dashed flex items-center justify-center overflow-hidden mb-2 relative group">
+                        <?php if(!empty($row['logo_left'])): ?>
+                            <img src="../../../public/<?= $row['logo_left'] ?>" class="h-24 object-contain">
+                        <?php else: ?>
+                            <span class="text-xs text-slate-300 font-bold">Upload Logo</span>
+                        <?php endif; ?>
                     </div>
-                    <input type="file" name="logo_left" class="text-[10px] w-full file:mr-2 file:py-2 file:px-4 file:rounded-full file:border-0 file:bg-slate-100 file:text-slate-700">
+                    <input type="file" name="logo_left" class="text-[10px] w-full file:mr-2 file:py-2 file:px-4 file:rounded-full file:border-0 file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200 cursor-pointer">
                 </div>
                 <div>
                     <label class="block text-[10px] font-bold text-slate-400 uppercase mb-2">Header Kanan (Logo)</label>
-                    <div class="h-32 bg-slate-50 rounded-2xl border-2 border-dashed flex items-center justify-center overflow-hidden mb-2">
-                        <?php if(!empty($row['logo_right'])): ?><img src="../../../public/<?= $row['logo_right'] ?>" class="h-24 object-contain"><?php else: ?><span class="text-xs text-slate-300">Kosong</span><?php endif; ?>
+                    <div class="h-32 bg-slate-50 rounded-2xl border-2 border-dashed flex items-center justify-center overflow-hidden mb-2 relative group">
+                        <?php if(!empty($row['logo_right'])): ?>
+                            <img src="../../../public/<?= $row['logo_right'] ?>" class="h-24 object-contain">
+                        <?php else: ?>
+                            <span class="text-xs text-slate-300 font-bold">Upload Logo</span>
+                        <?php endif; ?>
                     </div>
-                    <input type="file" name="logo_right" class="text-[10px] w-full file:mr-2 file:py-2 file:px-4 file:rounded-full file:border-0 file:bg-slate-100 file:text-slate-700">
+                    <input type="file" name="logo_right" class="text-[10px] w-full file:mr-2 file:py-2 file:px-4 file:rounded-full file:border-0 file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200 cursor-pointer">
                 </div>
             </div>
 
             <div>
-                <label class="block text-[10px] font-bold text-slate-400 uppercase mb-2">Footer Sponsors (Bisa Banyak)</label>
+                <label class="block text-[10px] font-bold text-slate-400 uppercase mb-2">Footer Sponsors (Bottom Page)</label>
                 
                 <?php if(!empty($footerLogos)): ?>
                 <div class="flex flex-wrap gap-4 mb-4">
                     <?php foreach($footerLogos as $fl): ?>
-                    <div class="relative group w-24 h-16 bg-white border border-slate-200 rounded-lg flex items-center justify-center p-2 shadow-sm">
+                    <div class="relative group w-24 h-16 bg-white border border-slate-200 rounded-lg flex items-center justify-center p-2 shadow-sm hover:shadow-md transition">
                         <img src="../../../public/<?= $fl['image_path'] ?>" class="max-h-full max-w-full object-contain">
-                        <button type="submit" name="delete_footer_id" value="<?= $fl['id'] ?>" class="absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white rounded-full text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition shadow-md" onclick="return confirm('Hapus logo ini?')">×</button>
+                        <button type="submit" name="delete_footer_id" value="<?= $fl['id'] ?>" class="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition shadow-md hover:bg-red-600 font-bold" onclick="return confirm('Hapus logo ini?')">×</button>
                     </div>
                     <?php endforeach; ?>
                 </div>
@@ -263,13 +329,20 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
 
                 <div class="flex items-center gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-200">
                     <div class="flex-1">
-                        <input type="file" name="footer_logos[]" multiple class="w-full text-xs file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
-                        <p class="text-[10px] text-slate-400 mt-1 italic">Tahan tombol CTRL / Command untuk memilih banyak gambar sekaligus.</p>
+                        <input type="file" name="footer_logos[]" multiple class="w-full text-xs file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-bold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer">
+                        <p class="text-[10px] text-slate-400 mt-2 italic flex items-center gap-1">
+                            <span>💡</span> Tahan tombol <strong>CTRL / Command</strong> saat memilih file untuk mengupload banyak logo sekaligus.
+                        </p>
                     </div>
                 </div>
             </div>
         </div>
 
-        <button type="submit" class="w-full bg-slate-900 text-white font-bold py-6 rounded-3xl shadow-lg hover:bg-slate-800 transition uppercase tracking-widest text-sm">Simpan Pengaturan</button>
+        <div class="sticky bottom-6 z-50">
+            <button type="submit" class="w-full bg-slate-900 text-white font-black py-5 rounded-2xl shadow-2xl hover:bg-blue-700 transition transform hover:-translate-y-1 uppercase tracking-widest text-sm flex items-center justify-center gap-3 border-2 border-slate-800 hover:border-blue-500">
+                <span>💾</span> Simpan Konfigurasi
+            </button>
+        </div>
+
     </form>
 </div>
