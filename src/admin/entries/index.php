@@ -7,7 +7,7 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
     header("Location: ../../../public/login.php"); exit;
 }
 
-$biaya_per_nomor = 50000; // Default jika event tidak punya harga khusus
+$uid = $_SESSION['user_id']; // ID Admin / Event Organizer yang sedang login
 
 // ==========================================
 // 1. HANDLE QUICK ACTION (Validasi Cepat)
@@ -15,9 +15,10 @@ $biaya_per_nomor = 50000; // Default jika event tidak punya harga khusus
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['approve_payment_id'])) {
         try {
-            // Update status di tabel PAYMENTS (Bukan Users)
-            $stmt = $pdo->prepare("UPDATE payments SET status = 'Paid', updated_at = NOW() WHERE id = ?");
-            $stmt->execute([$_POST['approve_payment_id']]);
+            // Update status di tabel PAYMENTS
+            // Tambahan keamanan: Pastikan payment ini milik event si Admin (AND event_id = $uid)
+            $stmt = $pdo->prepare("UPDATE payments SET status = 'Paid', updated_at = NOW() WHERE id = ? AND event_id = ?");
+            $stmt->execute([$_POST['approve_payment_id'], $uid]);
             
             $_SESSION['swal_type'] = 'success'; 
             $_SESSION['swal_msg'] = 'Pembayaran Berhasil Diterima (Lunas)!';
@@ -30,8 +31,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     
     if (isset($_POST['reject_payment_id'])) {
         try {
-            $stmt = $pdo->prepare("UPDATE payments SET status = 'Rejected', updated_at = NOW() WHERE id = ?");
-            $stmt->execute([$_POST['reject_payment_id']]);
+            $stmt = $pdo->prepare("UPDATE payments SET status = 'Rejected', updated_at = NOW() WHERE id = ? AND event_id = ?");
+            $stmt->execute([$_POST['reject_payment_id'], $uid]);
             
             $_SESSION['swal_type'] = 'warning'; 
             $_SESSION['swal_msg'] = 'Pembayaran Ditolak. User harus upload ulang.';
@@ -41,11 +42,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 // ==========================================
-// 2. AMBIL DATA (JOIN Users + Payments + Events)
+// 2. AMBIL DATA (HANYA MILIK EVENT INI)
 // ==========================================
 try {
-    // Kita mengambil data user yang SUDAH melakukan proses Checkout (ada di tabel payments)
-    // Supaya Admin hanya fokus pada yang butuh verifikasi
+    // FIX DATA BOCOR: Tambahkan WHERE p.event_id = ?
+    // Kita asumsikan p.event_id di tabel payments merujuk pada ID Admin penyelenggara ($uid)
+    
     $sql = "SELECT 
                 p.id as payment_id,
                 p.status as payment_status,
@@ -55,20 +57,24 @@ try {
                 u.id as user_id,
                 u.nama_lengkap,
                 u.email,
-                e.nama_event,
+                -- e.nama_event, -- (Opsional: Jika tabel events tidak sinkron, bisa ambil nama dari users/profil admin)
                 (SELECT COUNT(*) FROM event_entries WHERE user_id = u.id AND event_id = p.event_id) as total_entries
             FROM payments p
-            JOIN users u ON p.user_id = u.id
-            JOIN events e ON p.event_id = e.id
+            JOIN users u ON p.user_id = u.id -- Ini User Peserta (Club)
+            -- JOIN events e ON p.event_id = e.id -- (Dinonaktifkan sementara jika bikin error, aktifkan jika perlu nama event spesifik)
+            WHERE p.event_id = ?  -- <--- INI KUNCI PERBAIKANNYA
             ORDER BY 
-                CASE WHEN p.status = 'Pending' THEN 1 ELSE 2 END, -- Prioritaskan Pending di atas
+                CASE WHEN p.status = 'Pending' THEN 1 ELSE 2 END, 
                 p.created_at DESC";
     
-    $listData = $pdo->query($sql)->fetchAll();
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute([$uid]); // Filter sesuai Admin yang login
+    $listData = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 } catch (PDOException $e) {
     $listData = [];
-    $error_msg = $e->getMessage();
+    // Tampilkan error jika perlu debugging
+    // echo $e->getMessage(); 
 }
 
 include __DIR__ . '/../../../views/layout/topbar.php'; 
@@ -104,7 +110,7 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
             <div class="flex flex-col items-center justify-center py-32 text-center opacity-50">
                 <div class="text-6xl mb-4 grayscale">📭</div>
                 <h3 class="font-black text-slate-400 uppercase tracking-widest text-xl">Belum Ada Transaksi</h3>
-                <p class="text-xs text-slate-400 mt-2">Data akan muncul setelah user melakukan checkout.</p>
+                <p class="text-xs text-slate-400 mt-2">Data transaksi untuk event ini belum tersedia.</p>
             </div>
         <?php else: ?>
 
@@ -113,7 +119,7 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                     <thead class="bg-slate-50 border-b border-slate-100">
                         <tr>
                             <th class="py-6 px-6 text-[10px] font-black text-slate-400 uppercase tracking-widest w-12">#</th>
-                            <th class="py-6 px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest w-1/4">Klub & Event</th>
+                            <th class="py-6 px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest w-1/4">Klub Pengirim</th>
                             <th class="py-6 px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Tagihan</th>
                             <th class="py-6 px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Bukti Transfer</th>
                             <th class="py-6 px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Status</th>
@@ -125,7 +131,6 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                         <?php foreach($listData as $i => $row): 
                             $status = $row['payment_status'];
                             $entriesCount = $row['total_entries'];
-                            // Tagihan diambil dari tabel payment (amount) agar akurat sesuai saat checkout
                             $tagihan = $row['amount']; 
                         ?>
                         <tr class="group hover:bg-slate-50/80 transition duration-200 <?= $status == 'Pending' ? 'bg-amber-50/30' : '' ?>">
@@ -143,9 +148,6 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                                         </h4>
                                         <div class="text-[10px] font-bold text-slate-400 mt-0.5">
                                             <?= htmlspecialchars($row['email']) ?>
-                                        </div>
-                                        <div class="text-[9px] font-bold text-blue-500 bg-blue-50 px-2 py-0.5 rounded inline-block mt-1">
-                                            Event: <?= htmlspecialchars($row['nama_event']) ?>
                                         </div>
                                     </div>
                                 </div>

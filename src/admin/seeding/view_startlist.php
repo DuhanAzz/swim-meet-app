@@ -9,10 +9,16 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
 }
 $uid = $_SESSION['user_id']; 
 
-$cat_id = $_GET['category_id'] ?? null;
-if (!$cat_id) { header("Location: index.php"); exit; }
+// Menerima 'event_id' (sesuai link dari index.php) atau 'category_id' (legacy)
+$cat_id = $_GET['event_id'] ?? ($_GET['category_id'] ?? null);
 
-// 2. AMBIL DATA EVENT & CONFIG
+if (!$cat_id) { 
+    // Jika tidak ada ID, kembalikan ke index
+    header("Location: index.php"); 
+    exit; 
+}
+
+// 2. AMBIL DATA EVENT & CONFIG (Header Buku Acara)
 $stmtProfile = $pdo->prepare("SELECT * FROM users WHERE id = ?");
 $stmtProfile->execute([$uid]);
 $profile = $stmtProfile->fetch();
@@ -23,7 +29,7 @@ $total_lintasan = !empty($profile['lane_count']) ? (int)$profile['lane_count'] :
 $header_title    = $profile['nama_lengkap'] ?? 'KEJUARAAN RENANG';
 $raw_date        = strtotime($profile['event_start_date']);
 $event_year      = date('Y', $raw_date);
-$display_date    = date('d F Y', $raw_date); // Tanggal untuk bawah nomor acara
+$display_date    = date('d F Y', $raw_date);
 
 // Tanggal Rentang untuk KOP SURAT
 if(strtotime($profile['event_start_date']) != strtotime($profile['event_end_date'])) {
@@ -46,7 +52,7 @@ $nomor_lomba = $eventData['event_number'];
 $gender_label = ($eventData['jenis_kelamin'] == 'L' || $eventData['jenis_kelamin'] == 'Male') ? 'PUTRA' : 'PUTRI';
 $jarak_gaya  = $eventData['distance'] . " M " . strtoupper($eventData['stroke']) . " " . $gender_label;
 
-// 4. AMBIL DATA START LIST
+// 4. AMBIL DATA START LIST (DENGAN FILTER LUNAS)
 try {
     $sql = "SELECT 
                 ee.heat as heat_no, 
@@ -60,9 +66,11 @@ try {
                 s.asal_sekolah
             FROM event_entries ee
             JOIN swimmers s ON ee.swimmer_id = s.id
-            LEFT JOIN users u ON ee.user_id = u.id 
+            LEFT JOIN users u ON ee.club_id = u.id 
+            LEFT JOIN payments p ON p.user_id = ee.club_id
             WHERE ee.category_id = ? 
             AND ee.heat IS NOT NULL 
+            AND (p.status = 'Paid' OR p.status = 'Verified') -- Filter Lunas
             ORDER BY ee.heat ASC, ee.lane ASC";
 
     $stmt = $pdo->prepare($sql);
@@ -83,20 +91,7 @@ function formatLahir($tanggal_lahir, $event_year) {
     return $born_year . " (" . $age . ")";
 }
 
-// 2. Logic KU
-function getKU($tanggal_lahir, $event_year) {
-    if(!$tanggal_lahir || $tanggal_lahir == '0000-00-00') return '-';
-    $born_year = date('Y', strtotime($tanggal_lahir));
-    $age = $event_year - $born_year;
-
-    if($age <= 10) return 'KU 4'; 
-    if($age <= 12) return 'KU 3'; 
-    if($age <= 14) return 'KU 2'; 
-    if($age <= 17) return 'KU 1'; 
-    return 'SENIOR';              
-}
-
-// 3. Singkat Nama (Smart Shorten)
+// 2. Singkat Nama (Smart Shorten)
 function shortenName($name) {
     $name = trim(preg_replace('/\s+/', ' ', $name));
     $parts = explode(' ', $name);
@@ -114,6 +109,7 @@ function shortenName($name) {
     return implode(' ', $final_name);
 }
 
+// Grouping Data per Heat
 $heats = [];
 foreach ($raw_data as $row) {
     $heats[$row['heat_no']][$row['lane_no']] = $row;
@@ -264,7 +260,10 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
         </div>
 
         <?php if(empty($heats)): ?>
-            <div class="text-center py-12 border-y border-dashed border-gray-400 mt-10"><p class="italic">Belum ada seeding.</p></div>
+            <div class="text-center py-12 border-y border-dashed border-gray-400 mt-10">
+                <p class="italic text-gray-500 font-bold">Data Seeding Belum Tersedia.</p>
+                <p class="text-xs text-gray-400 mt-2">Pastikan sudah klik tombol "GENERATE" di halaman sebelumnya.</p>
+            </div>
         <?php else: ?>
 
             <?php foreach($heats as $heatNo => $lanesData): ?>
@@ -281,7 +280,7 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                             <th class="col-left">NAMA ATLET</th>
                             <th class="col-center">LAHIR</th>
                             <th class="col-left">TIM / SEKOLAH</th>
-                            <th class="col-right">PRESTASI</th>
+                            <th class="col-right">WAKTU</th>
                             <th class="col-right">HASIL</th>
                         </tr>
                     </thead>

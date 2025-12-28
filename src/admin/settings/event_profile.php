@@ -2,6 +2,7 @@
 session_start();
 require_once __DIR__ . '/../../../src/config/database.php';
 
+// Cek Otoritas
 if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
     header("Location: ../../../public/login.php"); exit;
 }
@@ -15,12 +16,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $targetDir = "../../../public/uploads/logos/";
         if (!is_dir($targetDir)) mkdir($targetDir, 0777, true);
 
-        // A. UPDATE INFO UTAMA
+        // A. UPDATE INFO UTAMA & SETTING TEKNIS BARU
+        // Tambahkan is_mixed_seeding dan separate_result_by_ku
         $sql = "UPDATE users SET 
                 nama_lengkap = ?, location = ?, venue_name = ?, 
                 event_start_date = ?, event_end_date = ?,
                 lane_count = ?, age_calculation_type = ?, event_type = ?, event_status = ?,
-                bank_name = ?, bank_account_number = ?, bank_account_name = ?
+                bank_name = ?, bank_account_number = ?, bank_account_name = ?,
+                is_mixed_seeding = ?, separate_result_by_ku = ?
                 WHERE id = ?";
         
         $pdo->prepare($sql)->execute([
@@ -29,6 +32,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             (int)($_POST['lane_count'] ?? 8), $_POST['age_calculation_type'] ?? 'Dec 31', 
             $_POST['event_type'] ?? 'Langsung Final', $_POST['event_status'] ?? 'Registration',
             $_POST['bank_name'] ?? '', $_POST['bank_account_number'] ?? '', $_POST['bank_account_name'] ?? '',
+            // Input Baru (Default 0 jika tidak ada)
+            $_POST['is_mixed_seeding'] ?? 0, 
+            $_POST['separate_result_by_ku'] ?? 0,
             $uid
         ]);
 
@@ -61,7 +67,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             }
         }
 
-        // --- BARU: D. HANDLE MULTIPLE FOOTER SPONSORS ---
+        // D. HANDLE MULTIPLE FOOTER SPONSORS
         if (!empty($_FILES['footer_logos']['name'][0])) {
             $insFooter = $pdo->prepare("INSERT INTO event_footer_logos (user_id, image_path) VALUES (?, ?)");
             foreach ($_FILES['footer_logos']['name'] as $key => $name) {
@@ -90,7 +96,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         }
 
         $pdo->commit();
-        $_SESSION['toast_type'] = 'success'; $_SESSION['toast_message'] = 'Perubahan tersimpan!';
+        $_SESSION['toast_type'] = 'success'; $_SESSION['toast_message'] = 'Perubahan & Aturan Lomba tersimpan!';
     } catch (Exception $e) {
         if ($pdo->inTransaction()) $pdo->rollBack();
         $_SESSION['toast_type'] = 'error'; $_SESSION['toast_message'] = 'Gagal: ' . $e->getMessage();
@@ -100,7 +106,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
 // --- 2. AMBIL DATA ---
 $row = $pdo->query("SELECT * FROM users WHERE id = $uid")->fetch();
-$footerLogos = $pdo->query("SELECT * FROM event_footer_logos WHERE user_id = $uid")->fetchAll(); // Ambil list logo footer
+$footerLogos = $pdo->query("SELECT * FROM event_footer_logos WHERE user_id = $uid")->fetchAll(); 
 
 include __DIR__ . '/../../../views/layout/topbar.php'; 
 include __DIR__ . '/../../../views/layout/sidebar.php'; 
@@ -110,7 +116,7 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
     <div class="max-w-5xl mx-auto mb-10 flex justify-between items-end">
         <div>
             <h1 class="text-4xl font-black uppercase italic text-slate-900 leading-none">Event Settings</h1>
-            <p class="text-sm text-slate-500 font-bold uppercase tracking-widest mt-2">Identitas & Status Operasional</p>
+            <p class="text-sm text-slate-500 font-bold uppercase tracking-widest mt-2">Identitas, Aturan & Status Operasional</p>
         </div>
         <div class="bg-white px-5 py-2 rounded-2xl border border-slate-200 shadow-sm text-[10px] font-black uppercase text-blue-600">
             <?= htmlspecialchars($row['event_type'] ?? 'Standard') ?>
@@ -152,7 +158,7 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
         </div>
 
         <div class="bg-white rounded-[2.5rem] shadow-sm border border-slate-200 p-10">
-            <h3 class="font-black uppercase text-sm mb-8 text-orange-600 italic">⚙️ Teknis</h3>
+            <h3 class="font-black uppercase text-sm mb-8 text-orange-600 italic">⚙️ Konfigurasi Kolam</h3>
             <div class="grid grid-cols-3 gap-6">
                 <div>
                     <label class="block text-[10px] font-bold text-slate-400 uppercase mb-2">Lintasan</label>
@@ -167,6 +173,55 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                      <input type="text" readonly value="<?= htmlspecialchars($row['event_type']) ?>" class="w-full px-4 py-3 bg-slate-100 border border-slate-200 rounded-xl text-xs font-bold text-slate-500 uppercase">
                      <input type="hidden" name="event_type" value="<?= htmlspecialchars($row['event_type']) ?>">
                 </div>
+            </div>
+        </div>
+
+        <div class="bg-indigo-50 rounded-[2.5rem] shadow-sm border border-indigo-200 p-10">
+            <h3 class="font-black uppercase text-sm mb-8 text-indigo-700 italic flex items-center gap-2">
+                <span>⚡</span> Aturan Lomba (Juknis)
+            </h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                
+                <div class="bg-white p-6 rounded-2xl border border-indigo-100 shadow-sm">
+                    <label class="block text-xs font-bold text-slate-500 uppercase mb-3">Mode Penentuan Seri (Seeding)</label>
+                    <div class="space-y-3">
+                        <label class="flex items-center gap-3 p-3 rounded-xl border border-slate-100 hover:bg-slate-50 cursor-pointer">
+                            <input type="radio" name="is_mixed_seeding" value="0" class="accent-indigo-600 w-5 h-5" <?= ($row['is_mixed_seeding'] ?? 0) == 0 ? 'checked' : '' ?>>
+                            <div>
+                                <span class="block text-sm font-bold text-slate-800">Normal / Standar</span>
+                                <span class="text-[10px] text-slate-400">Seri dipisah per Kelompok Umur (KU)</span>
+                            </div>
+                        </label>
+                        <label class="flex items-center gap-3 p-3 rounded-xl border border-indigo-100 bg-indigo-50/50 hover:bg-indigo-50 cursor-pointer">
+                            <input type="radio" name="is_mixed_seeding" value="1" class="accent-indigo-600 w-5 h-5" <?= ($row['is_mixed_seeding'] ?? 0) == 1 ? 'checked' : '' ?>>
+                            <div>
+                                <span class="block text-sm font-bold text-indigo-800">Time Trial (Mixed)</span>
+                                <span class="text-[10px] text-indigo-500">Gabung KU di seri yang sama berdasarkan kecepatan waktu</span>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="bg-white p-6 rounded-2xl border border-indigo-100 shadow-sm">
+                    <label class="block text-xs font-bold text-slate-500 uppercase mb-3">Mode Laporan Hasil (Result)</label>
+                    <div class="space-y-3">
+                        <label class="flex items-center gap-3 p-3 rounded-xl border border-slate-100 hover:bg-slate-50 cursor-pointer">
+                            <input type="radio" name="separate_result_by_ku" value="0" class="accent-indigo-600 w-5 h-5" <?= ($row['separate_result_by_ku'] ?? 0) == 0 ? 'checked' : '' ?>>
+                            <div>
+                                <span class="block text-sm font-bold text-slate-800">Gabung (Overall)</span>
+                                <span class="text-[10px] text-slate-400">Satu podium juara untuk semua peserta event ini</span>
+                            </div>
+                        </label>
+                        <label class="flex items-center gap-3 p-3 rounded-xl border border-indigo-100 bg-indigo-50/50 hover:bg-indigo-50 cursor-pointer">
+                            <input type="radio" name="separate_result_by_ku" value="1" class="accent-indigo-600 w-5 h-5" <?= ($row['separate_result_by_ku'] ?? 0) == 1 ? 'checked' : '' ?>>
+                            <div>
+                                <span class="block text-sm font-bold text-indigo-800">Pisah per Umur (Split)</span>
+                                <span class="text-[10px] text-indigo-500">Otomatis pisah juara per Tahun Lahir/KU meski renang bareng</span>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+
             </div>
         </div>
 

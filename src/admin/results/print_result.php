@@ -14,6 +14,7 @@ if (!$cat_id) { header("Location: index.php"); exit; }
 $uid = $_SESSION['user_id'];
 
 // 2. AMBIL DATA EVENT & PROFIL
+// Note: Kolom separate_result_by_ku diambil dari sini (tabel users)
 $stmtProfile = $pdo->prepare("SELECT * FROM users WHERE id = ?");
 $stmtProfile->execute([$uid]);
 $profile = $stmtProfile->fetch();
@@ -32,6 +33,9 @@ if(strtotime($profile['event_start_date']) != strtotime($profile['event_end_date
 $logo_left  = !empty($profile['logo_left']) ? '../../../public/' . $profile['logo_left'] : null;
 $logo_right = !empty($profile['logo_right']) ? '../../../public/' . $profile['logo_right'] : null;
 
+// Cek Mode Pisah KU
+$is_separate_ku = $profile['separate_result_by_ku'] ?? 0;
+
 // 3. AMBIL SPONSOR FOOTER
 $stmtFooter = $pdo->prepare("SELECT * FROM event_footer_logos WHERE user_id = ? ORDER BY id ASC");
 $stmtFooter->execute([$uid]);
@@ -46,12 +50,7 @@ $nomor_lomba  = $eventData['event_number'];
 $gender_label = ($eventData['jenis_kelamin'] == 'L' || $eventData['jenis_kelamin'] == 'Male') ? 'PUTRA' : 'PUTRI';
 $jarak_gaya   = $eventData['distance'] . " M " . strtoupper($eventData['stroke']) . " " . $gender_label;
 
-// 5. AMBIL HASIL LOMBA (Fixed Sorting Logic)
-// Logic: 
-// 1. Valid Rank (Finish Normal)
-// 2. DQ (Disqualified)
-// 3. NF (Did Not Finish)
-// 4. NS (Did Not Start)
+// 5. AMBIL HASIL LOMBA
 $sql = "SELECT ee.*, s.nama_atlet, s.tanggal_lahir, u.nama_lengkap as club_name, s.asal_sekolah
         FROM event_entries ee
         JOIN swimmers s ON ee.swimmer_id = s.id
@@ -60,22 +59,38 @@ $sql = "SELECT ee.*, s.nama_atlet, s.tanggal_lahir, u.nama_lengkap as club_name,
         AND (ee.final_time IS NOT NULL OR ee.is_dq = 1) 
         ORDER BY 
             CASE 
-                WHEN ee.final_rank > 0 THEN 1                                         -- 1. Valid Rank
-                WHEN ee.is_dq = 1 AND ee.dq_reason = 'DQ' THEN 2                      -- 2. DQ
-                WHEN ee.is_dq = 1 AND (ee.dq_reason = 'DNF' OR ee.dq_reason = 'NF') THEN 3 -- 3. NF
-                WHEN ee.is_dq = 1 AND (ee.dq_reason = 'DNS' OR ee.dq_reason = 'NS') THEN 4 -- 4. NS
+                WHEN ee.final_rank > 0 THEN 1
+                WHEN ee.is_dq = 1 AND ee.dq_reason = 'DQ' THEN 2
+                WHEN ee.is_dq = 1 AND (ee.dq_reason = 'DNF' OR ee.dq_reason = 'NF') THEN 3
+                WHEN ee.is_dq = 1 AND (ee.dq_reason = 'DNS' OR ee.dq_reason = 'NS') THEN 4
                 ELSE 5 
             END ASC,
-            ee.final_rank ASC, 
-            ee.final_time ASC";
+            ee.final_time ASC"; // Urutkan by Time agar saat di-grouping rankingnya valid
 
 $stmt = $pdo->prepare($sql);
 $stmt->execute([$cat_id]);
 $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
+// --- LOGIC UTAMA: GROUPING DATA ---
+$final_data_groups = [];
+
+if ($is_separate_ku == 1) {
+    // A. LOGIKA PISAH KU
+    foreach ($results as $row) {
+        // Ambil Tahun Lahir sebagai Key Group
+        $year = date('Y', strtotime($row['tanggal_lahir']));
+        $final_data_groups[$year][] = $row;
+    }
+    // Urutkan Group Tahun (Muda ke Tua atau sebaliknya, di sini Ascending Tahun)
+    ksort($final_data_groups);
+} else {
+    // B. LOGIKA NORMAL (GABUNG)
+    // Masukkan semua ke dalam satu grup "OVERALL"
+    $final_data_groups['OVERALL'] = $results;
+}
+
 // --- HELPER FUNCTIONS ---
 function shortenName($name) {
-    // Tambahkan ?? '' untuk mencegah error null pada trim()
     $name = trim(preg_replace('/\s+/', ' ', $name ?? ''));
     $parts = explode(' ', $name);
     if (count($parts) <= 3) return $name;
@@ -132,7 +147,7 @@ function formatLahir($tgl, $year) {
         .event-round-box { text-align: right; font-size: 10pt; font-weight: bold; background: #eee; padding: 2px 8px; border-radius: 4px; }
 
         /* TABEL DATA */
-        .result-table { width: 100%; border-collapse: collapse; font-size: 8pt; table-layout: fixed; }
+        .result-table { width: 100%; border-collapse: collapse; font-size: 8pt; table-layout: fixed; margin-bottom: 20px; }
         
         .result-table th { 
             background: #f0f0f0; border-bottom: 1px solid #000; border-top: 1px solid #000;
@@ -160,6 +175,9 @@ function formatLahir($tgl, $year) {
             display: flex; align-items: center; justify-content: center; gap: 30px;
         }
         .page-footer img { height: 100%; width: auto; max-width: 150px; object-fit: contain; }
+        
+        /* Agar tabel tidak terpotong jelek saat print */
+        .group-container { page-break-inside: avoid; margin-bottom: 25px; }
 
         @media print {
             body { background: white; padding: 0; display: block; }
@@ -173,7 +191,9 @@ function formatLahir($tgl, $year) {
     <div class="no-print w-[210mm] flex justify-between items-center mb-6 bg-white p-4 rounded-xl shadow border border-gray-300">
         <div>
             <h1 class="font-bold text-lg text-slate-800">PREVIEW CETAK HASIL</h1>
-            <p class="text-xs text-slate-500">Format A4 - Siap Cetak</p>
+            <p class="text-xs text-slate-500">
+                Mode: <?= $is_separate_ku ? '<span class="text-blue-600 font-bold">Terpisah per KU (Juknis)</span>' : '<span class="text-gray-600 font-bold">Gabungan (Normal)</span>' ?>
+            </p>
         </div>
         <div class="flex gap-2">
             <a href="input_result.php?category_id=<?= $cat_id ?>" class="px-4 py-2 bg-slate-100 text-slate-600 rounded font-bold text-xs uppercase hover:bg-slate-200">Kembali</a>
@@ -217,88 +237,100 @@ function formatLahir($tgl, $year) {
                 Belum ada data hasil yang diinput / disimpan.
             </div>
         <?php else: ?>
-            <table class="result-table">
-                <colgroup>
-                    <col style="width: 6%;">  
-                    <col style="width: 32%;"> 
-                    <col style="width: 12%;"> 
-                    <col style="width: 24%;"> 
-                    <col style="width: 13%;"> 
-                    <col style="width: 13%;"> 
-                </colgroup>
-                <thead>
-                    <tr>
-                        <th class="col-center">RANK</th>
-                        <th class="col-left">NAMA ATLET</th>
-                        <th class="col-center">LAHIR</th>
-                        <th class="col-left">TIM / SEKOLAH</th>
-                        <th class="col-right">PRESTASI</th>
-                        <th class="col-right">WAKTU</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php foreach($results as $r): 
-                        // Logika Cek Status
-                        $is_dq = ($r['is_dq'] == 1);
-                        
-                        // Ambil Text Alasan dari DB (DQ/DNF/DNS)
-                        $status_reason = strtoupper($r['dq_reason'] ?? '');
-                        
-                        // Normalisasi Text
-                        $is_ns = ($status_reason === 'DNS' || $status_reason === 'NS');
-                        $is_nf = ($status_reason === 'DNF' || $status_reason === 'NF');
-                        $is_real_dq = (!$is_ns && !$is_nf && $is_dq);
+            
+            <?php foreach($final_data_groups as $group_key => $group_items): ?>
+                
+                <div class="group-container">
+                    
+                    <?php if($is_separate_ku && count($final_data_groups) > 0): ?>
+                        <div class="bg-gray-100 px-2 py-1 mb-2 border-l-4 border-black">
+                            <h4 class="font-black text-sm uppercase">KELOMPOK UMUR / LAHIR TAHUN : <?= $group_key ?></h4>
+                        </div>
+                    <?php endif; ?>
 
-                        // Tentukan Rank Display (Kosong jika error)
-                        $rank_display = ($is_dq) ? '' : ($r['final_rank'] ?? '');
-                        
-                        // Style Rank
-                        $rank_class = "";
-                        if(!$is_dq) {
-                            if($r['final_rank'] == 1) $rank_class = "text-yellow-600 font-black";
-                            elseif($r['final_rank'] == 2) $rank_class = "text-slate-500 font-black";
-                            elseif($r['final_rank'] == 3) $rank_class = "text-orange-700 font-black";
-                        }
+                    <table class="result-table">
+                        <colgroup>
+                            <col style="width: 6%;">  
+                            <col style="width: 32%;"> 
+                            <col style="width: 12%;"> 
+                            <col style="width: 24%;"> 
+                            <col style="width: 13%;"> 
+                            <col style="width: 13%;"> 
+                        </colgroup>
+                        <thead>
+                            <tr>
+                                <th class="col-center">RANK</th>
+                                <th class="col-left">NAMA ATLET</th>
+                                <th class="col-center">LAHIR</th>
+                                <th class="col-left">TIM / SEKOLAH</th>
+                                <th class="col-right">PRESTASI</th>
+                                <th class="col-right">WAKTU</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php 
+                            // RESET RANKING COUNTER UNTUK SETIAP GRUP
+                            $local_rank = 1;
 
-                        // Tentukan Tampilan Waktu (Merah jika Error)
-                        if ($is_real_dq) {
-                            $time_display = '<span style="color:red; font-weight:bold;">DQ</span>';
-                        } elseif ($is_nf) {
-                            $time_display = '<span style="color:red; font-weight:bold;">NF</span>';
-                        } elseif ($is_ns) {
-                            $time_display = '<span style="color:red; font-weight:bold;">NS</span>';
-                        } else {
-                            $time_display = htmlspecialchars($r['final_time']);
-                        }
+                            foreach($group_items as $r): 
+                                $is_dq = ($r['is_dq'] == 1);
+                                $status_reason = strtoupper($r['dq_reason'] ?? '');
+                                
+                                $is_ns = ($status_reason === 'DNS' || $status_reason === 'NS');
+                                $is_nf = ($status_reason === 'DNF' || $status_reason === 'NF');
+                                $is_real_dq = (!$is_ns && !$is_nf && $is_dq);
 
-                        $prestasi = ($r['entry_time'] == '99:99.99' || !$r['entry_time']) ? 'NT' : $r['entry_time'];
-                    ?>
-                    <tr>
-                        <td class="col-center font-black text-sm <?= $rank_class ?>">
-                            <?= $rank_display ?>
-                        </td>
-                        <td class="col-left font-bold text-black" title="<?= $r['nama_atlet'] ?>">
-                            <?= shortenName($r['nama_atlet']) ?>
-                        </td>
-                        <td class="col-center font-mono text-gray-600">
-                            <?= formatLahir($r['tanggal_lahir'], $event_year) ?>
-                        </td>
-                        <td class="col-left text-xs text-gray-800">
-                            <?= !empty($r['asal_sekolah']) ? $r['asal_sekolah'] : $r['club_name'] ?>
-                        </td>
-                        
-                        <td class="col-right font-mono text-xs text-gray-600 font-bold">
-                            <?= $prestasi ?>
-                        </td>
+                                // LOGIKA RANKING LOKAL
+                                // Jika DQ/NS/NF, rank kosong. Jika valid, pakai counter lokal.
+                                if($is_dq) {
+                                    $rank_display = '';
+                                } else {
+                                    $rank_display = $local_rank++;
+                                }
+                                
+                                // Style Rank
+                                $rank_class = "";
+                                if(!$is_dq) {
+                                    if($rank_display == 1) $rank_class = "text-yellow-600 font-black";
+                                    elseif($rank_display == 2) $rank_class = "text-slate-500 font-black";
+                                    elseif($rank_display == 3) $rank_class = "text-orange-700 font-black";
+                                }
 
-                        <td class="col-right font-mono font-bold text-black text-sm">
-                            <?= $time_display ?>
-                        </td>
-                    </tr>
-                    <?php endforeach; ?>
-                </tbody>
-            </table>
-        <?php endif; ?>
+                                // Display Waktu
+                                if ($is_real_dq) $time_display = '<span style="color:red; font-weight:bold;">DQ</span>';
+                                elseif ($is_nf) $time_display = '<span style="color:red; font-weight:bold;">NF</span>';
+                                elseif ($is_ns) $time_display = '<span style="color:red; font-weight:bold;">NS</span>';
+                                else $time_display = htmlspecialchars($r['final_time']);
+
+                                $prestasi = ($r['entry_time'] == '99:99.99' || !$r['entry_time']) ? 'NT' : $r['entry_time'];
+                            ?>
+                            <tr>
+                                <td class="col-center font-black text-sm <?= $rank_class ?>">
+                                    <?= $rank_display ?>
+                                </td>
+                                <td class="col-left font-bold text-black" title="<?= $r['nama_atlet'] ?>">
+                                    <?= shortenName($r['nama_atlet']) ?>
+                                </td>
+                                <td class="col-center font-mono text-gray-600">
+                                    <?= formatLahir($r['tanggal_lahir'], $event_year) ?>
+                                </td>
+                                <td class="col-left text-xs text-gray-800">
+                                    <?= !empty($r['asal_sekolah']) ? $r['asal_sekolah'] : $r['club_name'] ?>
+                                </td>
+                                <td class="col-right font-mono text-xs text-gray-600 font-bold">
+                                    <?= $prestasi ?>
+                                </td>
+                                <td class="col-right font-mono font-bold text-black text-sm">
+                                    <?= $time_display ?>
+                                </td>
+                            </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+
+            <?php endforeach; ?>
+            <?php endif; ?>
 
         <div class="page-footer">
             <?php if(!empty($footerSponsors)): ?>

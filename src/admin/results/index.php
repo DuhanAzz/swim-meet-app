@@ -8,38 +8,41 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
     header("Location: ../../../public/login.php"); exit;
 }
 
+$uid = $_SESSION['user_id']; 
 $db_warning = null;
+$events = [];
 
-// 1. AMBIL EVENT YANG SUDAH DI-SEEDING SAJA
 try {
-    // Cek apakah kolom 'final_time' sudah dibuat (agar tidak error fatal)
-    $checkCol = $pdo->query("SHOW COLUMNS FROM event_entries LIKE 'final_time'");
+    // ============================================================
+    // UPDATE QUERY: MENGGUNAKAN JOIN KE 'event_entries'
+    // ============================================================
+    // Karena tabel 'event_numbers' tidak punya kolom 'event_id',
+    // Kita filter melalui tabel 'event_entries' (ee_filter) yang terhubung.
     
-    if($checkCol->rowCount() > 0) {
-        // Query Utama:
-        // 1. Ambil data Event (Nomor Lomba)
-        // 2. count_seeded: Jumlah peserta yang sudah dapat Lintasan (Heat/Lane)
-        // 3. total_finished: Jumlah peserta yang SUDAH punya Waktu Finish (final_time)
-        
-        $sql = "SELECT en.*, 
-                (SELECT COUNT(*) FROM event_entries ee 
-                 WHERE ee.category_id = en.id AND ee.heat IS NOT NULL) as count_seeded,
-                 
-                (SELECT COUNT(*) FROM event_entries ee 
-                 WHERE ee.category_id = en.id AND (ee.final_time IS NOT NULL OR ee.is_dq = 1)) as total_finished
-                 
-                FROM event_numbers en 
-                HAVING count_seeded > 0
-                ORDER BY en.event_number ASC";
-        
-        $events = $pdo->query($sql)->fetchAll();
-    } else {
-        $events = [];
-        $db_warning = "Kolom 'final_time' belum ditemukan. Harap jalankan SQL Update.";
-    }
+    $sql = "SELECT en.*, 
+            -- Subquery: Hitung Seeding
+            (SELECT COUNT(*) FROM event_entries ee 
+                WHERE ee.category_id = en.id AND ee.heat IS NOT NULL) as count_seeded,
+                
+            -- Subquery: Hitung Finish
+            (SELECT COUNT(*) FROM event_entries ee 
+                WHERE ee.category_id = en.id AND (ee.final_time IS NOT NULL OR ee.is_dq = 1)) as total_finished
+                
+            FROM event_numbers en
+            -- JALAN TIKUS: Join ke tabel entries untuk cek Event ID
+            JOIN event_entries ee_filter ON en.id = ee_filter.category_id
+            WHERE ee_filter.event_id = ? 
+            
+            GROUP BY en.id -- Penting: Agar event tidak muncul dobel-dobel
+            HAVING count_seeded > 0
+            ORDER BY en.event_number ASC";
+    
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute([$uid]); 
+    $events = $stmt->fetchAll();
 
 } catch (PDOException $e) {
-    $events = [];
+    // Tangkap error jika masih ada
     $db_warning = "Database Error: " . $e->getMessage();
 }
 
@@ -58,9 +61,8 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
         <div class="max-w-7xl mx-auto mb-6 bg-red-100 border border-red-300 text-red-800 px-6 py-4 rounded-xl flex items-center gap-4 shadow-sm">
             <span class="text-3xl">⚠️</span>
             <div>
-                <p class="font-black uppercase">Database Belum Update</p>
-                <p class="text-xs mb-2">Sistem tidak bisa menyimpan hasil lomba. Jalankan perintah ini di Database:</p>
-                <code class="bg-black/10 px-2 py-1 rounded text-[10px] font-mono select-all">ALTER TABLE event_entries ADD COLUMN final_time VARCHAR(20) NULL, ADD COLUMN final_rank INT NULL, ADD COLUMN is_dq TINYINT(1) DEFAULT 0, ADD COLUMN dq_reason TEXT NULL;</code>
+                <p class="font-black uppercase">Terjadi Masalah</p>
+                <p class="text-xs font-mono"><?= htmlspecialchars($db_warning) ?></p>
             </div>
         </div>
     <?php endif; ?>
