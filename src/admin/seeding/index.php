@@ -14,8 +14,7 @@ $admin_id = $_SESSION['user_id'];
 // ============================================================
 try {
     // REVISI QUERY: 
-    // 1. Menggunakan 'event_number_id' bukan 'category_id'
-    // 2. Menghubungkan ke tabel 'payments' via 'users' (klub) karena struktur payment Anda per klub.
+    // Menggunakan 'category_id' yang benar (bukan event_number_id)
     
     $sql = "SELECT en.*, 
             (
@@ -23,7 +22,7 @@ try {
                 FROM event_entries ee 
                 -- Join ke user/klub untuk cek status bayar
                 LEFT JOIN payments p ON p.user_id = ee.club_id 
-                WHERE ee.event_number_id = en.id 
+                WHERE ee.category_id = en.id 
                 -- Hitung hanya yang statusnya Paid (atau hitung semua jika ingin melonggarkan aturan)
                 AND (p.status = 'Paid' OR p.status = 'Verified')
             ) as total_athletes
