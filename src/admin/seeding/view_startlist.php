@@ -19,6 +19,7 @@ if (!$cat_id) {
 }
 
 // 2. AMBIL DATA EVENT & CONFIG (Header Buku Acara)
+// Mengambil data dari tabel users (tempat event_profile.php menyimpan data)
 $stmtProfile = $pdo->prepare("SELECT * FROM users WHERE id = ?");
 $stmtProfile->execute([$uid]);
 $profile = $stmtProfile->fetch();
@@ -30,6 +31,26 @@ $header_title    = $profile['nama_lengkap'] ?? 'KEJUARAAN RENANG';
 $raw_date        = strtotime($profile['event_start_date']);
 $event_year      = date('Y', $raw_date);
 $display_date    = date('d F Y', $raw_date);
+
+// --- LOGIKA BARU: MENENTUKAN LCM / SCM DARI PROFIL ---
+// Kita cek kolom 'pool_type' atau 'pool_length' di tabel users
+$poolSuffix = ""; 
+$pType = "";
+
+if (!empty($profile['pool_type'])) {
+    $pType = $profile['pool_type'];
+} elseif (!empty($profile['pool_length'])) {
+    $pType = $profile['pool_length'];
+}
+
+// Bersihkan string dan cek isinya
+$pType = strtolower(trim($pType));
+if ($pType === '50m' || $pType === 'lcm' || $pType === 'long course') {
+    $poolSuffix = " - LCM";
+} elseif ($pType === '25m' || $pType === 'scm' || $pType === 'short course') {
+    $poolSuffix = " - SCM";
+}
+// -----------------------------------------------------
 
 // Tanggal Rentang untuk KOP SURAT
 if(strtotime($profile['event_start_date']) != strtotime($profile['event_end_date'])) {
@@ -50,7 +71,9 @@ if (!$eventData) die("Nomor lomba tidak ditemukan.");
 
 $nomor_lomba = $eventData['event_number'];
 $gender_label = ($eventData['jenis_kelamin'] == 'L' || $eventData['jenis_kelamin'] == 'Male') ? 'PUTRA' : 'PUTRI';
-$jarak_gaya  = $eventData['distance'] . " M " . strtoupper($eventData['stroke']) . " " . $gender_label;
+
+// Update Judul: Tambahkan $poolSuffix di belakang
+$jarak_gaya  = $eventData['distance'] . " M " . strtoupper($eventData['stroke']) . " " . $gender_label . $poolSuffix;
 
 // 4. AMBIL DATA START LIST (DENGAN FILTER LUNAS)
 try {

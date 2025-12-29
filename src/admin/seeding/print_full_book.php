@@ -35,6 +35,24 @@ if(strtotime($profile['event_start_date']) != strtotime($profile['event_end_date
 $logo_left  = !empty($profile['logo_left']) ? '../../../public/' . $profile['logo_left'] : null;
 $logo_right = !empty($profile['logo_right']) ? '../../../public/' . $profile['logo_right'] : null;
 
+// --- LOGIKA BARU: MENENTUKAN LCM / SCM DARI PROFIL (GLOBAL UNTUK SEMUA NOMOR) ---
+$poolSuffix = ""; 
+$pType = "";
+
+if (!empty($profile['pool_type'])) {
+    $pType = $profile['pool_type'];
+} elseif (!empty($profile['pool_length'])) {
+    $pType = $profile['pool_length'];
+}
+
+$pType = strtolower(trim($pType));
+if ($pType === '50m' || $pType === 'lcm' || $pType === 'long course') {
+    $poolSuffix = " - LCM";
+} elseif ($pType === '25m' || $pType === 'scm' || $pType === 'short course') {
+    $poolSuffix = " - SCM";
+}
+// --------------------------------------------------------------------------------
+
 // --- 4. AMBIL DATA LOMBA ---
 $stmtEvents = $pdo->query("SELECT * FROM event_numbers ORDER BY event_number ASC");
 $all_events = $stmtEvents->fetchAll(PDO::FETCH_ASSOC);
@@ -245,7 +263,10 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                     foreach($all_events as $event): 
                         $cat_id = $event['id'];
                         $gender_label = ($event['jenis_kelamin'] == 'L' || $event['jenis_kelamin'] == 'Male') ? 'PUTRA' : 'PUTRI';
-                        $jarak_gaya  = $event['distance'] . " M " . strtoupper($event['stroke']) . " " . $gender_label;
+                        
+                        // --- UPDATE JUDUL: Tambahkan $poolSuffix ---
+                        $jarak_gaya  = $event['distance'] . " M " . strtoupper($event['stroke']) . " " . $gender_label . $poolSuffix;
+                        // -------------------------------------------
                         
                         $sql = "SELECT ee.heat, ee.lane, ee.entry_time, s.nama_atlet, s.tanggal_lahir, 
                                        u.nama_lengkap as club_name, s.asal_sekolah

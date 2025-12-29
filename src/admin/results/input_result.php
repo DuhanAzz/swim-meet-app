@@ -90,13 +90,33 @@ if(strtotime($profile['event_start_date']) != strtotime($profile['event_end_date
 $logo_left  = !empty($profile['logo_left']) ? '../../../public/' . $profile['logo_left'] : null;
 $logo_right = !empty($profile['logo_right']) ? '../../../public/' . $profile['logo_right'] : null;
 
+// --- LOGIKA BARU: MENENTUKAN LCM / SCM DARI PROFIL ---
+$poolSuffix = ""; 
+$pType = "";
+
+if (!empty($profile['pool_type'])) {
+    $pType = $profile['pool_type'];
+} elseif (!empty($profile['pool_length'])) {
+    $pType = $profile['pool_length'];
+}
+
+$pType = strtolower(trim($pType));
+if ($pType === '50m' || $pType === 'lcm' || $pType === 'long course') {
+    $poolSuffix = " - LCM";
+} elseif ($pType === '25m' || $pType === 'scm' || $pType === 'short course') {
+    $poolSuffix = " - SCM";
+}
+// -----------------------------------------------------
+
 // C. Info Nomor Lomba
 $stmtEvent = $pdo->prepare("SELECT * FROM event_numbers WHERE id = ?");
 $stmtEvent->execute([$cat_id]);
 $eventData = $stmtEvent->fetch();
 $nomor_lomba  = $eventData['event_number'];
 $gender_label = ($eventData['jenis_kelamin'] == 'L' || $eventData['jenis_kelamin'] == 'Male') ? 'PUTRA' : 'PUTRI';
-$jarak_gaya   = $eventData['distance'] . " M " . strtoupper($eventData['stroke']) . " " . $gender_label;
+
+// Update Judul: Tambahkan $poolSuffix
+$jarak_gaya   = $eventData['distance'] . " M " . strtoupper($eventData['stroke']) . " " . $gender_label . $poolSuffix;
 
 // D. Ambil Data Peserta (Termasuk data hasil yang sudah tersimpan)
 $sql = "SELECT ee.*, s.nama_atlet, s.tanggal_lahir, u.nama_lengkap as club_name, s.asal_sekolah
