@@ -11,43 +11,37 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
 $uid = $_SESSION['user_id'];
 
 // --- LOGIKA ID EVENT ---
-// Kita coba ambil ID dari URL, jika tidak ada, ambil event terakhir milik user ini.
 $eventId = $_GET['event_id'] ?? 0;
 
 if ($eventId == 0) {
+    // Coba cari event terakhir milik user ini
     $stmtFind = $pdo->prepare("SELECT id FROM events WHERE user_id = ? ORDER BY id DESC LIMIT 1");
     $stmtFind->execute([$uid]);
     $lastEvent = $stmtFind->fetch();
+    
     if ($lastEvent) {
         $eventId = $lastEvent['id'];
     } else {
-        die("Anda belum memiliki Event. Silakan buat event baru terlebih dahulu.");
+        // Biarkan 0 agar masuk mode Buat Baru
+        $eventId = 0; 
     }
 }
 
-// --- 1. HANDLE SEMUA PROSES UPDATE ---
+// --- 1. HANDLE SEMUA PROSES UPDATE / INSERT ---
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     try {
         $pdo->beginTransaction();
         $targetDir = __DIR__ . "/../../../public/uploads/logos/";
         if (!is_dir($targetDir)) mkdir($targetDir, 0777, true);
 
-        // A. UPDATE INFO UTAMA & SPESIFIKASI KE TABEL EVENTS
-        $sql = "UPDATE events SET 
-                nama_event = ?, lokasi = ?, venue_name = ?, 
-                event_start_date = ?, event_end_date = ?, tanggal_pelaksanaan = ?,
-                lane_count = ?, pool_type = ?, age_calculation_type = ?, event_type = ?, status = ?,
-                bank_name = ?, bank_account_number = ?, bank_account_name = ?
-                WHERE id = ? AND user_id = ?";
-        
-        // Kita samakan tanggal_pelaksanaan dengan start_date agar konsisten
-        $pdo->prepare($sql)->execute([
+        // Siapkan Parameter Dasar
+        $params = [
             $_POST['nama_event'] ?? '', 
             $_POST['lokasi'] ?? '', 
             $_POST['venue_name'] ?? '', 
-            $_POST['event_start_date'] ?? NULL, 
-            $_POST['event_end_date'] ?? NULL,
-            $_POST['event_start_date'] ?? NULL, // Update juga kolom tanggal_pelaksanaan utama
+            !empty($_POST['event_start_date']) ? $_POST['event_start_date'] : NULL, 
+            !empty($_POST['event_end_date']) ? $_POST['event_end_date'] : NULL,
+            !empty($_POST['event_start_date']) ? $_POST['event_start_date'] : NULL, // tanggal_pelaksanaan
             (int)($_POST['lane_count'] ?? 8), 
             $_POST['pool_type'] ?? 'LCM',
             $_POST['age_calculation_type'] ?? 'Dec 31', 
@@ -56,12 +50,62 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $_POST['bank_name'] ?? '', 
             $_POST['bank_account_number'] ?? '', 
             $_POST['bank_account_name'] ?? '',
-            $eventId,
-            $uid
-        ]);
+            $uid // user_id
+        ];
 
-        // B. HANDLE LOGO KIRI & KANAN
-        // Rename file pakai event_id biar tidak tertukar
+        // LOGIKA INSERT VS UPDATE
+        if ($eventId == 0) {
+            // A. INSERT (EVENT BARU)
+            // PERBAIKAN: Menambahkan 'nomor_acara' dengan default value '0' langsung di query
+            // agar error 1364 tidak muncul.
+            $sql = "INSERT INTO events (
+                        nama_event, lokasi, venue_name, 
+                        event_start_date, event_end_date, tanggal_pelaksanaan,
+                        lane_count, pool_type, age_calculation_type, event_type, status,
+                        bank_name, bank_account_number, bank_account_name,
+                        user_id,
+                        nomor_acara 
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '0')"; 
+            
+            // Perhatikan: kita hardcode nilai '0' di VALUES paling belakang untuk nomor_acara
+            
+            $pdo->prepare($sql)->execute($params);
+            $eventId = $pdo->lastInsertId(); // Dapatkan ID baru
+        } else {
+            // B. UPDATE (EVENT LAMA)
+            // Tambahkan ID ke params untuk WHERE clause
+            $params[] = $eventId; 
+            
+            // Untuk Update, kita tidak perlu menyentuh nomor_acara jika tidak ada di form
+            $sql = "UPDATE events SET 
+                    nama_event = ?, lokasi = ?, venue_name = ?, 
+                    event_start_date = ?, event_end_date = ?, tanggal_pelaksanaan = ?,
+                    lane_count = ?, pool_type = ?, age_calculation_type = ?, event_type = ?, status = ?,
+                    bank_name = ?, bank_account_number = ?, bank_account_name = ?
+                    WHERE user_id = ? AND id = ?"; 
+            
+            // Kita harus execute manual karena urutan params user_id & event_id
+            $pdo->prepare($sql)->execute([
+                $_POST['nama_event'] ?? '', 
+                $_POST['lokasi'] ?? '', 
+                $_POST['venue_name'] ?? '', 
+                !empty($_POST['event_start_date']) ? $_POST['event_start_date'] : NULL, 
+                !empty($_POST['event_end_date']) ? $_POST['event_end_date'] : NULL,
+                !empty($_POST['event_start_date']) ? $_POST['event_start_date'] : NULL,
+                (int)($_POST['lane_count'] ?? 8), 
+                $_POST['pool_type'] ?? 'LCM',
+                $_POST['age_calculation_type'] ?? 'Dec 31', 
+                $_POST['event_type'] ?? 'Standard', 
+                $_POST['status'] ?? 'upcoming',
+                $_POST['bank_name'] ?? '', 
+                $_POST['bank_account_number'] ?? '', 
+                $_POST['bank_account_name'] ?? '',
+                $uid,
+                $eventId
+            ]);
+        }
+
+        // C. HANDLE LOGO KIRI & KANAN
         if (!empty($_FILES['logo_left']['name'])) {
             $ext = pathinfo($_FILES['logo_left']['name'], PATHINFO_EXTENSION);
             $fn = "LOGO_L_" . $eventId . "_" . time() . "." . $ext;
@@ -77,7 +121,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             }
         }
 
-        // C. HANDLE MULTIPLE FOOTER SPONSORS (Tabel: event_sponsors)
+        // D. HANDLE FOOTER SPONSORS
         if (!empty($_FILES['footer_logos']['name'][0])) {
             $insFooter = $pdo->prepare("INSERT INTO event_sponsors (event_id, image_path) VALUES (?, ?)");
             foreach ($_FILES['footer_logos']['name'] as $key => $name) {
@@ -91,15 +135,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             }
         }
 
-        // D. HAPUS LOGO FOOTER TERTENTU
+        // E. DELETE FOOTER
         if (isset($_POST['delete_footer_id'])) {
             $pdo->prepare("DELETE FROM event_sponsors WHERE id = ? AND event_id = ?")->execute([$_POST['delete_footer_id'], $eventId]);
         }
 
         $pdo->commit();
-        $_SESSION['toast_type'] = 'success'; $_SESSION['toast_message'] = 'Konfigurasi Event Berhasil Disimpan!';
-        
-        // Refresh halaman dengan ID yang benar
+        $_SESSION['toast_type'] = 'success'; $_SESSION['toast_message'] = 'Profil Event berhasil disimpan!';
         header("Location: event_profile.php?event_id=" . $eventId); exit;
 
     } catch (Exception $e) {
@@ -108,17 +150,29 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     }
 }
 
-// --- 2. AMBIL DATA DARI TABEL EVENTS ---
-$stmt = $pdo->prepare("SELECT * FROM events WHERE id = ? AND user_id = ?");
-$stmt->execute([$eventId, $uid]);
-$row = $stmt->fetch();
+// --- 2. AMBIL DATA EVENT & DATA ADMIN ---
+$row = []; 
+$footerLogos = [];
 
-if (!$row) die("Data Event tidak ditemukan.");
+if ($eventId > 0) {
+    // Ambil Event Existing
+    $stmt = $pdo->prepare("SELECT * FROM events WHERE id = ? AND user_id = ?");
+    $stmt->execute([$eventId, $uid]);
+    $row = $stmt->fetch();
+    
+    if (!$row) {
+        $eventId = 0; $row = [];
+    } else {
+        $stmtFooter = $pdo->prepare("SELECT * FROM event_sponsors WHERE event_id = ?");
+        $stmtFooter->execute([$eventId]);
+        $footerLogos = $stmtFooter->fetchAll();
+    }
+}
 
-// Ambil Sponsors
-$footerLogos = $pdo->prepare("SELECT * FROM event_sponsors WHERE event_id = ?");
-$footerLogos->execute([$eventId]);
-$footerLogos = $footerLogos->fetchAll();
+// Ambil User Profile
+$stmtUser = $pdo->prepare("SELECT bank_name, bank_account_number, bank_account_name FROM users WHERE id = ?");
+$stmtUser->execute([$uid]);
+$userProfile = $stmtUser->fetch();
 
 include __DIR__ . '/../../../views/layout/topbar.php'; 
 include __DIR__ . '/../../../views/layout/sidebar.php'; 
@@ -128,10 +182,12 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
     
     <div class="max-w-5xl mx-auto mb-10 flex justify-between items-end">
         <div>
+            <?php if($eventId > 0): ?>
             <a href="../kompetisi/manage_entries.php?event_id=<?= $eventId ?>" class="text-xs font-bold text-slate-400 hover:text-blue-600 uppercase mb-2 block">← Kembali ke Dashboard</a>
+            <?php endif; ?>
             
             <h1 class="text-4xl font-black uppercase italic text-slate-900 leading-none">Event Settings</h1>
-            <p class="text-sm text-slate-500 font-bold uppercase tracking-widest mt-2">Identitas, Spesifikasi & Status</p>
+            <p class="text-sm text-slate-500 font-bold uppercase tracking-widest mt-2">Identitas, Spesifikasi & Pembayaran</p>
         </div>
         <div class="flex gap-2">
             <div class="bg-white px-5 py-2 rounded-2xl border border-slate-200 shadow-sm text-[10px] font-black uppercase text-blue-600">
@@ -218,7 +274,7 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                     <div>
                         <label class="block text-[10px] font-bold text-slate-500 uppercase mb-2">Jumlah Lintasan (Lanes)</label>
                         <div class="flex items-center gap-3">
-                            <input type="number" name="lane_count" value="<?= $row['lane_count'] ?: 8 ?>" min="4" max="10" class="w-24 text-center font-black text-2xl border-2 border-indigo-200 rounded-xl py-2 focus:border-indigo-600 focus:ring-0 text-indigo-900">
+                            <input type="number" name="lane_count" value="<?= $row['lane_count'] ?? 8 ?>" min="4" max="10" class="w-24 text-center font-black text-2xl border-2 border-indigo-200 rounded-xl py-2 focus:border-indigo-600 focus:ring-0 text-indigo-900">
                             <span class="text-xs font-bold text-indigo-400 uppercase">Lintasan Aktif</span>
                         </div>
                     </div>
@@ -226,61 +282,71 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                     <div>
                         <label class="block text-[10px] font-bold text-slate-500 uppercase mb-2">Perhitungan Umur Peserta</label>
                         <select name="age_calculation_type" class="w-full px-4 py-3 border border-indigo-200 rounded-xl text-sm font-bold text-slate-700">
-                            <option value="Dec 31" <?= ($row['age_calculation_type']=='Dec 31')?'selected':'' ?>>Per 31 Desember (Tahun Berjalan)</option>
-                            <option value="Meet Start" <?= ($row['age_calculation_type']=='Meet Start')?'selected':'' ?>>Per Hari H Lomba (Actual Age)</option>
+                            <option value="Dec 31" <?= (($row['age_calculation_type'] ?? 'Dec 31') =='Dec 31')?'selected':'' ?>>Per 31 Desember (Tahun Berjalan)</option>
+                            <option value="Meet Start" <?= (($row['age_calculation_type'] ?? '') =='Meet Start')?'selected':'' ?>>Per Hari H Lomba (Actual Age)</option>
                         </select>
                     </div>
-                    
-                    <input type="hidden" name="event_type" value="<?= htmlspecialchars($row['event_type']) ?>">
                 </div>
 
                 <div class="bg-white p-6 rounded-2xl border border-indigo-100 shadow-sm">
                     <label class="block text-xs font-bold text-slate-500 uppercase mb-4">Tipe & Panjang Kolam (Pool Type)</label>
-                    
                     <div class="flex flex-col gap-3">
-                        <label class="relative flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all <?= ($row['pool_type'] == 'SCM') ? 'border-indigo-600 bg-indigo-50' : 'border-slate-100 hover:border-slate-300' ?>">
-                            <input type="radio" name="pool_type" value="SCM" class="hidden peer" <?= ($row['pool_type'] == 'SCM') ? 'checked' : '' ?>>
-                            <div class="w-5 h-5 rounded-full border-2 border-slate-300 peer-checked:border-indigo-600 peer-checked:bg-indigo-600 flex items-center justify-center">
-                                <div class="w-2 h-2 bg-white rounded-full"></div>
-                            </div>
-                            <div>
-                                <span class="block font-black text-slate-800 text-sm">25m (Short Course)</span>
-                                <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">SCM • Semi-Olympic</span>
-                            </div>
+                        <label class="relative flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all <?= (($row['pool_type'] ?? 'LCM') == 'SCM') ? 'border-indigo-600 bg-indigo-50' : 'border-slate-100 hover:border-slate-300' ?>">
+                            <input type="radio" name="pool_type" value="SCM" class="hidden peer" <?= (($row['pool_type'] ?? 'LCM') == 'SCM') ? 'checked' : '' ?>>
+                            <div class="w-5 h-5 rounded-full border-2 border-slate-300 peer-checked:border-indigo-600 peer-checked:bg-indigo-600 flex items-center justify-center"><div class="w-2 h-2 bg-white rounded-full"></div></div>
+                            <div><span class="block font-black text-slate-800 text-sm">25m (Short Course)</span><span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">SCM • Semi-Olympic</span></div>
                         </label>
 
-                        <label class="relative flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all <?= ($row['pool_type'] == 'LCM' || !$row['pool_type']) ? 'border-indigo-600 bg-indigo-50' : 'border-slate-100 hover:border-slate-300' ?>">
-                            <input type="radio" name="pool_type" value="LCM" class="hidden peer" <?= ($row['pool_type'] == 'LCM' || !$row['pool_type']) ? 'checked' : '' ?>>
-                            <div class="w-5 h-5 rounded-full border-2 border-slate-300 peer-checked:border-indigo-600 peer-checked:bg-indigo-600 flex items-center justify-center">
-                                <div class="w-2 h-2 bg-white rounded-full"></div>
-                            </div>
-                            <div>
-                                <span class="block font-black text-slate-800 text-sm">50m (Long Course)</span>
-                                <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">LCM • Olympic Standard</span>
-                            </div>
+                        <label class="relative flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all <?= (($row['pool_type'] ?? 'LCM') == 'LCM') ? 'border-indigo-600 bg-indigo-50' : 'border-slate-100 hover:border-slate-300' ?>">
+                            <input type="radio" name="pool_type" value="LCM" class="hidden peer" <?= (($row['pool_type'] ?? 'LCM') == 'LCM') ? 'checked' : '' ?>>
+                            <div class="w-5 h-5 rounded-full border-2 border-slate-300 peer-checked:border-indigo-600 peer-checked:bg-indigo-600 flex items-center justify-center"><div class="w-2 h-2 bg-white rounded-full"></div></div>
+                            <div><span class="block font-black text-slate-800 text-sm">50m (Long Course)</span><span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">LCM • Olympic Standard</span></div>
                         </label>
                     </div>
                 </div>
-
             </div>
         </div>
 
-        <div class="bg-white rounded-[2.5rem] shadow-sm border border-slate-200 p-10">
-            <h3 class="font-black uppercase text-sm mb-8 text-emerald-600 italic">💳 Info Pembayaran</h3>
+        <div class="bg-white rounded-[2.5rem] shadow-sm border border-slate-200 p-10 relative">
+            <h3 class="font-black uppercase text-sm mb-2 text-emerald-600 italic">💳 Info Pembayaran & Checkout</h3>
+            <p class="text-xs text-slate-400 mb-8">Isi kolom ini jika Event ini menggunakan rekening khusus. <br>Jika dikosongkan, checkout akan menggunakan <strong>Rekening Default Admin</strong>.</p>
+            
             <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div>
                     <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Nama Bank</label>
-                    <input type="text" name="bank_name" value="<?= htmlspecialchars($row['bank_name'] ?? '') ?>" placeholder="BCA / MANDIRI" class="w-full px-4 py-3 border border-slate-200 rounded-xl font-bold">
+                    <input type="text" name="bank_name" 
+                        value="<?= htmlspecialchars($row['bank_name'] ?? '') ?>" 
+                        placeholder="<?= !empty($userProfile['bank_name']) ? 'Default: '.htmlspecialchars($userProfile['bank_name']) : 'Contoh: BCA' ?>" 
+                        class="w-full px-4 py-3 border border-slate-200 rounded-xl font-bold placeholder:text-slate-300">
                 </div>
+                
                 <div>
                     <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Nomor Rekening</label>
-                    <input type="text" name="bank_account_number" value="<?= htmlspecialchars($row['bank_account_number'] ?? '') ?>" placeholder="123xxxxx" class="w-full px-4 py-3 border border-slate-200 rounded-xl font-bold font-mono">
+                    <input type="text" name="bank_account_number" 
+                        value="<?= htmlspecialchars($row['bank_account_number'] ?? '') ?>" 
+                        placeholder="<?= !empty($userProfile['bank_account_number']) ? 'Default: '.htmlspecialchars($userProfile['bank_account_number']) : '123xxxx' ?>" 
+                        class="w-full px-4 py-3 border border-slate-200 rounded-xl font-bold font-mono placeholder:text-slate-300">
                 </div>
+                
                 <div>
-                    <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Atas Nama</label>
-                    <input type="text" name="bank_account_name" value="<?= htmlspecialchars($row['bank_account_name'] ?? '') ?>" placeholder="Nama Pemilik Rekening" class="w-full px-4 py-3 border border-slate-200 rounded-xl font-bold">
+                    <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Atas Nama (A.N)</label>
+                    <input type="text" name="bank_account_name" 
+                        value="<?= htmlspecialchars($row['bank_account_name'] ?? '') ?>" 
+                        placeholder="<?= !empty($userProfile['bank_account_name']) ? 'Default: '.htmlspecialchars($userProfile['bank_account_name']) : 'Nama Pemilik' ?>" 
+                        class="w-full px-4 py-3 border border-slate-200 rounded-xl font-bold placeholder:text-slate-300">
                 </div>
             </div>
+            
+            <?php if(!empty($userProfile['bank_name'])): ?>
+            <div class="mt-4 p-4 bg-slate-50 rounded-xl border border-slate-200 flex items-start gap-3">
+                <span class="text-emerald-500 text-lg">💡</span>
+                <div>
+                    <p class="text-xs font-bold text-slate-600">Info Rekening Default (Admin)</p>
+                    <p class="text-[10px] text-slate-500 mt-1">Saat ini: <strong><?= htmlspecialchars($userProfile['bank_name']) ?> - <?= htmlspecialchars($userProfile['bank_account_number']) ?> a.n <?= htmlspecialchars($userProfile['bank_account_name']) ?></strong></p>
+                    <p class="text-[10px] text-slate-400 italic">Kolom di atas boleh dikosongkan jika ingin menggunakan rekening default ini.</p>
+                </div>
+            </div>
+            <?php endif; ?>
         </div>
 
         <div class="bg-white rounded-[2.5rem] shadow-sm border border-slate-200 p-10">
@@ -315,7 +381,6 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
 
             <div>
                 <label class="block text-[10px] font-bold text-slate-400 uppercase mb-2">Footer Sponsors (Bottom Page)</label>
-                
                 <?php if(!empty($footerLogos)): ?>
                 <div class="flex flex-wrap gap-4 mb-4">
                     <?php foreach($footerLogos as $fl): ?>
@@ -340,7 +405,7 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
 
         <div class="sticky bottom-6 z-50">
             <button type="submit" class="w-full bg-slate-900 text-white font-black py-5 rounded-2xl shadow-2xl hover:bg-blue-700 transition transform hover:-translate-y-1 uppercase tracking-widest text-sm flex items-center justify-center gap-3 border-2 border-slate-800 hover:border-blue-500">
-                <span>💾</span> Simpan Konfigurasi
+                <span>💾</span> <?= ($eventId > 0) ? 'SIMPAN PERUBAHAN' : 'BUAT EVENT BARU' ?>
             </button>
         </div>
 
