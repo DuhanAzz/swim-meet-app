@@ -3,168 +3,179 @@
 session_start();
 require_once __DIR__ . '/../../config/database.php';
 
-// --- 1. KONFIGURASI TAHUN ---
-// Sebaiknya ini dinamis dari tahun pelaksanaan event, namun sementara kita pakai 2025 sesuai kode Anda
-$competitionYear = 2025; 
-
-// --- 2. HELPER: ATURAN TEKNIS (MATRIX) ---
-function cekAturanMatrix($tahunLahir, $jarak, $gaya) {
-    $gaya = strtoupper($gaya); 
-    $gaya = str_replace(['GAYA ', 'KICK '], '', $gaya); 
-    $jarak = (int)$jarak;
-    $tahunLahir = (int)$tahunLahir;
-    
-    $isPapan = (preg_match('/PAPAN|KICK|KAKI/', $gaya) || strpos($gaya, 'KICK') !== false);
-
-    if ($tahunLahir >= 2018) { // KU 2018 & 2019
-        if ($jarak >= 100) return false; 
-        return true; 
-    }
-    if ($tahunLahir == 2016 || $tahunLahir == 2017) {
-        if ($isPapan) return false;
-        if ($jarak == 25 || $jarak == 50) return true;
-        return ($jarak == 100 && strpos($gaya, 'BEBAS') !== false);
-    }
-    if ($tahunLahir <= 2015) { // KU 2015, KU 3, KU 2+
-        if ($isPapan || $jarak == 25) return false;
-        return true; 
-    }
-    return true;
-}
-
-// --- 3. AUTH & POST HANDLER ---
+// --- 1. CEK LOGIN & AMBIL ID ---
 if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'user') {
     header("Location: ../../../public/login.php"); exit;
 }
+
 $uid = $_SESSION['user_id'];
-$organizerId = $_GET['event_id'] ?? 0;
+$targetEventId = (int)($_GET['event_id'] ?? 0); 
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'save_entries') {
-    $swimmerId = $_POST['swimmer_id'];
-    $entries   = $_POST['entries'] ?? [];
-    $stmtC = $pdo->prepare("SELECT id FROM clubs WHERE user_id = ? LIMIT 1");
-    $stmtC->execute([$uid]);
-    $clubId = $stmtC->fetch()['id'] ?? 0;
+if ($targetEventId == 0) { die("Error: ID Event tidak valid."); }
 
-    foreach ($entries as $eventId => $time) {
-        $time = trim($time);
-        $stmtCek = $pdo->prepare("SELECT id FROM event_entries WHERE user_id=? AND event_id=? AND swimmer_id=? AND category_id=?");
-        $stmtCek->execute([$uid, $organizerId, $swimmerId, $eventId]);
-        $exist = $stmtCek->fetch();
+// --- 2. AMBIL DATA EVENT & STATUS PEMBAYARAN (LOCK SYSTEM) ---
+$stmtEvt = $pdo->prepare("SELECT * FROM events WHERE id = ? LIMIT 1"); 
+$stmtEvt->execute([$targetEventId]);
+$eventData = $stmtEvt->fetch();
 
-        if ($time === '' || $time === '00.00.00' || $time === '00:00.00') {
-            if ($exist) $pdo->prepare("DELETE FROM event_entries WHERE id=?")->execute([$exist['id']]);
-        } else {
-            if ($exist) {
-                $pdo->prepare("UPDATE event_entries SET entry_time=? WHERE id=?")->execute([$time, $exist['id']]);
-            } else {
-                $pdo->prepare("INSERT INTO event_entries (user_id, event_id, club_id, swimmer_id, category_id, entry_time) VALUES (?, ?, ?, ?, ?, ?)")
-                    ->execute([$uid, $organizerId, $clubId, $swimmerId, $eventId, $time]);
-            }
-        }
-    }
-    header("Location: register_event.php?event_id=" . $organizerId); exit;
+if (!$eventData) { die("Data Event tidak ditemukan."); }
+
+$namaEventDisplay = $eventData['nama_event'];
+$calcType = $eventData['age_calculation_type'] ?? 'Dec 31'; 
+$startDate = $eventData['event_start_date'] ?? date('Y-m-d');
+$compYear = (int)date('Y', strtotime($startDate));
+$compDateObj = new DateTime($startDate);
+
+$stmtPay = $pdo->prepare("SELECT status FROM payments WHERE user_id = ? AND event_id = ? ORDER BY created_at DESC LIMIT 1");
+$stmtPay->execute([$uid, $targetEventId]);
+$payStatus = $stmtPay->fetchColumn(); 
+
+$isLocked = ($payStatus === 'Pending' || $payStatus === 'Paid');
+$lockMessage = ($payStatus === 'Paid') ? 'Pendaftaran sudah DISETUJUI Admin. Data terkunci.' : 'Menunggu Verifikasi Admin. Data terkunci sementara.';
+
+// --- 3. HELPER: HITUNG UMUR ---
+function hitungUmur($tglLahir, $calcType, $compYear, $compDateObj) {
+    if (empty($tglLahir)) return 0;
+    $dobObj = new DateTime($tglLahir);
+    $birthYear = (int)$dobObj->format('Y');
+    return ($calcType === 'Meet Start') ? $dobObj->diff($compDateObj)->y : ($compYear - $birthYear);
 }
 
-// --- 4. DATA FETCHING ---
-// Ambil aturan KU dari database
+// --- 4. HANDLE POST (SIMPAN DATA) ---
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'save_entries') {
+    if ($isLocked) { die("AKSES DITOLAK: Pendaftaran sedang dikunci."); }
+
+    try {
+        $swimmerId = $_POST['swimmer_id'];
+        $entries   = $_POST['entries'] ?? [];
+        
+        $stmtCekSw = $pdo->prepare("SELECT id FROM swimmers WHERE id = ? AND user_id = ?");
+        $stmtCekSw->execute([$swimmerId, $uid]);
+        if (!$stmtCekSw->fetch()) { die("Error: Atlet tidak valid."); }
+
+        $stmtC = $pdo->prepare("SELECT id FROM clubs WHERE user_id = ? LIMIT 1");
+        $stmtC->execute([$uid]);
+        $clubRow = $stmtC->fetch();
+        $clubId = $clubRow['id'] ?? $uid; 
+
+        $stmtValidCats = $pdo->prepare("SELECT id FROM event_numbers WHERE organizer_id = ?"); 
+        $stmtValidCats->execute([$targetEventId]);
+        $validCategoryIds = $stmtValidCats->fetchAll(PDO::FETCH_COLUMN);
+
+        $pdo->beginTransaction(); 
+        foreach ($entries as $catId => $time) {
+            $catId = (int)$catId;
+            $time = trim($time);
+            if (!in_array($catId, $validCategoryIds)) continue;
+            
+            $stmtCek = $pdo->prepare("SELECT id FROM event_entries WHERE user_id=? AND event_id=? AND swimmer_id=? AND category_id=?");
+            $stmtCek->execute([$uid, $targetEventId, $swimmerId, $catId]);
+            $exist = $stmtCek->fetch();
+
+            if ($time === '' || $time === '00.00.00' || $time === 'DELETE') {
+                if ($exist) { $pdo->prepare("DELETE FROM event_entries WHERE id=?")->execute([$exist['id']]); }
+            } else {
+                if ($exist) {
+                    $pdo->prepare("UPDATE event_entries SET entry_time=?, club_id=? WHERE id=?")
+                        ->execute([$time, $clubId, $exist['id']]);
+                } else {
+                    $pdo->prepare("INSERT INTO event_entries (user_id, event_id, club_id, swimmer_id, category_id, entry_time, status, created_at) VALUES (?, ?, ?, ?, ?, ?, 'Pending', NOW())")
+                        ->execute([$uid, $targetEventId, $clubId, $swimmerId, $catId, $time]);
+                }
+            }
+        }
+        $pdo->commit();
+        header("Location: register_event.php?event_id=" . $targetEventId); exit;
+    } catch (Exception $e) { if($pdo->inTransaction()) $pdo->rollBack(); die("Gagal: " . $e->getMessage()); }
+}
+
+// --- 5. DATA FETCHING ---
 $stmtGroups = $pdo->prepare("SELECT id, min_age, max_age, group_name FROM event_age_groups WHERE event_id = ?");
-$stmtGroups->execute([$organizerId]);
+$stmtGroups->execute([$targetEventId]);
 $ageRules = $stmtGroups->fetchAll(PDO::FETCH_UNIQUE|PDO::FETCH_ASSOC);
 
-// Ambil semua nomor lomba
 $stmtEn = $pdo->prepare("SELECT * FROM event_numbers WHERE organizer_id = ? ORDER BY distance ASC, stroke ASC");
-$stmtEn->execute([$organizerId]);
+$stmtEn->execute([$targetEventId]);
 $allEvents = $stmtEn->fetchAll(PDO::FETCH_ASSOC);
 
-// Ambil semua atlet milik user
-$stmtSw = $pdo->prepare("SELECT *, YEAR(tanggal_lahir) as birth_year FROM swimmers WHERE user_id = ? ORDER BY nama_atlet ASC");
+$stmtSw = $pdo->prepare("SELECT * FROM swimmers WHERE user_id = ? ORDER BY nama_atlet ASC");
 $stmtSw->execute([$uid]);
 $allSwimmers = $stmtSw->fetchAll(PDO::FETCH_ASSOC);
 
-if (!isset($_SESSION['matrix_list'][$organizerId])) $_SESSION['matrix_list'][$organizerId] = [];
-if (isset($_GET['add_swimmer'])) {
-    if (!in_array($_GET['add_swimmer'], $_SESSION['matrix_list'][$organizerId])) $_SESSION['matrix_list'][$organizerId][] = (int)$_GET['add_swimmer'];
-    header("Location: register_event.php?event_id=$organizerId"); exit;
-}
-$visibleSwimmers = array_filter($allSwimmers, fn($s) => in_array($s['id'], $_SESSION['matrix_list'][$organizerId]));
+if (!isset($_SESSION['matrix_list'][$targetEventId])) $_SESSION['matrix_list'][$targetEventId] = [];
+$stmtSync = $pdo->prepare("SELECT DISTINCT swimmer_id FROM event_entries WHERE user_id = ? AND event_id = ?");
+$stmtSync->execute([$uid, $targetEventId]);
+$registeredSwimmers = $stmtSync->fetchAll(PDO::FETCH_COLUMN);
 
-$savedData = [];
-$stmtEnt = $pdo->prepare("SELECT swimmer_id, category_id, entry_time FROM event_entries WHERE user_id = ? AND event_id = ?");
-$stmtEnt->execute([$uid, $organizerId]);
-while($row = $stmtEnt->fetch(PDO::FETCH_ASSOC)) $savedData[$row['swimmer_id']][$row['category_id']] = $row['entry_time'];
-
-// Data Rekor
-$recordMap = [];
-if (!empty($visibleSwimmers)) {
-    $swimmerIds = array_column($visibleSwimmers, 'id');
-    $placeholders = implode(',', array_fill(0, count($swimmerIds), '?'));
-    $stmtRec = $pdo->prepare("SELECT swimmer_id, distance, stroke, time_record FROM swimmer_records WHERE swimmer_id IN ($placeholders)");
-    $stmtRec->execute($swimmerIds);
-    while($rec = $stmtRec->fetch(PDO::FETCH_ASSOC)) {
-        $normStroke = strtoupper(str_replace(['Gaya ', 'GAYA '], '', $rec['stroke']));
-        $recordMap[$rec['swimmer_id']][$rec['distance']][$normStroke] = $rec['time_record'];
+foreach ($registeredSwimmers as $regId) {
+    if (!in_array($regId, $_SESSION['matrix_list'][$targetEventId])) {
+        $_SESSION['matrix_list'][$targetEventId][] = (int)$regId;
     }
 }
 
-// --- 5. STRUKTUR TABLE & FILTERING JSON ---
-$tableStructure = []; 
-foreach ($allEvents as $ev) { 
-    $tableStructure[$ev['distance'] . 'M'][$ev['stroke']][] = $ev; 
+if (isset($_GET['add_swimmer'])) {
+    if ($isLocked) { header("Location: register_event.php?event_id=$targetEventId"); exit; } 
+    $addId = (int)$_GET['add_swimmer'];
+    $validSw = false; foreach($allSwimmers as $s) { if($s['id'] == $addId) $validSw = true; }
+    if ($validSw && !in_array($addId, $_SESSION['matrix_list'][$targetEventId])) { $_SESSION['matrix_list'][$targetEventId][] = $addId; }
+    header("Location: register_event.php?event_id=$targetEventId"); exit;
 }
+$visibleSwimmers = array_filter($allSwimmers, fn($s) => in_array($s['id'], $_SESSION['matrix_list'][$targetEventId] ?? []));
+
+// AMBIL DATA YANG SUDAH TERDAFTAR (UNTUK MATRIX)
+$savedData = [];
+$stmtEnt = $pdo->prepare("SELECT swimmer_id, category_id, entry_time FROM event_entries WHERE user_id = ? AND event_id = ?");
+$stmtEnt->execute([$uid, $targetEventId]);
+while($row = $stmtEnt->fetch(PDO::FETCH_ASSOC)) { $savedData[$row['swimmer_id']][$row['category_id']] = $row['entry_time']; }
+
+$recordMap = [];
+if (!empty($visibleSwimmers)) {
+    $swIds = array_column($visibleSwimmers, 'id');
+    $p = implode(',', array_fill(0, count($swIds), '?'));
+    $stmtRec = $pdo->prepare("SELECT swimmer_id, nomor_lomba, waktu_terbaik FROM athlete_records WHERE swimmer_id IN ($p)");
+    $stmtRec->execute($swIds);
+    while($rec = $stmtRec->fetch(PDO::FETCH_ASSOC)) {
+        if (preg_match('/^(\d+)m\s+(.+)$/i', $rec['nomor_lomba'], $m)) {
+            $recordMap[$rec['swimmer_id']][(int)$m[1]][strtoupper(str_replace(['GAYA ', 'Gaya '], '', $m[2]))] = str_replace(':', '.', $rec['waktu_terbaik']);
+        }
+    }
+}
+
+// --- 6. LOGIKA FILTERING & STRUKTUR TABEL ---
+$tableStructure = []; 
+foreach ($allEvents as $ev) { $tableStructure[$ev['distance'] . 'M'][$ev['stroke']][] = $ev; }
 uksort($tableStructure, fn($a, $b) => (int)$a - (int)$b);
 
 $jsonData = [];
 foreach ($visibleSwimmers as $sw) {
     $sid = $sw['id'];
-    $birthYear = (int)$sw['birth_year'];
-    $age = $competitionYear - $birthYear; 
+    $age = hitungUmur($sw['tanggal_lahir'], $calcType, $compYear, $compDateObj);
     $gender = ($sw['jenis_kelamin'] == 'L') ? 'L' : 'P';
     $myEvents = [];
 
     foreach ($allEvents as $ev) {
-        // 1. Cek Gender
-        $eGen = ($ev['jenis_kelamin'] == 'Putra' || $ev['jenis_kelamin'] == 'L') ? 'L' : (($ev['jenis_kelamin'] == 'Putri' || $ev['jenis_kelamin'] == 'P') ? 'P' : 'MIX');
+        $jarak = (int)$ev['distance'];
+        $eGen = (in_array($ev['jenis_kelamin'], ['Putra', 'L'])) ? 'L' : ((in_array($ev['jenis_kelamin'], ['Putri', 'P'])) ? 'P' : 'MIX');
         if ($eGen !== 'MIX' && $eGen !== $gender) continue;
+        if (($age <= 7 && $jarak >= 100) || ($age <= 9 && $jarak >= 200)) continue;
 
-        // 2. Cek Kelompok Umur dari Database
         $isAgeFit = false;
         $kuIds = !empty($ev['selected_ku_ids']) ? explode(',', $ev['selected_ku_ids']) : [];
-        
         if (!empty($kuIds)) {
-            foreach ($kuIds as $kid) {
-                if (isset($ageRules[$kid])) {
-                    $min = (int)$ageRules[$kid]['min_age'];
-                    $max = (int)$ageRules[$kid]['max_age'];
-                    if ($age >= $min && $age <= $max) { $isAgeFit = true; break; }
-                }
-            }
+            foreach ($kuIds as $kid) { if (isset($ageRules[$kid]) && $age >= (int)$ageRules[$kid]['min_age'] && $age <= (int)$ageRules[$kid]['max_age']) { $isAgeFit = true; break; } }
         } else {
-            // Jika tidak ada KU terpilih, cek manual age_min/max di tabel event_numbers
-            if ($age >= $ev['age_min'] && $age <= $ev['age_max']) $isAgeFit = true;
+            $min = (int)($ev['age_min'] ?? 0); $max = (int)($ev['age_max'] ?? 99);
+            if ($age >= $min && ($max == 0 || $age <= $max)) $isAgeFit = true;
         }
-        
         if (!$isAgeFit) continue; 
 
-        // 3. Cek Aturan Matrix Teknis
-        if (cekAturanMatrix($birthYear, $ev['distance'], $ev['stroke'])) {
-            $normStroke = strtoupper(str_replace(['Gaya ', 'GAYA '], '', $ev['stroke']));
-            $best = $recordMap[$sid][$ev['distance']][$normStroke] ?? null;
-            
-            $myEvents[] = [
-                'id' => $ev['id'],
-                'name' => "{$ev['distance']}M " . $normStroke,
-                'group' => $ev['age_group'],
-                'time' => $savedData[$sid][$ev['id']] ?? '',
-                'best_time' => $best
-            ];
-        }
+        $normS = strtoupper(str_replace(['Gaya ', 'GAYA '], '', $ev['stroke']));
+        $myEvents[] = [
+            'id' => $ev['id'], 'name' => "{$ev['distance']}M " . $normS, 'group' => $ev['age_group'],
+            'time' => $savedData[$sid][$ev['id']] ?? '', 'best_time' => $recordMap[$sid][$ev['distance']][$normS] ?? null
+        ];
     }
-    $jsonData[$sid] = [
-        'name' => $sw['nama_atlet'],
-        'info' => ($gender == 'L' ? 'PUTRA' : 'PUTRI') . " - $birthYear ($age Th)",
-        'events' => $myEvents
-    ];
+    $jsonData[$sid] = ['name' => $sw['nama_atlet'], 'info' => ($gender == 'L' ? 'PUTRA' : 'PUTRI') . " - " . date('Y', strtotime($sw['tanggal_lahir'])) . " ($age Th)", 'events' => $myEvents];
 }
 
 include __DIR__ . '/../../../views/layout/topbar.php'; 
@@ -177,25 +188,30 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
     .sticky-top-2 { position: sticky; top: 38px; z-index: 20; background: #fff; border-bottom: 2px solid #e2e8f0; }
     .sticky-col-1 { position: sticky; left: 0; z-index: 30; background: #f8fafc; border-right: 1px solid #e2e8f0; }
     .sticky-col-2 { position: sticky; left: 40px; z-index: 30; background: #fff; border-right: 2px solid #cbd5e1; min-width: 180px; }
-    .cell-blocked { background: #f1f5f9; cursor: not-allowed; opacity: 0.5; color: #cbd5e1; }
-    .cell-empty { background: #fff; cursor: pointer; color: #3b82f6; font-weight: bold; }
+    .cell-blocked { background: #f8fafc; cursor: not-allowed; } 
+    .cell-empty { background: #fff; cursor: pointer; transition: background 0.2s; } 
+    .cell-empty:hover { background: #eff6ff; }
     .cell-filled { background: #dcfce7 !important; color: #166534; font-weight: bold; cursor: pointer; border: 1px solid #bbf7d0; }
-    .best-time-badge { background: #ecfdf5; color: #059669; border: 1px solid #10b981; padding: 2px 6px; border-radius: 6px; font-size: 9px; cursor: copy; }
 </style>
 
 <div class="p-4 sm:ml-64 pt-20 bg-slate-50 min-h-screen">
     <div class="flex justify-between items-center mb-6 bg-white p-6 rounded-2xl shadow-sm border">
         <div>
             <h1 class="text-2xl font-black text-slate-800 uppercase italic leading-none">Matrix Pendaftaran</h1>
-            <p class="text-[10px] font-bold text-slate-400 uppercase tracking-[3px] mt-2">Filter Otomatis: Kelompok Umur <?= $competitionYear ?></p>
+            <p class="text-[10px] font-bold text-slate-400 uppercase tracking-[3px] mt-2"><?= htmlspecialchars($namaEventDisplay) ?></p>
         </div>
         <div class="flex gap-3">
-            <button onclick="document.getElementById('modalAdd').classList.remove('hidden')" class="bg-blue-600 text-white px-6 py-3 rounded-xl font-bold text-xs shadow-lg shadow-blue-100 hover:bg-blue-700">+ ATLET</button>
-            <a href="checkout.php?event_id=<?= $organizerId ?>" class="bg-slate-900 text-white px-6 py-3 rounded-xl font-bold text-xs shadow-lg">SELESAI</a>
+            <?php if ($isLocked): ?>
+                <div class="bg-red-100 border border-red-200 text-red-700 px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2"><span>🔒</span> <?= $lockMessage ?></div>
+                <a href="checkout.php?event_id=<?= $targetEventId ?>" class="bg-slate-900 text-white px-6 py-3 rounded-xl font-bold text-xs shadow-lg">LIHAT STATUS</a>
+            <?php else: ?>
+                <button onclick="document.getElementById('modalAdd').classList.remove('hidden')" class="bg-blue-600 text-white px-6 py-3 rounded-xl font-bold text-xs shadow-lg hover:bg-blue-700">+ ATLET</button>
+                <a href="checkout.php?event_id=<?= $targetEventId ?>" class="bg-slate-900 text-white px-6 py-3 rounded-xl font-bold text-xs shadow-lg">SELESAI / BAYAR</a>
+            <?php endif; ?>
         </div>
     </div>
 
-    <div class="matrix-container shadow-2xl">
+    <div class="matrix-container shadow-2xl relative">
         <table class="w-full text-left border-collapse text-[11px]">
             <thead>
                 <tr>
@@ -215,30 +231,24 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
             </thead>
             <tbody>
                 <?php foreach($visibleSwimmers as $sw): $sid = $sw['id']; ?>
-                <tr class="hover:bg-blue-50/50 group transition-colors">
-                    <td class="sticky-col-1 bg-white border-r text-center py-4"><button onclick="openModal(<?= $sid ?>)" class="hover:scale-125 transition-transform">✏️</button></td>
-                    <td onclick="openModal(<?= $sid ?>)" class="sticky-col-2 bg-white border-r px-4 py-4 cursor-pointer">
-                        <div class="font-bold text-slate-800 group-hover:text-blue-600 uppercase"><?= $sw['nama_atlet'] ?></div>
+                <tr class="group">
+                    <td class="sticky-col-1 bg-white border-r text-center py-4">
+                        <button onclick="<?= $isLocked ? "alert('Terkunci')" : "openModal($sid)" ?>" class="hover:scale-125 transition-transform"><?= $isLocked ? '🔒' : '✏️' ?></button>
+                    </td>
+                    <td onclick="<?= $isLocked ? "alert('Terkunci')" : "openModal($sid)" ?>" class="sticky-col-2 bg-white border-r px-4 py-4 cursor-pointer">
+                        <div class="font-bold text-slate-800 uppercase"><?= $sw['nama_atlet'] ?></div>
                         <div class="text-[9px] text-slate-400 font-bold uppercase"><?= $jsonData[$sid]['info'] ?></div>
                     </td>
                     <?php foreach($tableStructure as $d => $ss): foreach($ss as $sName => $evs): 
-                        $isEligible = false; 
-                        $time = '';
-                        // Cek apakah ada nomor lomba di kolom ini yang cocok dengan atlet ini
-                        foreach($evs as $eRef) {
-                            foreach($jsonData[$sid]['events'] as $myEv) {
-                                if($myEv['id'] == $eRef['id']) { 
-                                    $isEligible = true; 
-                                    $time = $myEv['time']; 
-                                    break 2; 
-                                }
-                            }
+                        $time = ''; $eligible = false;
+                        foreach($evs as $e) {
+                            if(isset($savedData[$sid][$e['id']])) { $time = $savedData[$sid][$e['id']]; $eligible = true; break; }
+                            foreach($jsonData[$sid]['events'] as $me) { if($me['id'] == $e['id']) { $eligible = true; break; } }
                         }
-                        $css = $isEligible ? ($time ? 'cell-filled' : 'cell-empty') : 'cell-blocked';
+                        $css = $eligible ? ($time ? 'cell-filled' : 'cell-empty') : 'cell-blocked';
                     ?>
-                        <td onclick="<?= $isEligible ? "openModal($sid)" : "alert('Atlet ini tidak masuk kualifikasi Kelompok Umur untuk nomor ini.')" ?>" 
-                            class="border-l border-slate-50 text-center h-12 transition-all <?= $css ?>">
-                            <?= $time ?: ($isEligible ? '+' : '—') ?>
+                        <td onclick="<?= ($eligible && !$isLocked) ? "openModal($sid)" : "" ?>" class="border-l border-slate-50 text-center h-12 transition-all <?= $css ?>">
+                            <?= htmlspecialchars($time) ?>
                         </td>
                     <?php endforeach; endforeach; ?>
                 </tr>
@@ -249,23 +259,21 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
 </div>
 
 <div id="modalEntry" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-    <div class="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col max-h-[90vh]">
+    <div class="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden flex flex-col max-h-[90vh]">
         <div class="bg-slate-800 p-6 text-white flex justify-between items-center">
-            <div>
-                <h2 class="text-xl font-black italic uppercase tracking-tighter leading-none" id="mName">ATLET</h2>
-                <p class="text-[10px] font-bold text-blue-400 uppercase tracking-widest mt-1" id="mInfo">INFO</p>
-            </div>
-            <button onclick="closeModal()" class="text-3xl font-light hover:text-red-400 transition-colors">&times;</button>
+            <div><h2 class="text-xl font-black italic uppercase tracking-tighter" id="mName">ATLET</h2><p class="text-[10px] font-bold text-blue-400 uppercase mt-1" id="mInfo">INFO</p></div>
+            <button onclick="closeModal()" class="text-3xl hover:text-red-400">&times;</button>
         </div>
-        
-        <form method="POST" class="flex flex-col flex-1 overflow-hidden">
+        <form method="POST" action="register_event.php?event_id=<?= $targetEventId ?>" class="flex flex-col flex-1 overflow-hidden">
             <input type="hidden" name="action" value="save_entries">
             <input type="hidden" name="swimmer_id" id="mSwimmerId">
-            <div class="flex-1 overflow-y-auto p-6 space-y-3 bg-slate-50" id="mBody"></div>
-            <div class="p-6 bg-white border-t flex justify-between items-center shadow-inner">
-                <p class="text-[9px] text-slate-400 font-bold italic w-1/2">* Kosongkan waktu untuk menghapus pendaftaran.</p>
-                <button type="submit" class="bg-blue-600 text-white px-8 py-3 rounded-2xl font-black text-xs shadow-xl hover:bg-blue-700">SIMPAN DATA</button>
+            <div class="flex-1 overflow-y-auto p-6 space-y-4 bg-slate-50" id="mBody"></div>
+            <?php if(!$isLocked): ?>
+            <div class="p-4 bg-white border-t space-y-2 shadow-inner">
+                <button type="button" onclick="fillAllBestTimes()" class="w-full text-[10px] font-bold text-blue-600 bg-blue-50 py-2 rounded-xl border border-blue-200 hover:bg-blue-100">⚡ ISI SEMUA BEST TIME</button>
+                <button type="submit" class="w-full bg-blue-600 text-white py-3 rounded-xl font-black text-xs shadow-xl hover:bg-blue-700">SIMPAN PERUBAHAN</button>
             </div>
+            <?php else: ?><div class="p-4 bg-red-50 text-center font-bold text-red-500 text-xs">🔒 DATA TERKUNCI</div><?php endif; ?>
         </form>
     </div>
 </div>
@@ -274,61 +282,51 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
     <div class="bg-white rounded-2xl p-6 w-80 shadow-2xl text-center">
         <h3 class="font-black text-slate-800 mb-4 border-b pb-2 uppercase italic">Pilih Atlet</h3>
         <div class="max-h-60 overflow-y-auto space-y-1">
-            <?php foreach($allSwimmers as $sw): if(in_array($sw['id'], $_SESSION['matrix_list'][$organizerId])) continue; ?>
-                <a href="?event_id=<?= $organizerId ?>&add_swimmer=<?= $sw['id'] ?>" class="block p-3 hover:bg-blue-50 rounded-xl font-bold text-slate-600 text-sm uppercase"><?= $sw['nama_atlet'] ?></a>
+            <?php foreach($allSwimmers as $sw): if(in_array($sw['id'], $_SESSION['matrix_list'][$targetEventId] ?? [])) continue; ?>
+                <a href="?event_id=<?= $targetEventId ?>&add_swimmer=<?= $sw['id'] ?>" class="block p-3 hover:bg-blue-50 rounded-xl font-bold text-slate-600 text-sm uppercase"><?= $sw['nama_atlet'] ?></a>
             <?php endforeach; ?>
         </div>
-        <button onclick="document.getElementById('modalAdd').classList.add('hidden')" class="mt-4 text-slate-400 font-bold text-[10px] uppercase hover:text-red-500">Tutup</button>
+        <button onclick="document.getElementById('modalAdd').classList.add('hidden')" class="mt-4 text-slate-400 font-bold text-[10px] uppercase">Tutup</button>
     </div>
 </div>
 
 <script>
 const DATA = <?= json_encode($jsonData) ?>;
+const IS_LOCKED = <?= json_encode($isLocked) ?>;
+let currentSwimmerData = null; 
 
 function openModal(sid) {
-    const s = DATA[sid];
-    if(!s) return;
-
+    if (IS_LOCKED) return;
+    const s = DATA[sid]; if(!s) return;
+    currentSwimmerData = s.events; 
     document.getElementById('mName').innerText = s.name;
     document.getElementById('mInfo').innerText = s.info;
-    document.getElementById('mSwimmerId').value = sid;
-
+    document.getElementById('mSwimmerId').value = sid; 
     const body = document.getElementById('mBody');
-    body.innerHTML = '';
+    body.innerHTML = s.events.length === 0 ? '<div class="text-center py-10 text-slate-400 text-xs font-bold">Tidak ada nomor lomba.</div>' : '';
 
-    if(s.events.length === 0) {
-        body.innerHTML = '<div class="text-center py-10 font-bold text-slate-400 uppercase italic">Tidak ada nomor lomba yang sesuai untuk atlet ini.</div>';
-    } else {
-        s.events.forEach(ev => {
-            const hasVal = ev.time !== '';
-            const cardStyle = hasVal ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-500' : 'border-slate-200 bg-white';
-            
-            let bestTimeBtn = ev.best_time ? 
-                `<button type="button" onclick="copyTime('${ev.best_time}', '${ev.id}')" class="best-time-badge mt-1 hover:bg-emerald-200">REKOR: ${ev.best_time} 📋</button>` : 
-                '<span class="text-[9px] text-slate-300 font-bold uppercase mt-1">Belum ada rekor</span>';
-
-            body.insertAdjacentHTML('beforeend', `
-                <div class="flex items-center justify-between p-4 rounded-2xl border transition-all ${cardStyle}">
-                    <div class="flex-1">
-                        <div class="font-black text-slate-800 text-sm italic uppercase tracking-tighter">${ev.name}</div>
-                        <div class="flex flex-col items-start">
-                            <span class="text-[9px] font-bold text-blue-500 uppercase tracking-widest">${ev.group}</span>
-                            ${bestTimeBtn}
-                        </div>
-                    </div>
-                    <input type="text" id="input_${ev.id}" name="entries[${ev.id}]" value="${ev.time}" placeholder="00.00.00" 
-                           class="w-24 text-center font-mono font-bold text-lg bg-slate-100 border-none rounded-xl py-2 focus:ring-2 focus:ring-blue-500 transition-all">
-                </div>
-            `);
-        });
-    }
+    s.events.forEach(ev => {
+        let btnRec = ev.best_time ? `<button type="button" onclick="copyTime('${ev.best_time}', '${ev.id}')" class="bg-emerald-100 text-emerald-700 px-3 py-1 rounded-lg text-[10px] font-bold">📋 REKOR: ${ev.best_time}</button>` : `<span class="text-[10px] text-slate-300 font-bold italic">Belum ada rekor</span>`;
+        body.insertAdjacentHTML('beforeend', `
+            <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+                <div class="flex justify-between items-start mb-2"><div><div class="font-black text-slate-800 text-sm italic uppercase">${ev.name}</div><div class="text-[10px] font-bold text-blue-500 uppercase">${ev.group}</div></div>${btnRec}</div>
+                <input type="text" id="input_${ev.id}" name="entries[${ev.id}]" value="${ev.time}" placeholder="00.00.00" maxlength="8" oninput="handleTimeInput(this)" class="w-full text-center font-mono font-bold text-2xl bg-slate-50 border rounded-xl py-3 shadow-inner">
+            </div>
+        `);
+    });
     document.getElementById('modalEntry').classList.remove('hidden');
 }
 
-function copyTime(time, evId) {
-    const input = document.getElementById('input_' + evId);
-    if(input) { input.value = time; input.focus(); }
+function handleTimeInput(el) {
+    let v = el.value.replace(/\D/g, '').substring(0, 6);
+    let f = ""; if (v.length > 0) f += v.substring(0, 2); if (v.length > 2) f += "." + v.substring(2, 4); if (v.length > 4) f += "." + v.substring(4, 6);
+    el.value = f;
 }
 
+function copyTime(t, id) { const el = document.getElementById('input_' + id); if(el) el.value = t; }
+function fillAllBestTimes() {
+    if(!currentSwimmerData) return;
+    currentSwimmerData.forEach(ev => { if(ev.best_time) { const el = document.getElementById('input_' + ev.id); if(el && el.value === '') el.value = ev.best_time; } });
+}
 function closeModal() { document.getElementById('modalEntry').classList.add('hidden'); }
 </script>
