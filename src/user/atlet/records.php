@@ -1,5 +1,5 @@
 <?php
-// src/user/atlet/records.php
+// FILE: src/user/atlet/records.php
 session_start();
 require_once __DIR__ . '/../../config/database.php';
 
@@ -9,7 +9,7 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'user') {
 }
 $uid = $_SESSION['user_id'];
 
-// 2. VALIDASI ID ATLET (Harus milik user yang login)
+// 2. VALIDASI ID ATLET
 $atlet_id = $_GET['id'] ?? 0;
 $stmtCek = $pdo->prepare("SELECT * FROM swimmers WHERE id = ? AND user_id = ?");
 $stmtCek->execute([$atlet_id, $uid]);
@@ -19,34 +19,37 @@ if (!$atlet) {
     die("Atlet tidak ditemukan atau Anda tidak memiliki akses.");
 }
 
-// 3. HANDLE TAMBAH RECORD (POST)
+// 3. HANDLE TAMBAH RECORD (POST) - [DISESUAIKAN DENGAN TABLE athlete_records]
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_record'])) {
-    $distance   = $_POST['distance'];
-    $stroke     = $_POST['stroke'];
-    $time       = $_POST['time_record'];
-    $event_name = $_POST['meet_name'];
-    $date       = $_POST['record_date'];
+    // Gabungkan Jarak dan Gaya untuk kolom 'nomor_lomba'
+    // Contoh hasil: "50m Gaya Bebas"
+    $nomor_lomba = $_POST['distance'] . 'm ' . $_POST['stroke'];
+    
+    $waktu = $_POST['time_record'];
+    $date  = $_POST['record_date'];
 
-    // Simpan ke database
-    $stmtIns = $pdo->prepare("INSERT INTO swimmer_records (swimmer_id, distance, stroke, time_record, meet_name, record_date, created_at) VALUES (?, ?, ?, ?, ?, ?, NOW())");
-    $stmtIns->execute([$atlet_id, $distance, $stroke, $time, $event_name, $date]);
+    // Simpan ke tabel 'athlete_records'
+    // Catatan: Kolom 'meet_name' dihapus karena tidak ada di database Anda
+    $stmtIns = $pdo->prepare("INSERT INTO athlete_records (swimmer_id, nomor_lomba, waktu_terbaik, tanggal_dicapai, created_at) VALUES (?, ?, ?, ?, NOW())");
+    $stmtIns->execute([$atlet_id, $nomor_lomba, $waktu, $date]);
     
     header("Location: records.php?id=" . $atlet_id . "&msg=added");
     exit;
 }
 
-// 4. HANDLE HAPUS RECORD (GET)
+// 4. HANDLE HAPUS RECORD (GET) - [DISESUAIKAN]
 if (isset($_GET['delete_id'])) {
     $delId = $_GET['delete_id'];
-    $stmtDel = $pdo->prepare("DELETE FROM swimmer_records WHERE id = ? AND swimmer_id = ?");
+    $stmtDel = $pdo->prepare("DELETE FROM athlete_records WHERE id = ? AND swimmer_id = ?");
     $stmtDel->execute([$delId, $atlet_id]);
     
     header("Location: records.php?id=" . $atlet_id . "&msg=deleted");
     exit;
 }
 
-// 5. AMBIL DATA RECORD
-$stmtRec = $pdo->prepare("SELECT * FROM swimmer_records WHERE swimmer_id = ? ORDER BY distance ASC, stroke ASC, time_record ASC");
+// 5. AMBIL DATA RECORD - [DISESUAIKAN]
+// Kita ambil data dari athlete_records
+$stmtRec = $pdo->prepare("SELECT * FROM athlete_records WHERE swimmer_id = ? ORDER BY created_at DESC");
 $stmtRec->execute([$atlet_id]);
 $records = $stmtRec->fetchAll();
 
@@ -87,15 +90,15 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                     
                     <div class="grid grid-cols-2 gap-3">
                         <div>
-                            <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Jarak (m)</label>
+                            <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Jarak</label>
                             <select name="distance" class="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm font-bold focus:border-blue-500 outline-none">
-                                <option value="25">25m</option>
-                                <option value="50" selected>50m</option>
-                                <option value="100">100m</option>
-                                <option value="200">200m</option>
-                                <option value="400">400m</option>
-                                <option value="800">800m</option>
-                                <option value="1500">1500m</option>
+                                <option value="25">25</option>
+                                <option value="50" selected>50</option>
+                                <option value="100">100</option>
+                                <option value="200">200</option>
+                                <option value="400">400</option>
+                                <option value="800">800</option>
+                                <option value="1500">1500</option>
                             </select>
                         </div>
                         <div>
@@ -111,16 +114,10 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                     </div>
 
                     <div>
-                        <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Waktu (MM:SS.ms)</label>
-                        <input type="text" name="time_record" placeholder="00:30.50" required
+                        <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Waktu (MM.SS.ms)</label>
+                        <input type="text" name="time_record" placeholder="00.30.50" required
                             class="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono font-bold focus:border-blue-500 outline-none">
-                        <p class="text-[9px] text-slate-400 mt-1">Gunakan format menit:detik.milidetik</p>
-                    </div>
-
-                    <div>
-                        <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Nama Event / Latihan</label>
-                        <input type="text" name="meet_name" placeholder="Latihan Rutin / Kejuaraan X" 
-                            class="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm font-bold focus:border-blue-500 outline-none">
+                        <p class="text-[9px] text-slate-400 mt-1">Gunakan titik sebagai pemisah (Contoh: 01.05.50)</p>
                     </div>
 
                     <div>
@@ -142,8 +139,8 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                     <thead class="bg-slate-50 border-b border-slate-100 text-[10px] font-black uppercase tracking-widest text-slate-400">
                         <tr>
                             <th class="p-4">Nomor / Gaya</th>
-                            <th class="p-4 text-center">Waktu</th>
-                            <th class="p-4">Event & Tanggal</th>
+                            <th class="p-4 text-center">Waktu Terbaik</th>
+                            <th class="p-4">Tanggal Dicapai</th>
                             <th class="p-4 text-center">Aksi</th>
                         </tr>
                     </thead>
@@ -156,9 +153,18 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                             </tr>
                         <?php else: ?>
                             <?php foreach($records as $r): 
+                                // PARSING DATA: "50m Gaya Bebas" -> Menjadi Jarak: 50, Gaya: Gaya Bebas
+                                // Agar layout badge tetap bisa dipakai
+                                $dist = ''; 
+                                $strokeName = $r['nomor_lomba']; 
+                                if (preg_match('/^(\d+)m\s+(.+)$/i', $r['nomor_lomba'], $matches)) {
+                                    $dist = $matches[1];
+                                    $strokeName = $matches[2];
+                                }
+
                                 // Styling Badge Gaya
                                 $strokeClass = 'bg-slate-100 text-slate-600';
-                                $s = strtoupper($r['stroke']);
+                                $s = strtoupper($strokeName);
                                 if(strpos($s, 'BEBAS')!==false || strpos($s, 'FREE')!==false) $strokeClass = 'bg-blue-50 text-blue-600 border-blue-100';
                                 elseif(strpos($s, 'DADA')!==false || strpos($s, 'BREAST')!==false) $strokeClass = 'bg-emerald-50 text-emerald-600 border-emerald-100';
                                 elseif(strpos($s, 'PUNGGUNG')!==false || strpos($s, 'BACK')!==false) $strokeClass = 'bg-amber-50 text-amber-600 border-amber-100';
@@ -166,20 +172,20 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                             ?>
                             <tr class="hover:bg-slate-50 transition">
                                 <td class="p-4 align-middle">
-                                    <div class="font-black text-slate-700 text-lg"><?= $r['distance'] ?>m</div>
+                                    <div class="font-black text-slate-700 text-lg"><?= $dist ? $dist.'m' : '-' ?></div>
                                     <span class="inline-block px-2 py-0.5 rounded text-[9px] font-bold border uppercase mt-1 <?= $strokeClass ?>">
-                                        <?= $r['stroke'] ?>
+                                        <?= $strokeName ?>
                                     </span>
                                 </td>
                                 <td class="p-4 align-middle text-center">
                                     <div class="font-mono font-black text-xl text-slate-800 tracking-tight">
-                                        <?= htmlspecialchars($r['time_record']) ?>
+                                        <?= htmlspecialchars($r['waktu_terbaik']) ?>
                                     </div>
                                 </td>
                                 <td class="p-4 align-middle">
-                                    <div class="font-bold text-slate-600 text-xs"><?= htmlspecialchars($r['meet_name'] ?: 'Time Trial / Latihan') ?></div>
+                                    <div class="font-bold text-slate-600 text-xs">Best Time Record</div>
                                     <div class="text-[10px] text-slate-400 font-mono mt-0.5">
-                                        📅 <?= date('d/m/Y', strtotime($r['record_date'])) ?>
+                                        📅 <?= date('d/m/Y', strtotime($r['tanggal_dicapai'])) ?>
                                     </div>
                                 </td>
                                 <td class="p-4 align-middle text-center">

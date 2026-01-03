@@ -1,8 +1,8 @@
 <?php
-// src/admin/entries/detail_club.php
+// FILE: src/admin/entries/detail_club.php
 session_start();
 
-// 1. CONFIG DATABASE (Naik 2 level ke folder 'src')
+// 1. CONFIG DATABASE
 require_once __DIR__ . '/../../config/database.php';
 
 // CEK LOGIN ADMIN
@@ -10,73 +10,77 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
     header("Location: ../../../public/login.php"); exit;
 }
 
-$club_id = $_GET['id'] ?? 0;
-$current_event_id = $_GET['event_id'] ?? 0; 
+// Tangkap ID User (Akun Klub/Pendaftar) dan ID Event
+$targetUserId = $_GET['id'] ?? 0;
+$eventId      = $_GET['event_id'] ?? 0;
 
-// --- HANDLE POST AKSI (TERIMA / TOLAK) ---
+if ($targetUserId == 0 || $eventId == 0) {
+    echo "Parameter URL tidak lengkap (id atau event_id hilang)."; exit;
+}
+
+// --- HANDLE POST AKSI (TERIMA / TOLAK PEMBAYARAN) ---
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action_type'])) {
     $payId = $_POST['payment_id'];
     $action = $_POST['action_type']; 
     
-    // LOGIKA:
-    // Approve -> Status 'Paid' (Data Terkunci)
-    // Reject  -> Status 'Rejected' (Data Terbuka untuk Revisi User)
     $newStatus = ($action === 'approve') ? 'Paid' : 'Rejected';
     
     try {
         $stmtUpd = $pdo->prepare("UPDATE payments SET status = ?, updated_at = NOW() WHERE id = ?");
         $stmtUpd->execute([$newStatus, $payId]);
-        
-        // Redirect supaya refresh
-        header("Location: detail_club.php?id=$club_id&event_id=$current_event_id"); exit;
+        header("Location: detail_club.php?id=$targetUserId&event_id=$eventId"); exit;
     } catch (Exception $e) {
         echo "Error update: " . $e->getMessage();
     }
 }
 
-// 2. AMBIL DATA KLUB
-$stmt = $pdo->prepare("SELECT * FROM users WHERE id = ?");
-$stmt->execute([$club_id]);
-$club = $stmt->fetch();
-if (!$club) { echo "Klub tidak ditemukan."; exit; }
+// 2. AMBIL DATA AKUN PENDAFTAR (KLUB/USER)
+$stmtUser = $pdo->prepare("SELECT * FROM users WHERE id = ?");
+$stmtUser->execute([$targetUserId]);
+$userData = $stmtUser->fetch();
+if (!$userData) { echo "User tidak ditemukan."; exit; }
 
-// 3. AMBIL DATA PEMBAYARAN
+// --- PERBAIKAN ERROR "UNDEFINED KEY" ---
+// Kita cari nama yang tersedia di database (nama_lengkap / nama / name)
+$namaUser = $userData['nama_lengkap'] ?? $userData['nama'] ?? $userData['name'] ?? $userData['username'] ?? 'User ID: ' . $targetUserId;
+$emailUser = $userData['email'] ?? '-';
+
+// 3. AMBIL DATA PEMBAYARAN TERBARU
 $payData = null;
-try {
-    $stmtPay = $pdo->prepare("SELECT * FROM payments WHERE user_id = ? AND event_id = ? ORDER BY created_at DESC LIMIT 1");
-    $stmtPay->execute([$club_id, $current_event_id]);
-    $payData = $stmtPay->fetch();
-} catch (Exception $e) {}
+$stmtPay = $pdo->prepare("SELECT * FROM payments WHERE user_id = ? AND event_id = ? ORDER BY created_at DESC LIMIT 1");
+$stmtPay->execute([$targetUserId, $eventId]);
+$payData = $stmtPay->fetch();
 
-// 4. AMBIL DATA ENTRIES (DAFTAR ATLET)
+// 4. AMBIL DATA ENTRIES
 $entries = [];
 try {
+    // Menggunakan 'en.jenis_kelamin' (sesuai pengecekan database terakhir)
     $sqlEntries = "
         SELECT 
-            ent.entry_time as seed_time,
+            ent.id as entry_id,
+            ent.entry_time,
             s.nama_atlet, 
             s.jenis_kelamin as swimmer_gender, 
             s.tanggal_lahir,
-            en.event_number,
-            en.event_name,   
             en.distance,
             en.stroke,
-            en.age_group     
+            en.age_group,
+            en.jenis_kelamin as event_gender 
         FROM event_entries ent
         JOIN swimmers s ON ent.swimmer_id = s.id
         JOIN event_numbers en ON ent.category_id = en.id
         WHERE ent.user_id = ? AND ent.event_id = ?
-        ORDER BY s.nama_atlet ASC, en.event_number ASC
+        ORDER BY s.nama_atlet ASC, en.distance ASC
     ";
     
     $stmtEntries = $pdo->prepare($sqlEntries);
-    $stmtEntries->execute([$club_id, $current_event_id]);
+    $stmtEntries->execute([$targetUserId, $eventId]);
     $entries = $stmtEntries->fetchAll();
 } catch (Exception $e) {
     echo "Error Database: " . $e->getMessage(); exit;
 }
 
-// 5. INCLUDE VIEWS (Naik 3 level ke folder Root 'swim-meet')
+// 5. INCLUDE LAYOUT
 include __DIR__ . '/../../../views/layout/topbar.php'; 
 include __DIR__ . '/../../../views/layout/sidebar.php'; 
 ?>
@@ -86,6 +90,8 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
         .no-print { display: none !important; }
         body { background: white; }
         .print-full { width: 100% !important; max-width: none !important; }
+        aside { display: none; }
+        .sm\:ml-64 { margin-left: 0 !important; }
     }
 </style>
 
@@ -93,11 +99,11 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
 
     <div class="max-w-7xl mx-auto mb-6 flex items-center justify-between no-print">
         <div class="flex items-center gap-4">
-            <a href="index.php" class="w-10 h-10 rounded-xl bg-white border border-slate-200 flex items-center justify-center text-slate-400 hover:bg-slate-900 hover:text-white transition shadow-sm">←</a>
+            <a href="index.php?event_id=<?= $eventId ?>" class="w-10 h-10 rounded-xl bg-white border border-slate-200 flex items-center justify-center text-slate-400 hover:bg-slate-900 hover:text-white transition shadow-sm">←</a>
             <div>
-                <h1 class="text-2xl font-black uppercase italic text-slate-900 leading-none">Detail Entry</h1>
+                <h1 class="text-2xl font-black uppercase italic text-slate-900 leading-none">Verifikasi Entry</h1>
                 <p class="text-xs text-slate-500 font-bold uppercase tracking-widest mt-1">
-                    <?= htmlspecialchars($club['nama_lengkap']) ?>
+                    Pendaftar: <span class="text-blue-600"><?= htmlspecialchars($namaUser) ?></span>
                 </p>
             </div>
         </div>
@@ -109,25 +115,25 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
     <div class="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6 pb-20 print-full">
         
         <div class="space-y-6 no-print">
+            
             <div class="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm">
                 <div class="flex items-center gap-3 mb-4">
-                    <div class="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center text-2xl">🏟️</div>
-                    <div>
-                        <h2 class="text-sm font-black text-slate-800 uppercase leading-tight"><?= htmlspecialchars($club['nama_lengkap']) ?></h2>
-                        <p class="text-[10px] font-bold text-slate-400"><?= htmlspecialchars($club['email']) ?></p>
+                    <div class="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center text-2xl">👤</div>
+                    <div class="overflow-hidden">
+                        <h2 class="text-sm font-black text-slate-800 uppercase leading-tight truncate"><?= htmlspecialchars($namaUser) ?></h2>
+                        <p class="text-[10px] font-bold text-slate-400 truncate"><?= htmlspecialchars($emailUser) ?></p>
                     </div>
                 </div>
                 
                 <div class="pt-4 border-t border-slate-100 flex justify-between items-center">
-                    <span class="text-[10px] font-bold text-slate-400 uppercase">Status</span>
+                    <span class="text-[10px] font-bold text-slate-400 uppercase">Status Bayar</span>
                     <?php 
                     $statusPay = $payData['status'] ?? 'Unpaid';
                     $color = match($statusPay) { 'Paid' => 'emerald', 'Pending' => 'amber', 'Rejected' => 'red', default => 'slate' };
-                    
                     $labelStatus = match($statusPay) {
-                        'Paid' => 'LUNAS / TERVERIFIKASI',
-                        'Pending' => 'MENUNGGU VERIFIKASI',
-                        'Rejected' => 'DITOLAK / REVISI',
+                        'Paid' => 'LUNAS (VERIFIED)',
+                        'Pending' => 'PERLU CEK',
+                        'Rejected' => 'DITOLAK (REVISI)',
                         default => 'BELUM BAYAR'
                     };
                     ?>
@@ -142,9 +148,15 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                 
                 <?php if(!empty($payData['file_path'])): ?>
                     <a href="../../../public/uploads/payments/<?= htmlspecialchars($payData['file_path']) ?>" target="_blank" class="block group relative rounded-xl overflow-hidden border border-slate-200 bg-slate-100 aspect-video flex items-center justify-center cursor-pointer shadow-sm mb-4">
-                        <img src="../../../public/uploads/payments/<?= htmlspecialchars($payData['file_path']) ?>" class="object-contain w-full h-full">
+                        <?php $ext = pathinfo($payData['file_path'], PATHINFO_EXTENSION); ?>
+                        <?php if(in_array(strtolower($ext), ['jpg','jpeg','png'])): ?>
+                            <img src="../../../public/uploads/payments/<?= htmlspecialchars($payData['file_path']) ?>" class="object-contain w-full h-full">
+                        <?php else: ?>
+                            <span class="text-4xl">📄</span>
+                        <?php endif; ?>
+                        
                         <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white font-bold text-[10px] uppercase backdrop-blur-sm">
-                            Lihat Gambar
+                            Lihat File Asli
                         </div>
                     </a>
                     
@@ -152,25 +164,25 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                         <div class="space-y-2">
                             <?php if($statusPay == 'Pending'): ?>
                                 <button onclick="openModal('approve')" class="w-full bg-emerald-500 hover:bg-emerald-600 text-white py-3 rounded-xl text-xs font-black uppercase shadow-md transition transform hover:scale-[1.02]">
-                                    ✓ Terima (Lock)
+                                    ✓ Terima (Lock Data)
                                 </button>
                                 <button onclick="openModal('reject')" class="w-full bg-red-500 hover:bg-red-600 text-white py-3 rounded-xl text-xs font-black uppercase shadow-md transition transform hover:scale-[1.02]">
                                     ✕ Tolak / Minta Revisi
                                 </button>
-                                <p class="text-[10px] text-slate-400 text-center leading-tight mt-2">
-                                    *Jika ditolak, Club bisa mengedit kembali data pendaftaran.
+                                <p class="text-[10px] text-slate-400 text-center leading-tight mt-2 italic">
+                                    *Jika ditolak, User bisa upload bukti baru & edit atlet.
                                 </p>
                             <?php elseif($statusPay == 'Paid'): ?>
                                 <button onclick="openModal('reject')" class="w-full bg-slate-100 hover:bg-red-100 text-slate-500 hover:text-red-600 border border-slate-200 py-2 rounded-lg text-[10px] font-bold uppercase">
-                                    Buka Kunci (Set Status Revisi)
+                                    🔓 Buka Kunci (Set Status Revisi)
                                 </button>
                             <?php endif; ?>
                         </div>
                     <?php endif; ?>
 
                 <?php else: ?>
-                    <div class="text-center py-6 border border-dashed border-slate-300 rounded-xl">
-                        <p class="text-[10px] font-bold text-slate-400">Belum ada bukti upload</p>
+                    <div class="text-center py-8 border border-dashed border-slate-300 rounded-xl bg-slate-50">
+                        <p class="text-[10px] font-bold text-slate-400">User belum upload bukti bayar</p>
                     </div>
                 <?php endif; ?>
             </div>
@@ -190,13 +202,14 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
             <div class="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm overflow-hidden min-h-[500px]">
                 
                 <div class="p-6 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
-                    <h3 class="text-sm font-black text-slate-800 uppercase italic">Daftar Atlet & Nomor</h3>
-                    <span class="bg-slate-900 text-white px-3 py-1 rounded-lg text-[10px] font-black uppercase">Total: <?= count($entries) ?></span>
+                    <h3 class="text-sm font-black text-slate-800 uppercase italic">Daftar Atlet & Nomor Lomba</h3>
+                    <span class="bg-slate-900 text-white px-3 py-1 rounded-lg text-[10px] font-black uppercase">Total: <?= count($entries) ?> Nomor</span>
                 </div>
                 
                 <?php if(empty($entries)): ?>
-                    <div class="py-20 text-center opacity-50">
-                        <p class="font-bold text-slate-400 text-sm">Tidak ada data entry atlet.</p>
+                    <div class="py-20 text-center opacity-50 flex flex-col items-center">
+                        <span class="text-4xl mb-2">🤷‍♂️</span>
+                        <p class="font-bold text-slate-400 text-sm">Belum ada atlet yang didaftarkan user ini.</p>
                     </div>
                 <?php else: ?>
                     <div class="overflow-x-auto">
@@ -204,21 +217,22 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                             <thead class="bg-slate-50 text-slate-400 border-b border-slate-100">
                                 <tr>
                                     <th class="py-3 px-5 text-[9px] font-black uppercase tracking-widest">Atlet</th>
-                                    <th class="py-3 px-5 text-[9px] font-black uppercase tracking-widest">Detail Nomor Lomba</th>
-                                    <th class="py-3 px-5 text-[9px] font-black uppercase tracking-widest">KU</th>
-                                    <th class="py-3 px-5 text-[9px] font-black uppercase tracking-widest text-right">Seed Time</th>
+                                    <th class="py-3 px-5 text-[9px] font-black uppercase tracking-widest">Nomor Lomba</th>
+                                    <th class="py-3 px-5 text-[9px] font-black uppercase tracking-widest text-center">Kelompok Umur</th>
+                                    <th class="py-3 px-5 text-[9px] font-black uppercase tracking-widest text-right">Waktu (Entry)</th>
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-slate-100 text-slate-600">
                                 <?php foreach($entries as $ent): 
-                                    $jk = $ent['swimmer_gender']; 
+                                    $jk = $ent['swimmer_gender'] ?? 'L'; 
                                     $bgIcon = ($jk == 'L') ? 'bg-blue-100 text-blue-600' : 'bg-pink-100 text-pink-600';
+                                    $genderLabel = ($jk == 'L') ? 'L' : 'P';
                                 ?>
                                 <tr class="hover:bg-slate-50 transition group">
                                     <td class="py-3 px-5">
                                         <div class="flex items-center gap-3">
-                                            <div class="w-8 h-8 rounded-full <?= $bgIcon ?> flex items-center justify-center text-xs font-black">
-                                                <?= $jk ?>
+                                            <div class="w-8 h-8 rounded-full <?= $bgIcon ?> flex items-center justify-center text-xs font-black shrink-0">
+                                                <?= $genderLabel ?>
                                             </div>
                                             <div>
                                                 <div class="font-bold text-xs uppercase text-slate-800"><?= htmlspecialchars($ent['nama_atlet']) ?></div>
@@ -229,23 +243,23 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                                     
                                     <td class="py-3 px-5">
                                         <div class="flex flex-col">
-                                            <span class="text-[10px] font-black text-slate-700 uppercase">
-                                                No. <?= $ent['event_number'] ?>
+                                            <span class="text-[11px] font-bold text-slate-700 uppercase italic">
+                                                <?= $ent['distance'] ?>M <?= strtoupper($ent['stroke']) ?>
                                             </span>
-                                            <span class="text-[11px] font-bold text-blue-600 uppercase italic">
-                                                <?= htmlspecialchars($ent['event_name']) ?>
+                                            <span class="text-[9px] font-bold text-slate-400">
+                                                Kategori: <?= $ent['event_gender'] == 'L' ? 'Putra' : 'Putri' ?>
                                             </span>
                                         </div>
                                     </td>
                                     
-                                    <td class="py-3 px-5">
-                                        <span class="inline-block px-2 py-1 bg-slate-100 rounded text-[9px] font-bold uppercase text-slate-500">
-                                            <?= htmlspecialchars($ent['age_group']) ?>
+                                    <td class="py-3 px-5 text-center">
+                                        <span class="inline-block px-3 py-1 bg-slate-100 rounded text-[9px] font-bold uppercase text-slate-500">
+                                            KU <?= htmlspecialchars($ent['age_group']) ?>
                                         </span>
                                     </td>
 
-                                    <td class="py-3 px-5 font-mono text-xs font-bold text-right text-slate-700">
-                                        <?= htmlspecialchars($ent['seed_time'] ?? 'NT') ?>
+                                    <td class="py-3 px-5 font-mono text-xs font-bold text-right text-blue-600">
+                                        <?= htmlspecialchars($ent['entry_time'] ?? 'NT') ?>
                                     </td>
                                 </tr>
                                 <?php endforeach; ?>
@@ -267,9 +281,9 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
 function openModal(action) {
     let msg = '';
     if(action === 'approve') {
-        msg = 'TERIMA PEMBAYARAN?\n\n- Status akan menjadi LUNAS.\n- Data user akan TERKUNCI (tidak bisa edit lagi).';
+        msg = 'KONFIRMASI TERIMA:\n\n1. Status user menjadi LUNAS (Hijau).\n2. Data user akan TERKUNCI.';
     } else {
-        msg = 'TOLAK & MINTA REVISI?\n\n- Status akan menjadi REVISI (Rejected).\n- User dapat MENGEDIT kembali data pendaftarannya.\n- User harus melakukan Checkout ulang nanti.';
+        msg = 'KONFIRMASI TOLAK:\n\n1. Status user menjadi REVISI (Merah).\n2. User akan diminta upload bukti baru.\n3. User bisa mengubah data atlet lagi.';
     }
 
     if(confirm(msg)) {
