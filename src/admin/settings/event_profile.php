@@ -22,7 +22,6 @@ if ($eventId == 0) {
     if ($lastEvent) {
         $eventId = $lastEvent['id'];
     } else {
-        // Biarkan 0 agar masuk mode Buat Baru
         $eventId = 0; 
     }
 }
@@ -45,7 +44,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             (int)($_POST['lane_count'] ?? 8), 
             $_POST['pool_type'] ?? 'LCM',
             $_POST['age_calculation_type'] ?? 'Dec 31', 
-            $_POST['event_type'] ?? 'Standard', 
+            $_POST['event_type'] ?? 'Standard',
+            
+            // [BARU] Tipe Partisipasi
+            $_POST['participation_type'] ?? 'club',
+
             $_POST['status'] ?? 'upcoming',
             $_POST['bank_name'] ?? '', 
             $_POST['bank_account_number'] ?? '', 
@@ -55,54 +58,34 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
         // LOGIKA INSERT VS UPDATE
         if ($eventId == 0) {
-            // A. INSERT (EVENT BARU)
-            // PERBAIKAN: Menambahkan 'nomor_acara' dengan default value '0' langsung di query
-            // agar error 1364 tidak muncul.
+            // A. INSERT
             $sql = "INSERT INTO events (
                         nama_event, lokasi, venue_name, 
                         event_start_date, event_end_date, tanggal_pelaksanaan,
-                        lane_count, pool_type, age_calculation_type, event_type, status,
+                        lane_count, pool_type, age_calculation_type, event_type, 
+                        participation_type, -- [BARU]
+                        status,
                         bank_name, bank_account_number, bank_account_name,
                         user_id,
                         nomor_acara 
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '0')"; 
-            
-            // Perhatikan: kita hardcode nilai '0' di VALUES paling belakang untuk nomor_acara
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '0')"; 
             
             $pdo->prepare($sql)->execute($params);
-            $eventId = $pdo->lastInsertId(); // Dapatkan ID baru
+            $eventId = $pdo->lastInsertId(); 
         } else {
-            // B. UPDATE (EVENT LAMA)
-            // Tambahkan ID ke params untuk WHERE clause
+            // B. UPDATE
             $params[] = $eventId; 
             
-            // Untuk Update, kita tidak perlu menyentuh nomor_acara jika tidak ada di form
             $sql = "UPDATE events SET 
                     nama_event = ?, lokasi = ?, venue_name = ?, 
                     event_start_date = ?, event_end_date = ?, tanggal_pelaksanaan = ?,
-                    lane_count = ?, pool_type = ?, age_calculation_type = ?, event_type = ?, status = ?,
+                    lane_count = ?, pool_type = ?, age_calculation_type = ?, event_type = ?, 
+                    participation_type = ?, -- [BARU]
+                    status = ?,
                     bank_name = ?, bank_account_number = ?, bank_account_name = ?
                     WHERE user_id = ? AND id = ?"; 
             
-            // Kita harus execute manual karena urutan params user_id & event_id
-            $pdo->prepare($sql)->execute([
-                $_POST['nama_event'] ?? '', 
-                $_POST['lokasi'] ?? '', 
-                $_POST['venue_name'] ?? '', 
-                !empty($_POST['event_start_date']) ? $_POST['event_start_date'] : NULL, 
-                !empty($_POST['event_end_date']) ? $_POST['event_end_date'] : NULL,
-                !empty($_POST['event_start_date']) ? $_POST['event_start_date'] : NULL,
-                (int)($_POST['lane_count'] ?? 8), 
-                $_POST['pool_type'] ?? 'LCM',
-                $_POST['age_calculation_type'] ?? 'Dec 31', 
-                $_POST['event_type'] ?? 'Standard', 
-                $_POST['status'] ?? 'upcoming',
-                $_POST['bank_name'] ?? '', 
-                $_POST['bank_account_number'] ?? '', 
-                $_POST['bank_account_name'] ?? '',
-                $uid,
-                $eventId
-            ]);
+            $pdo->prepare($sql)->execute($params);
         }
 
         // C. HANDLE LOGO KIRI & KANAN
@@ -155,7 +138,6 @@ $row = [];
 $footerLogos = [];
 
 if ($eventId > 0) {
-    // Ambil Event Existing
     $stmt = $pdo->prepare("SELECT * FROM events WHERE id = ? AND user_id = ?");
     $stmt->execute([$eventId, $uid]);
     $row = $stmt->fetch();
@@ -169,7 +151,6 @@ if ($eventId > 0) {
     }
 }
 
-// Ambil User Profile
 $stmtUser = $pdo->prepare("SELECT bank_name, bank_account_number, bank_account_name FROM users WHERE id = ?");
 $stmtUser->execute([$uid]);
 $userProfile = $stmtUser->fetch();
@@ -185,7 +166,6 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
             <?php if($eventId > 0): ?>
             <a href="../kompetisi/manage_entries.php?event_id=<?= $eventId ?>" class="text-xs font-bold text-slate-400 hover:text-blue-600 uppercase mb-2 block">← Kembali ke Dashboard</a>
             <?php endif; ?>
-            
             <h1 class="text-4xl font-black uppercase italic text-slate-900 leading-none">Event Settings</h1>
             <p class="text-sm text-slate-500 font-bold uppercase tracking-widest mt-2">Identitas, Spesifikasi & Pembayaran</p>
         </div>
@@ -265,7 +245,7 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
         <div class="bg-indigo-50 rounded-[2.5rem] shadow-sm border border-indigo-200 p-10 relative overflow-hidden">
              <div class="absolute top-0 right-0 p-10 opacity-5 text-9xl">🏊</div>
             <h3 class="font-black uppercase text-sm mb-8 text-indigo-700 italic flex items-center gap-2 relative z-10">
-                <span>⚙️</span> Spesifikasi Teknis & Kolam
+                <span>⚙️</span> Spesifikasi Teknis & Peserta
             </h3>
             
             <div class="grid grid-cols-1 md:grid-cols-2 gap-8 relative z-10">
@@ -288,20 +268,33 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                     </div>
                 </div>
 
-                <div class="bg-white p-6 rounded-2xl border border-indigo-100 shadow-sm">
-                    <label class="block text-xs font-bold text-slate-500 uppercase mb-4">Tipe & Panjang Kolam (Pool Type)</label>
-                    <div class="flex flex-col gap-3">
-                        <label class="relative flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all <?= (($row['pool_type'] ?? 'LCM') == 'SCM') ? 'border-indigo-600 bg-indigo-50' : 'border-slate-100 hover:border-slate-300' ?>">
-                            <input type="radio" name="pool_type" value="SCM" class="hidden peer" <?= (($row['pool_type'] ?? 'LCM') == 'SCM') ? 'checked' : '' ?>>
-                            <div class="w-5 h-5 rounded-full border-2 border-slate-300 peer-checked:border-indigo-600 peer-checked:bg-indigo-600 flex items-center justify-center"><div class="w-2 h-2 bg-white rounded-full"></div></div>
-                            <div><span class="block font-black text-slate-800 text-sm">25m (Short Course)</span><span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">SCM • Semi-Olympic</span></div>
-                        </label>
+                <div class="space-y-4">
+                    <div class="bg-white p-5 rounded-2xl border border-indigo-100 shadow-sm">
+                        <label class="block text-xs font-bold text-slate-500 uppercase mb-3">Tipe Partisipasi (Tampilan di Buku Acara)</label>
+                        <div class="flex flex-col gap-2">
+                            <label class="flex items-center gap-3 cursor-pointer">
+                                <input type="radio" name="participation_type" value="club" class="peer accent-indigo-600" <?= (($row['participation_type']??'club')=='club')?'checked':'' ?>>
+                                <span class="text-sm font-bold text-slate-700">Antar Perkumpulan (Club)</span>
+                            </label>
+                            <label class="flex items-center gap-3 cursor-pointer">
+                                <input type="radio" name="participation_type" value="school" class="peer accent-indigo-600" <?= (($row['participation_type']??'')=='school')?'checked':'' ?>>
+                                <span class="text-sm font-bold text-slate-700">Antar Sekolah / Universitas</span>
+                            </label>
+                        </div>
+                    </div>
 
-                        <label class="relative flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all <?= (($row['pool_type'] ?? 'LCM') == 'LCM') ? 'border-indigo-600 bg-indigo-50' : 'border-slate-100 hover:border-slate-300' ?>">
-                            <input type="radio" name="pool_type" value="LCM" class="hidden peer" <?= (($row['pool_type'] ?? 'LCM') == 'LCM') ? 'checked' : '' ?>>
-                            <div class="w-5 h-5 rounded-full border-2 border-slate-300 peer-checked:border-indigo-600 peer-checked:bg-indigo-600 flex items-center justify-center"><div class="w-2 h-2 bg-white rounded-full"></div></div>
-                            <div><span class="block font-black text-slate-800 text-sm">50m (Long Course)</span><span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">LCM • Olympic Standard</span></div>
-                        </label>
+                    <div class="bg-white p-5 rounded-2xl border border-indigo-100 shadow-sm">
+                        <label class="block text-xs font-bold text-slate-500 uppercase mb-3">Tipe & Panjang Kolam</label>
+                        <div class="flex flex-col gap-2">
+                            <label class="relative flex items-center gap-3 cursor-pointer">
+                                <input type="radio" name="pool_type" value="LCM" class="accent-indigo-600" <?= (($row['pool_type'] ?? 'LCM') == 'LCM') ? 'checked' : '' ?>>
+                                <span class="text-xs font-bold text-slate-700">50m (Long Course - LCM)</span>
+                            </label>
+                            <label class="relative flex items-center gap-3 cursor-pointer">
+                                <input type="radio" name="pool_type" value="SCM" class="accent-indigo-600" <?= (($row['pool_type'] ?? 'LCM') == 'SCM') ? 'checked' : '' ?>>
+                                <span class="text-xs font-bold text-slate-700">25m (Short Course - SCM)</span>
+                            </label>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -336,17 +329,6 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                         class="w-full px-4 py-3 border border-slate-200 rounded-xl font-bold placeholder:text-slate-300">
                 </div>
             </div>
-            
-            <?php if(!empty($userProfile['bank_name'])): ?>
-            <div class="mt-4 p-4 bg-slate-50 rounded-xl border border-slate-200 flex items-start gap-3">
-                <span class="text-emerald-500 text-lg">💡</span>
-                <div>
-                    <p class="text-xs font-bold text-slate-600">Info Rekening Default (Admin)</p>
-                    <p class="text-[10px] text-slate-500 mt-1">Saat ini: <strong><?= htmlspecialchars($userProfile['bank_name']) ?> - <?= htmlspecialchars($userProfile['bank_account_number']) ?> a.n <?= htmlspecialchars($userProfile['bank_account_name']) ?></strong></p>
-                    <p class="text-[10px] text-slate-400 italic">Kolom di atas boleh dikosongkan jika ingin menggunakan rekening default ini.</p>
-                </div>
-            </div>
-            <?php endif; ?>
         </div>
 
         <div class="bg-white rounded-[2.5rem] shadow-sm border border-slate-200 p-10">
