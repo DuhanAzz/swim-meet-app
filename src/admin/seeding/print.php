@@ -3,159 +3,285 @@
 session_start();
 require_once __DIR__ . '/../../../src/config/database.php';
 
+// 1. CEK KEAMANAN
 if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
     die("Akses ditolak.");
 }
 
-$uid = $_SESSION['user_id'];
-$catId = (int)($_GET['category_id'] ?? 0);
+// AMBIL ID NOMOR LOMBA
+$cat_id = $_GET['event_id'] ?? ($_GET['category_id'] ?? null);
+if (!$cat_id) { die("Kategori belum dipilih."); }
 
-if (!$catId) die("Kategori belum dipilih.");
+// 2. CONFIG CETAK
+$pc = $_SESSION['print_config'] ?? [
+    'show_event_no' => true, 'show_date' => true, 'show_event_name' => true,
+    'show_group' => true, 'show_gender' => true, 'show_pool' => true, 'show_round' => true
+];
 
-// 1. Ambil Info Kategori & Event (FIXED JOIN)
-$stmtCat = $pdo->prepare("
-    SELECT en.*, e.nama_event, e.lokasi, e.venue_name, e.event_start_date, e.logo_left, e.logo_right, e.id as event_id
-    FROM event_numbers en
-    JOIN events e ON en.organizer_id = e.id
-    WHERE en.id = ?
-");
-$stmtCat->execute([$catId]);
-$info = $stmtCat->fetch();
+// 3. AMBIL INFO NOMOR LOMBA
+$stmtRace = $pdo->prepare("SELECT * FROM event_numbers WHERE id = ?");
+$stmtRace->execute([$cat_id]);
+$raceInfo = $stmtRace->fetch(PDO::FETCH_ASSOC);
 
-if (!$info) die("Data nomor lomba tidak ditemukan.");
+if (!$raceInfo) die("Nomor lomba tidak ditemukan.");
 
-// 2. Ambil Sponsor untuk Footer
+// AMBIL HEADER EVENT
+$stmtEvent = $pdo->prepare("SELECT * FROM events WHERE user_id = ? ORDER BY id DESC LIMIT 1");
+$stmtEvent->execute([$raceInfo['organizer_id']]);
+$eventProfile = $stmtEvent->fetch(PDO::FETCH_ASSOC);
+
+// SETUP DATA HEADER
+$header_title = strtoupper($eventProfile['nama_event'] ?? 'NAMA EVENT BELUM DISET');
+$venue_name   = strtoupper($eventProfile['venue_name'] ?? ($eventProfile['lokasi'] ?? ''));
+$event_date   = !empty($eventProfile['event_start_date']) ? $eventProfile['event_start_date'] : date('Y-m-d');
+$total_lintasan = (int)($eventProfile['lane_count'] ?? 8);
+$pool_type    = strtoupper($eventProfile['pool_type'] ?? 'LCM');
+$parentEventId = $eventProfile['id'] ?? 0;
+
+// LOGO
+$logo_left  = !empty($eventProfile['logo_left']) ? '../../../public/' . $eventProfile['logo_left'] : null;
+$logo_right = !empty($eventProfile['logo_right']) ? '../../../public/' . $eventProfile['logo_right'] : null;
+
+// TANGGAL
+$display_date = strtoupper(date('d F Y', strtotime($event_date)));
+$event_year   = date('Y', strtotime($event_date));
+
+// KOP TANGGAL
+if(!empty($eventProfile['event_end_date']) && strtotime($eventProfile['event_start_date']) != strtotime($eventProfile['event_end_date'])) {
+    $header_date_range = date('d', strtotime($eventProfile['event_start_date'])) . ' - ' . date('d F Y', strtotime($eventProfile['event_end_date']));
+} else {
+    $header_date_range = $display_date;
+}
+
+// 4. JUDUL DINAMIS
+$judul_parts = [];
+if(!empty($pc['show_event_name'])) {
+    $cleanStroke = trim(str_ireplace(['Gaya', 'GAYA'], '', $raceInfo['stroke'] ?? ''));
+    $judul_parts[] = ($raceInfo['distance'] ?? '') . " M GAYA " . strtoupper($cleanStroke);
+}
+if(!empty($pc['show_group']))      $judul_parts[] = ($raceInfo['age_group'] ?? '-'); 
+if(!empty($pc['show_gender']))     $judul_parts[] = (in_array($raceInfo['jenis_kelamin'], ['L','Male'])) ? 'PUTRA' : 'PUTRI';
+if(!empty($pc['show_pool']))       $judul_parts[] = $pool_type;
+
+$judul_tengah_dinamis = implode(" - ", $judul_parts);
+$nomor_acara_dinamis  = !empty($pc['show_event_no']) ? "#" . $raceInfo['event_number'] : "";
+$babak_dinamis        = !empty($pc['show_round']) ? "FINAL" : "";
+
+// 5. AMBIL DATA PESERTA
+try {
+    $sql = "SELECT ee.heat as heat_no, ee.lane as lane_no, ee.entry_time,
+            s.nama_atlet, s.tanggal_lahir, 
+            c.nama_klub as club_name, s.asal_sekolah
+            FROM event_entries ee
+            JOIN swimmers s ON ee.swimmer_id = s.id
+            LEFT JOIN clubs c ON s.club_id = c.id
+            LEFT JOIN payments p ON p.user_id = ee.club_id AND p.event_id = ee.event_id
+            WHERE ee.category_id = ? AND ee.heat IS NOT NULL 
+            AND (p.status = 'Paid' OR p.status = 'Verified') 
+            ORDER BY ee.heat ASC, ee.lane ASC";
+
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute([$cat_id]);
+    $raw_data = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+} catch (PDOException $e) { die("Error Database: " . $e->getMessage()); }
+
+// 6. SPONSOR
 $stmtSpon = $pdo->prepare("SELECT image_path FROM event_sponsors WHERE event_id = ?");
-$stmtSpon->execute([$info['event_id']]);
+$stmtSpon->execute([$parentEventId]);
 $sponsors = $stmtSpon->fetchAll(PDO::FETCH_COLUMN);
 
-// 3. Ambil Start List (Heat & Lane)
-$stmtH = $pdo->prepare("SELECT * FROM race_heats WHERE category_id = ? ORDER BY heat_number ASC");
-$stmtH->execute([$catId]);
-$rawHeats = $stmtH->fetchAll();
+// HELPER
+function formatLahir($tgl, $year) {
+    if(!$tgl || $tgl == '0000-00-00') return '-';
+    $by = date('Y', strtotime($tgl));
+    return $by . " (" . ($year - $by) . ")";
+}
+function shortenName($name) {
+    $name = trim(preg_replace('/\s+/', ' ', $name ?? ''));
+    if (strlen($name) > 22) return substr($name, 0, 22) . '...';
+    return $name;
+}
 
 $heats = [];
-foreach($rawHeats as $h) {
-    // Ambil detail per lintasan
-    $sqlL = "SELECT rl.*, s.nama_atlet, s.tanggal_lahir, c.club_name 
-             FROM race_lines rl 
-             JOIN swimmers s ON rl.swimmer_id = s.id 
-             LEFT JOIN clubs c ON rl.club_id = c.id
-             WHERE rl.heat_id = ? ORDER BY rl.lane_number ASC";
-             
-    $stmtL = $pdo->prepare($sqlL);
-    $stmtL->execute([$h['id']]);
-    $h['lanes'] = $stmtL->fetchAll();
-    $heats[] = $h;
-}
+foreach ($raw_data as $row) $heats[$row['heat_no']][$row['lane_no']] = $row;
 ?>
+
 <!DOCTYPE html>
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <title>BUKU ACARA - <?= htmlspecialchars($info['nama_event']) ?></title>
+    <title>StartList_<?= $nomor_acara_dinamis ?></title>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto+Condensed:wght@400;700;900&family=Courier+Prime:wght@400;700&display=swap" rel="stylesheet">
     <style>
-        /* CSS KHUSUS CETAK BUKU ACARA */
-        @page { size: A4; margin: 1.5cm; }
-        body { font-family: 'Arial Narrow', Arial, sans-serif; font-size: 11px; margin: 0; padding: 0; color: #000; }
+        * { box-sizing: border-box; }
+        body { 
+            font-family: 'Roboto Condensed', sans-serif; 
+            margin: 0; padding: 0; background: white; color: #000; 
+            font-size: 10pt; /* Font sedikit dikecilkan agar muat */
+        }
         
-        /* Layout Header */
-        .header-table { width: 100%; border-bottom: 2px solid #000; margin-bottom: 10px; }
-        .logo-img { max-height: 70px; max-width: 90px; object-fit: contain; }
-        .event-info { text-align: center; }
-        .event-info h1 { margin: 0; font-size: 16px; font-weight: 900; text-transform: uppercase; }
-        .event-info p { margin: 2px 0; font-size: 10px; font-weight: bold; }
-        
-        /* Banner Nomor Lomba */
-        .race-banner { background: #000; color: #fff; padding: 6px 12px; margin: 15px 0 10px; display: flex; justify-content: space-between; align-items: center; }
-        .race-banner h2 { margin: 0; font-size: 12px; text-transform: uppercase; italic; }
-        
-        .seri-label { background: #f0f0f0; padding: 4px 10px; font-weight: 900; border-left: 5px solid #000; margin-top: 15px; font-size: 11px; }
+        /* SETTING A4 AGAR SPONSOR MUAT */
+        @page { 
+            size: A4; 
+            /* Margin Bawah agak besar (20mm) untuk tempat Footer Fixed */
+            margin: 10mm 10mm 20mm 10mm; 
+        }
 
-        /* Tabel Data */
-        table { width: 100%; border-collapse: collapse; margin-top: 5px; }
-        th { border-bottom: 2px solid #333; padding: 6px 4px; text-align: left; font-size: 9px; text-transform: uppercase; }
-        td { border-bottom: 1px solid #ddd; padding: 5px 4px; }
-        .col-ln { width: 30px; text-align: center; font-weight: bold; }
-        .col-time { width: 80px; text-align: center; font-family: monospace; font-weight: bold; }
-        .col-birth { width: 60px; text-align: center; }
+        /* HEADER */
+        .page-header {
+            display: flex; justify-content: space-between; align-items: center;
+            border-bottom: 3px double #000; padding-bottom: 5px; margin-bottom: 10px;
+        }
+        .logo-box { width: 70px; height: 70px; display: flex; align-items: center; justify-content: center; }
+        .logo-box img { max-width: 100%; max-height: 100%; object-fit: contain; }
+        .header-text { text-align: center; flex: 1; padding: 0 5px; }
+        .header-text h1 { margin: 0; font-size: 14pt; font-weight: 900; text-transform: uppercase; line-height: 1.1; }
+        .header-text p { margin: 2px 0; font-size: 9pt; font-weight: bold; text-transform: uppercase; color: #333; }
+        .buku-acara-badge { 
+            display: inline-block; border: 2px solid #000; padding: 2px 10px; margin-top: 5px; 
+            font-weight: 900; letter-spacing: 2px; font-size: 10pt;
+        }
+
+        /* INFO BAR */
+        .event-info-grid {
+            display: grid; grid-template-columns: 80px 1fr 80px; align-items: center;
+            border-bottom: 2px solid #000; margin-bottom: 10px; padding-bottom: 5px;
+        }
+        .info-num { font-size: 16pt; font-weight: 900; line-height: 1; }
+        .info-date { font-size: 8pt; font-weight: bold; }
+        .info-title { text-align: center; font-size: 11pt; font-weight: 800; text-transform: uppercase; }
+        .info-round { text-align: right; font-weight: bold; background: #eee; padding: 2px 5px; border-radius: 4px; font-size: 8pt; }
+
+        /* TABLES */
+        .heat-wrapper { margin-bottom: 15px; page-break-inside: avoid; }
+        .heat-title { text-align: right; font-weight: bold; border-bottom: 1px solid #000; font-size: 9pt; margin-bottom: 2px; }
         
-        /* Footer Sponsor Fixed */
-        .footer-sponsor { position: fixed; bottom: 0; left: 0; right: 0; height: 50px; text-align: center; border-top: 1px solid #eee; padding-top: 5px; background: white; }
-        .footer-sponsor img { height: 30px; margin: 0 10px; filter: grayscale(100%); opacity: 0.6; }
+        table { width: 100%; border-collapse: collapse; font-size: 8.5pt; table-layout: fixed; }
+        th { 
+            background: #f0f0f0; border-top: 1px solid #000; border-bottom: 1px solid #000; 
+            padding: 3px; text-align: left; font-weight: bold; text-transform: uppercase; 
+        }
+        td { border-bottom: 1px solid #ddd; padding: 2px 3px; white-space: nowrap; overflow: hidden; text-transform: uppercase; }
         
-        .no-print { background: #444; color: white; padding: 10px; text-align: center; margin-bottom: 20px; }
-        @media print { 
-            .no-print { display: none; } 
+        .c-center { text-align: center; }
+        .c-right { text-align: right; }
+        .font-mono { font-family: 'Courier Prime', monospace; font-weight: bold; }
+        .dots { letter-spacing: 2px; color: #ccc; }
+
+        /* FOOTER SPONSOR FIXED */
+        .footer-sponsor {
+            position: fixed; 
+            bottom: 0; left: 0; right: 0; 
+            text-align: center;
+            background: white; 
+            padding-top: 2px;
+            height: 15mm; /* Tinggi pasti footer */
+            z-index: 1000;
+        }
+        .footer-line { border-top: 3px double #000; width: 100%; margin-bottom: 3px; }
+        .footer-sponsor img { 
+            height: 25px; /* PERKECIL LOGO SPONSOR */
+            margin: 0 10px; 
+            filter: grayscale(100%); 
+            opacity: 0.8; 
+            vertical-align: middle;
+        }
+
+        .no-print-bar {
+            background: #333; color: #fff; padding: 10px; text-align: center;
+            position: fixed; top: 0; left: 0; width: 100%; z-index: 9999;
+            font-family: sans-serif;
+        }
+        @media print {
+            .no-print-bar { display: none; }
+            /* Memaksa footer tetap di bawah setiap halaman */
             .footer-sponsor { position: fixed; bottom: 0; }
         }
     </style>
 </head>
-<body onload="window.print()">
+<body>
 
-    <div class="no-print">
-        <button onclick="window.print()" style="font-weight:bold; cursor:pointer;">🖨️ CETAK SEKARANG</button>
-        <button onclick="window.close()" style="margin-left:10px;">Tutup</button>
+    <div class="no-print-bar">
+        <button onclick="window.print()" style="padding:5px 15px; cursor:pointer; font-weight:bold;">🖨️ CETAK</button>
     </div>
 
-    <table class="header-table">
-        <tr>
-            <td width="100">
-                <?php if($info['logo_left']): ?>
-                    <img src="../../../public/<?= $info['logo_left'] ?>" class="logo-img">
-                <?php endif; ?>
-            </td>
-            <td class="event-info">
-                <h1><?= htmlspecialchars($info['nama_event']) ?></h1>
-                <p><?= htmlspecialchars($info['venue_name']) ?> | <?= htmlspecialchars($info['lokasi']) ?></p>
-                <p>TANGGAL: <?= date('d F Y', strtotime($info['event_start_date'])) ?></p>
-                <div style="margin-top:5px; border:1px solid #000; display:inline-block; padding:2px 10px; font-weight:900;">START LIST</div>
-            </td>
-            <td width="100" align="right">
-                <?php if($info['logo_right']): ?>
-                    <img src="../../../public/<?= $info['logo_right'] ?>" class="logo-img">
-                <?php endif; ?>
-            </td>
-        </tr>
-    </table>
+    <div class="page-header">
+        <div class="logo-box">
+            <?php if($logo_left): ?><img src="<?= $logo_left ?>"><?php endif; ?>
+        </div>
+        <div class="header-text">
+            <h1><?= htmlspecialchars($header_title) ?></h1>
+            <?php if($venue_name): ?><p><?= htmlspecialchars($venue_name) ?></p><?php endif; ?>
+            <p><?= htmlspecialchars($header_date_range) ?></p>
+            <div class="buku-acara-badge">BUKU ACARA</div>
+        </div>
+        <div class="logo-box">
+            <?php if($logo_right): ?><img src="<?= $logo_right ?>"><?php endif; ?>
+        </div>
+    </div>
 
-    <div class="race-banner">
-        <h2>EVENT #<?= $catId ?> - <?= $info['distance'] ?>M <?= strtoupper($info['stroke']) ?> - <?= strtoupper($info['age_group']) ?></h2>
-        <span>FINAL</span>
+    <div class="event-info-grid">
+        <div class="info-left">
+            <div class="info-num"><?= $nomor_acara_dinamis ?></div>
+            <div class="info-date"><?= $display_date ?></div>
+        </div>
+        <div class="info-title">
+            <?= $judul_tengah_dinamis ?>
+        </div>
+        <div class="info-right">
+            <span class="info-round"><?= $babak_dinamis ?></span>
+        </div>
     </div>
 
     <?php if(empty($heats)): ?>
-        <p style="text-align:center; margin-top:50px; color:#999;">Belum ada data seeding untuk nomor lomba ini.</p>
+        <div style="text-align: center; padding: 50px; font-style: italic; color: #777;">
+            Data belum tersedia atau belum di-seeding.
+        </div>
     <?php else: ?>
-        <?php foreach($heats as $h): ?>
-            <div style="break-inside: avoid; margin-bottom: 20px;">
-                <div class="seri-label">SERI <?= $h['heat_number'] ?></div>
+        <?php foreach($heats as $heatNo => $lanesData): ?>
+            <div class="heat-wrapper">
+                <div class="heat-title">SERI <?= str_pad($heatNo, 2, '0', STR_PAD_LEFT) ?></div>
                 <table>
+                    <colgroup>
+                        <col style="width: 5%">
+                        <col style="width: 35%">
+                        <col style="width: 10%">
+                        <col style="width: 25%">
+                        <col style="width: 15%">
+                        <col style="width: 10%">
+                    </colgroup>
                     <thead>
                         <tr>
-                            <th class="col-ln">LN</th>
+                            <th class="c-center">LN</th>
                             <th>NAMA ATLET</th>
-                            <th class="col-birth">LAHIR</th>
-                            <th>TIM / KLUB</th>
-                            <th class="col-time">WAKTU DAFTAR</th>
-                            <th width="60">HASIL</th>
+                            <th class="c-center">LAHIR</th>
+                            <th>TIM / SEKOLAH</th>
+                            <th class="c-right">ENTRY</th>
+                            <th class="c-right">HASIL</th>
                         </tr>
                     </thead>
                     <tbody>
-                        <?php 
-                        $lanes = array_fill(1, 8, null);
-                        foreach($h['lanes'] as $l) $lanes[$l['lane_number']] = $l;
-                        
-                        for($i=1; $i<=8; $i++): 
-                            $sw = $lanes[$i];
-                        ?>
+                        <?php for($ln = 1; $ln <= $total_lintasan; $ln++): $s = $lanesData[$ln] ?? null; ?>
                         <tr>
-                            <td class="col-ln"><?= $i ?></td>
-                            <td><?= $sw ? strtoupper(htmlspecialchars($sw['nama_atlet'])) : '<span style="color:#eee">---</span>' ?></td>
-                            <td class="col-birth"><?= $sw ? date('Y', strtotime($sw['tanggal_lahir'])) : '-' ?></td>
-                            <td><?= $sw ? strtoupper(htmlspecialchars($sw['club_name'] ?? 'PERSONAL')) : '-' ?></td>
-                            <td class="col-time"><?= ($sw && $sw['entry_time']) ? $sw['entry_time'] : 'NT' ?></td>
-                            <td style="border-bottom: 1px dotted #ccc;"></td>
+                            <td class="c-center font-mono"><?= $ln ?></td>
+                            <?php if($s): ?>
+                                <td style="font-weight: bold;" title="<?= $s['nama_atlet'] ?>">
+                                    <?= shortenName($s['nama_atlet']) ?>
+                                </td>
+                                <td class="c-center font-mono" style="color:#555">
+                                    <?= formatLahir($s['tanggal_lahir'], $event_year) ?>
+                                </td>
+                                <td>
+                                    <?= shortenName(!empty($s['club_name']) ? $s['club_name'] : $s['asal_sekolah']) ?>
+                                </td>
+                                <td class="c-right font-mono">
+                                    <?= ($s['entry_time'] == '99:99.99' || !$s['entry_time']) ? 'NT' : $s['entry_time'] ?>
+                                </td>
+                                <td class="c-right font-mono dots">.......</td>
+                            <?php else: ?>
+                                <td colspan="5" style="color:#ddd; font-size: 8pt; font-style: italic;">&lt; KOSONG &gt;</td>
+                            <?php endif; ?>
                         </tr>
                         <?php endfor; ?>
                     </tbody>
@@ -166,7 +292,7 @@ foreach($rawHeats as $h) {
 
     <?php if(!empty($sponsors)): ?>
     <div class="footer-sponsor">
-        <div style="font-size: 8px; color: #999; margin-bottom: 3px;">SUPPORTED BY:</div>
+        <div class="footer-line"></div>
         <?php foreach($sponsors as $img): ?>
             <img src="../../../public/<?= $img ?>">
         <?php endforeach; ?>
