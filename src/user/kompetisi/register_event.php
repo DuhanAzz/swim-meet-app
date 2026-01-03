@@ -3,7 +3,8 @@
 session_start();
 require_once __DIR__ . '/../../config/database.php';
 
-// --- 1. KONFIGURASI TAHUN (Sesuai Header UI Anda) ---
+// --- 1. KONFIGURASI TAHUN ---
+// Sebaiknya ini dinamis dari tahun pelaksanaan event, namun sementara kita pakai 2025 sesuai kode Anda
 $competitionYear = 2025; 
 
 // --- 2. HELPER: ATURAN TEKNIS (MATRIX) ---
@@ -13,10 +14,8 @@ function cekAturanMatrix($tahunLahir, $jarak, $gaya) {
     $jarak = (int)$jarak;
     $tahunLahir = (int)$tahunLahir;
     
-    // Cek apakah ini nomor Papan/Kick
     $isPapan = (preg_match('/PAPAN|KICK|KAKI/', $gaya) || strpos($gaya, 'KICK') !== false);
 
-    // Filter berdasarkan Tabel Matrix yang Anda kirim
     if ($tahunLahir >= 2018) { // KU 2018 & 2019
         if ($jarak >= 100) return false; 
         return true; 
@@ -68,15 +67,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 }
 
 // --- 4. DATA FETCHING ---
-// Ambil Detail Kelompok Umur (min_age & max_age)
+// Ambil aturan KU dari database
 $stmtGroups = $pdo->prepare("SELECT id, min_age, max_age, group_name FROM event_age_groups WHERE event_id = ?");
 $stmtGroups->execute([$organizerId]);
 $ageRules = $stmtGroups->fetchAll(PDO::FETCH_UNIQUE|PDO::FETCH_ASSOC);
 
+// Ambil semua nomor lomba
 $stmtEn = $pdo->prepare("SELECT * FROM event_numbers WHERE organizer_id = ? ORDER BY distance ASC, stroke ASC");
 $stmtEn->execute([$organizerId]);
 $allEvents = $stmtEn->fetchAll(PDO::FETCH_ASSOC);
 
+// Ambil semua atlet milik user
 $stmtSw = $pdo->prepare("SELECT *, YEAR(tanggal_lahir) as birth_year FROM swimmers WHERE user_id = ? ORDER BY nama_atlet ASC");
 $stmtSw->execute([$uid]);
 $allSwimmers = $stmtSw->fetchAll(PDO::FETCH_ASSOC);
@@ -93,7 +94,7 @@ $stmtEnt = $pdo->prepare("SELECT swimmer_id, category_id, entry_time FROM event_
 $stmtEnt->execute([$uid, $organizerId]);
 while($row = $stmtEnt->fetch(PDO::FETCH_ASSOC)) $savedData[$row['swimmer_id']][$row['category_id']] = $row['entry_time'];
 
-// Data Rekor (Untuk Fitur Duplikat/Copy Record)
+// Data Rekor
 $recordMap = [];
 if (!empty($visibleSwimmers)) {
     $swimmerIds = array_column($visibleSwimmers, 'id');
@@ -106,26 +107,27 @@ if (!empty($visibleSwimmers)) {
     }
 }
 
-// --- 5. LOGIK PEMILAHAN SANGAT KETAT (FILTERING) ---
-$jsonData = [];
+// --- 5. STRUKTUR TABLE & FILTERING JSON ---
 $tableStructure = []; 
-foreach ($allEvents as $ev) { $tableStructure[$ev['distance'] . 'M'][$ev['stroke']][] = $ev; }
+foreach ($allEvents as $ev) { 
+    $tableStructure[$ev['distance'] . 'M'][$ev['stroke']][] = $ev; 
+}
 uksort($tableStructure, fn($a, $b) => (int)$a - (int)$b);
 
+$jsonData = [];
 foreach ($visibleSwimmers as $sw) {
     $sid = $sw['id'];
     $birthYear = (int)$sw['birth_year'];
-    $age = $competitionYear - $birthYear; // Contoh: 2025 - 2018 = 7 Tahun
-    $gender = strtoupper($sw['jenis_kelamin']);
+    $age = $competitionYear - $birthYear; 
+    $gender = ($sw['jenis_kelamin'] == 'L') ? 'L' : 'P';
     $myEvents = [];
 
     foreach ($allEvents as $ev) {
-        // A. Cek Gender
-        $eGen = strtoupper($ev['jenis_kelamin']);
+        // 1. Cek Gender
+        $eGen = ($ev['jenis_kelamin'] == 'Putra' || $ev['jenis_kelamin'] == 'L') ? 'L' : (($ev['jenis_kelamin'] == 'Putri' || $ev['jenis_kelamin'] == 'P') ? 'P' : 'MIX');
         if ($eGen !== 'MIX' && $eGen !== $gender) continue;
 
-        // B. CEK KELOMPOK UMUR (STRICT)
-        // Jika atlet tidak masuk range min_age & max_age di database, nomor ini DIBUANG.
+        // 2. Cek Kelompok Umur dari Database
         $isAgeFit = false;
         $kuIds = !empty($ev['selected_ku_ids']) ? explode(',', $ev['selected_ku_ids']) : [];
         
@@ -137,11 +139,14 @@ foreach ($visibleSwimmers as $sw) {
                     if ($age >= $min && $age <= $max) { $isAgeFit = true; break; }
                 }
             }
-        } else { $isAgeFit = true; } // Jika nomor lomba bertipe 'Open'
+        } else {
+            // Jika tidak ada KU terpilih, cek manual age_min/max di tabel event_numbers
+            if ($age >= $ev['age_min'] && $age <= $ev['age_max']) $isAgeFit = true;
+        }
         
-        if (!$isAgeFit) continue; // Langsung skip jika KU tidak cocok
+        if (!$isAgeFit) continue; 
 
-        // C. Cek Aturan Matrix Teknis (Papan, 25m, dsb)
+        // 3. Cek Aturan Matrix Teknis
         if (cekAturanMatrix($birthYear, $ev['distance'], $ev['stroke'])) {
             $normStroke = strtoupper(str_replace(['Gaya ', 'GAYA '], '', $ev['stroke']));
             $best = $recordMap[$sid][$ev['distance']][$normStroke] ?? null;
@@ -172,8 +177,8 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
     .sticky-top-2 { position: sticky; top: 38px; z-index: 20; background: #fff; border-bottom: 2px solid #e2e8f0; }
     .sticky-col-1 { position: sticky; left: 0; z-index: 30; background: #f8fafc; border-right: 1px solid #e2e8f0; }
     .sticky-col-2 { position: sticky; left: 40px; z-index: 30; background: #fff; border-right: 2px solid #cbd5e1; min-width: 180px; }
-    .cell-blocked { background: repeating-linear-gradient(45deg, #f8fafc, #f8fafc 5px, #f1f5f9 5px, #f1f5f9 10px); cursor: not-allowed; }
-    .cell-empty { background: #fff; cursor: pointer; color: #cbd5e1; font-weight: bold; }
+    .cell-blocked { background: #f1f5f9; cursor: not-allowed; opacity: 0.5; color: #cbd5e1; }
+    .cell-empty { background: #fff; cursor: pointer; color: #3b82f6; font-weight: bold; }
     .cell-filled { background: #dcfce7 !important; color: #166534; font-weight: bold; cursor: pointer; border: 1px solid #bbf7d0; }
     .best-time-badge { background: #ecfdf5; color: #059669; border: 1px solid #10b981; padding: 2px 6px; border-radius: 6px; font-size: 9px; cursor: copy; }
 </style>
@@ -217,17 +222,23 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                         <div class="text-[9px] text-slate-400 font-bold uppercase"><?= $jsonData[$sid]['info'] ?></div>
                     </td>
                     <?php foreach($tableStructure as $d => $ss): foreach($ss as $sName => $evs): 
-                        $isEligible = false; $time = '';
+                        $isEligible = false; 
+                        $time = '';
+                        // Cek apakah ada nomor lomba di kolom ini yang cocok dengan atlet ini
                         foreach($evs as $eRef) {
                             foreach($jsonData[$sid]['events'] as $myEv) {
-                                if($myEv['id'] == $eRef['id']) { $isEligible = true; $time = $myEv['time']; break 2; }
+                                if($myEv['id'] == $eRef['id']) { 
+                                    $isEligible = true; 
+                                    $time = $myEv['time']; 
+                                    break 2; 
+                                }
                             }
                         }
                         $css = $isEligible ? ($time ? 'cell-filled' : 'cell-empty') : 'cell-blocked';
                     ?>
-                        <td onclick="<?= $isEligible ? "openModal($sid)" : "alert('Nomor ini TIDAK BOLEH diikuti oleh atlet ini berdasarkan Kelompok Umur.')" ?>" 
+                        <td onclick="<?= $isEligible ? "openModal($sid)" : "alert('Atlet ini tidak masuk kualifikasi Kelompok Umur untuk nomor ini.')" ?>" 
                             class="border-l border-slate-50 text-center h-12 transition-all <?= $css ?>">
-                            <?= $time ?: ($isEligible ? '+' : '') ?>
+                            <?= $time ?: ($isEligible ? '+' : '—') ?>
                         </td>
                     <?php endforeach; endforeach; ?>
                 </tr>
@@ -250,13 +261,10 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
         <form method="POST" class="flex flex-col flex-1 overflow-hidden">
             <input type="hidden" name="action" value="save_entries">
             <input type="hidden" name="swimmer_id" id="mSwimmerId">
-            
-            <div class="flex-1 overflow-y-auto p-6 space-y-3 bg-slate-50" id="mBody">
-                </div>
-
+            <div class="flex-1 overflow-y-auto p-6 space-y-3 bg-slate-50" id="mBody"></div>
             <div class="p-6 bg-white border-t flex justify-between items-center shadow-inner">
-                <p class="text-[9px] text-slate-400 font-bold italic w-1/2">* Kosongkan waktu untuk menghapus pendaftaran nomor tersebut.</p>
-                <button type="submit" class="bg-blue-600 text-white px-8 py-3 rounded-2xl font-black text-xs shadow-xl shadow-blue-100 hover:bg-blue-700 active:scale-95 transition-all">SIMPAN DATA</button>
+                <p class="text-[9px] text-slate-400 font-bold italic w-1/2">* Kosongkan waktu untuk menghapus pendaftaran.</p>
+                <button type="submit" class="bg-blue-600 text-white px-8 py-3 rounded-2xl font-black text-xs shadow-xl hover:bg-blue-700">SIMPAN DATA</button>
             </div>
         </form>
     </div>
@@ -267,7 +275,7 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
         <h3 class="font-black text-slate-800 mb-4 border-b pb-2 uppercase italic">Pilih Atlet</h3>
         <div class="max-h-60 overflow-y-auto space-y-1">
             <?php foreach($allSwimmers as $sw): if(in_array($sw['id'], $_SESSION['matrix_list'][$organizerId])) continue; ?>
-                <a href="?event_id=<?= $organizerId ?>&add_swimmer=<?= $sw['id'] ?>" class="block p-3 hover:bg-blue-50 rounded-xl font-bold text-slate-600 border border-transparent hover:border-blue-100 transition-all text-sm uppercase"><?= $sw['nama_atlet'] ?></a>
+                <a href="?event_id=<?= $organizerId ?>&add_swimmer=<?= $sw['id'] ?>" class="block p-3 hover:bg-blue-50 rounded-xl font-bold text-slate-600 text-sm uppercase"><?= $sw['nama_atlet'] ?></a>
             <?php endforeach; ?>
         </div>
         <button onclick="document.getElementById('modalAdd').classList.add('hidden')" class="mt-4 text-slate-400 font-bold text-[10px] uppercase hover:text-red-500">Tutup</button>
@@ -289,22 +297,15 @@ function openModal(sid) {
     body.innerHTML = '';
 
     if(s.events.length === 0) {
-        body.innerHTML = '<div class="text-center py-10 font-bold text-slate-400 uppercase italic">Tidak ada nomor lomba yang sesuai dengan Kelompok Umur atlet ini.</div>';
+        body.innerHTML = '<div class="text-center py-10 font-bold text-slate-400 uppercase italic">Tidak ada nomor lomba yang sesuai untuk atlet ini.</div>';
     } else {
         s.events.forEach(ev => {
             const hasVal = ev.time !== '';
             const cardStyle = hasVal ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-500' : 'border-slate-200 bg-white';
             
-            // FITUR COPY RECORD (Duplikat Record)
-            let bestTimeBtn = '';
-            if(ev.best_time && ev.best_time !== '00:00.00' && ev.best_time !== 'NT') {
-                bestTimeBtn = `
-                    <button type="button" onclick="copyTime('${ev.best_time}', '${ev.id}')" class="best-time-badge mt-1 hover:bg-emerald-200 transition-colors">
-                        REKOR: ${ev.best_time} 📋
-                    </button>`;
-            } else {
-                bestTimeBtn = '<span class="text-[9px] text-slate-300 font-bold uppercase mt-1">Belum ada rekor</span>';
-            }
+            let bestTimeBtn = ev.best_time ? 
+                `<button type="button" onclick="copyTime('${ev.best_time}', '${ev.id}')" class="best-time-badge mt-1 hover:bg-emerald-200">REKOR: ${ev.best_time} 📋</button>` : 
+                '<span class="text-[9px] text-slate-300 font-bold uppercase mt-1">Belum ada rekor</span>';
 
             body.insertAdjacentHTML('beforeend', `
                 <div class="flex items-center justify-between p-4 rounded-2xl border transition-all ${cardStyle}">
@@ -316,7 +317,7 @@ function openModal(sid) {
                         </div>
                     </div>
                     <input type="text" id="input_${ev.id}" name="entries[${ev.id}]" value="${ev.time}" placeholder="00.00.00" 
-                           class="w-24 text-center font-mono font-bold text-lg bg-slate-100 border-none rounded-xl py-2 focus:ring-2 focus:ring-blue-500 transition-all placeholder:text-slate-300">
+                           class="w-24 text-center font-mono font-bold text-lg bg-slate-100 border-none rounded-xl py-2 focus:ring-2 focus:ring-blue-500 transition-all">
                 </div>
             `);
         });
@@ -324,15 +325,9 @@ function openModal(sid) {
     document.getElementById('modalEntry').classList.remove('hidden');
 }
 
-// Fungsi fitur duplikat record
 function copyTime(time, evId) {
     const input = document.getElementById('input_' + evId);
-    if(input) {
-        input.value = time;
-        input.focus();
-        input.classList.add('ring-4', 'ring-emerald-200');
-        setTimeout(() => input.classList.remove('ring-4', 'ring-emerald-200'), 500);
-    }
+    if(input) { input.value = time; input.focus(); }
 }
 
 function closeModal() { document.getElementById('modalEntry').classList.add('hidden'); }
