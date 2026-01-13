@@ -32,7 +32,7 @@ try {
         case 5: $lanePriority = [3, 2, 4, 1, 5]; break;
         case 6: $lanePriority = [3, 4, 2, 5, 1, 6]; break;
         case 8: $lanePriority = [4, 5, 3, 6, 2, 7, 1, 8]; break;
-        case 10: $lanePriority = [5, 6, 4, 7, 3, 8, 2, 9, 1, 10]; break;
+        case 10: $lanePriority = [4, 5, 3, 6, 2, 7, 1, 8, 0, 9]; break;
         default: 
             // Default 8 lintasan jika aneh
             $lanePriority = [4, 5, 3, 6, 2, 7, 1, 8]; 
