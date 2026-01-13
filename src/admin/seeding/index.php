@@ -3,14 +3,14 @@
 session_start();
 require_once __DIR__ . '/../../../src/config/database.php';
 
-// Cek Admin
+// 1. Cek Admin
 if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
     header("Location: ../../../public/login.php"); exit;
 }
 
 $admin_id = $_SESSION['user_id'];
 
-// Default Config (Jika belum ada session)
+// 2. Default Config
 if (!isset($_SESSION['print_config'])) {
     $_SESSION['print_config'] = [
         'show_event_no' => true,
@@ -24,7 +24,10 @@ if (!isset($_SESSION['print_config'])) {
 }
 $pc = $_SESSION['print_config'];
 
-// AMBIL DATA
+// 3. AMBIL DATA (Query diperbaiki agar tidak error "Table age_groups doesn't exist")
+$events = [];
+$error_msg = null;
+
 try {
     $sql = "SELECT en.*, 
             (
@@ -42,7 +45,6 @@ try {
     $events = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 } catch (PDOException $e) {
-    $events = [];
     $error_msg = "Database Error: " . $e->getMessage();
 }
 
@@ -64,49 +66,58 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
             $globalLink = $total_all_entries == 0 ? '#' : 'print_full_book.php';
         ?>
         
-        <div class="flex items-start gap-3">
+        <div class="flex flex-wrap items-start gap-3">
+            
             <details class="relative group z-50">
-                <summary class="list-none bg-white text-slate-600 px-4 py-4 rounded-[2rem] border border-slate-200 font-bold text-xs uppercase cursor-pointer hover:bg-slate-50 shadow-sm flex items-center gap-2">
+                <summary class="list-none bg-white text-slate-600 px-4 py-4 rounded-[2rem] border border-slate-200 font-bold text-xs uppercase cursor-pointer hover:bg-slate-50 shadow-sm flex items-center gap-2 h-[72px]">
                     <span>⚙️ ATUR JUDUL</span>
                 </summary>
-                <div class="absolute right-0 top-14 w-64 bg-white border border-slate-200 p-4 rounded-2xl shadow-xl z-50">
+                <div class="absolute right-0 top-20 w-64 bg-white border border-slate-200 p-4 rounded-2xl shadow-xl z-50">
                     <form action="set_print_config.php" method="POST" class="space-y-2">
                         <p class="text-[10px] font-black uppercase text-slate-400 mb-2">Pilih Komponen Judul:</p>
-                        
                         <label class="flex items-center gap-2 text-xs font-bold cursor-pointer hover:text-blue-600">
-                            <input type="checkbox" name="show_event_no" <?= $pc['show_event_no']?'checked':'' ?> class="rounded text-blue-600 focus:ring-0"> Nomor Acara (#101)
+                            <input type="checkbox" name="show_event_no" <?= $pc['show_event_no']?'checked':'' ?> class="rounded text-blue-600 focus:ring-0"> Nomor Acara
                         </label>
                         <label class="flex items-center gap-2 text-xs font-bold cursor-pointer hover:text-blue-600">
                             <input type="checkbox" name="show_date" <?= $pc['show_date']?'checked':'' ?> class="rounded text-blue-600 focus:ring-0"> Tanggal
                         </label>
                         <label class="flex items-center gap-2 text-xs font-bold cursor-pointer hover:text-blue-600">
-                            <input type="checkbox" name="show_event_name" <?= $pc['show_event_name']?'checked':'' ?> class="rounded text-blue-600 focus:ring-0"> Nama Nomor (50M Bebas)
+                            <input type="checkbox" name="show_event_name" <?= $pc['show_event_name']?'checked':'' ?> class="rounded text-blue-600 focus:ring-0"> Nama Nomor
                         </label>
                         <label class="flex items-center gap-2 text-xs font-bold cursor-pointer hover:text-blue-600">
                             <input type="checkbox" name="show_group" <?= $pc['show_group']?'checked':'' ?> class="rounded text-blue-600 focus:ring-0"> Kelompok Umur
                         </label>
                         <label class="flex items-center gap-2 text-xs font-bold cursor-pointer hover:text-blue-600">
-                            <input type="checkbox" name="show_gender" <?= $pc['show_gender']?'checked':'' ?> class="rounded text-blue-600 focus:ring-0"> Gender (Putra/i)
+                            <input type="checkbox" name="show_gender" <?= $pc['show_gender']?'checked':'' ?> class="rounded text-blue-600 focus:ring-0"> Gender
                         </label>
                         <label class="flex items-center gap-2 text-xs font-bold cursor-pointer hover:text-blue-600">
-                            <input type="checkbox" name="show_pool" <?= $pc['show_pool']?'checked':'' ?> class="rounded text-blue-600 focus:ring-0"> Pool (LCM/SCM)
+                            <input type="checkbox" name="show_pool" <?= $pc['show_pool']?'checked':'' ?> class="rounded text-blue-600 focus:ring-0"> Pool
                         </label>
                         <label class="flex items-center gap-2 text-xs font-bold cursor-pointer hover:text-blue-600">
-                            <input type="checkbox" name="show_round" <?= $pc['show_round']?'checked':'' ?> class="rounded text-blue-600 focus:ring-0"> Babak (Final)
+                            <input type="checkbox" name="show_round" <?= $pc['show_round']?'checked':'' ?> class="rounded text-blue-600 focus:ring-0"> Babak
                         </label>
-                        
-                        <button type="submit" class="w-full bg-slate-900 text-white py-2 rounded-lg text-[10px] font-black uppercase mt-3 hover:bg-blue-600">Simpan Pengaturan</button>
+                        <button type="submit" class="w-full bg-slate-900 text-white py-2 rounded-lg text-[10px] font-black uppercase mt-3 hover:bg-blue-600">Simpan</button>
                     </form>
                 </div>
             </details>
 
-            <a href="<?= $globalLink ?>" target="_blank" class="bg-blue-600 text-white pl-6 pr-8 py-4 rounded-[2rem] transition flex items-center gap-4 group <?= $globalDisabled ?>">
+            <a href="generate_all.php" onclick="return confirm('⚠️ PERINGATAN:\nFitur ini akan mengacak ulang lintasan untuk SEMUA nomor.\nLanjutkan?')" 
+               class="bg-indigo-600 text-white pl-6 pr-8 py-4 rounded-[2rem] transition flex items-center gap-4 group hover:-translate-y-1 shadow-xl shadow-indigo-200 hover:bg-indigo-700 h-[72px]">
+                <div class="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center group-hover:bg-white group-hover:text-indigo-600 transition">⚡</div>
+                <div class="text-left">
+                    <span class="block text-[9px] font-bold text-indigo-200 uppercase tracking-widest">Auto Seeding</span>
+                    <span class="block font-black text-sm uppercase tracking-wider">Generate All</span>
+                </div>
+            </a>
+
+            <a href="<?= $globalLink ?>" target="_blank" class="bg-blue-600 text-white pl-6 pr-8 py-4 rounded-[2rem] transition flex items-center gap-4 group <?= $globalDisabled ?> h-[72px]">
                 <div class="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center group-hover:bg-white group-hover:text-blue-600 transition">📄</div>
                 <div class="text-left">
                     <span class="block text-[9px] font-bold text-blue-200 uppercase tracking-widest">Download Full</span>
-                    <span class="block font-black text-sm uppercase tracking-wider">Cetak Buku Acara</span>
+                    <span class="block font-black text-sm uppercase tracking-wider">Cetak Buku</span>
                 </div>
             </a>
+
         </div>
     </div>
 
@@ -119,27 +130,34 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
             placeholder="Cari Nomor Acara, Gaya, atau Jarak... (Contoh: 101, Bebas, 50m)">
     </div>
 
+    <?php if ($error_msg): ?>
+    <div class="max-w-7xl mx-auto mb-6 p-4 bg-red-50 border border-red-200 rounded-2xl text-red-700 flex items-center gap-3">
+        <span class="text-2xl">⚠️</span>
+        <div>
+            <p class="font-bold text-sm uppercase">Terjadi Kesalahan Database</p>
+            <p class="text-xs font-mono mt-1"><?= htmlspecialchars($error_msg) ?></p>
+        </div>
+    </div>
+    <?php endif; ?>
+
     <div class="max-w-7xl mx-auto space-y-4 pb-20" id="eventContainer">
-        <?php if(empty($events)): ?>
+        <?php if(empty($events) && empty($error_msg)): ?>
             <div class="bg-white rounded-[2.5rem] p-10 text-center border border-slate-200 shadow-sm">
                 <p class="font-bold text-slate-400">Belum ada nomor lomba.</p>
             </div>
-        <?php else: ?>
+        <?php elseif(!empty($events)): ?>
             <?php foreach($events as $ev): 
                 $count = $ev['total_athletes']; $isReady = $count > 0; $cat_id = $ev['id'];
                 $cardOpacity = $isReady ? 'opacity-100' : 'opacity-60 grayscale';
                 $cardBorder = $isReady ? 'border-slate-200 hover:shadow-lg bg-white' : 'border-slate-100 bg-slate-50';
                 
                 $genderCode = strtoupper($ev['jenis_kelamin'] ?? 'L'); 
-                if(in_array($genderCode, ['L', 'MALE', 'PUTRA'])) { $bg='bg-blue-50'; $txt='text-blue-600'; $icon='👨'; $lbl='PUTRA'; } 
-                elseif(in_array($genderCode, ['P', 'FEMALE', 'PUTRI'])) { $bg='bg-pink-50'; $txt='text-pink-600'; $icon='👩'; $lbl='PUTRI'; } 
+                if(in_array($genderCode, ['L', 'MALE', 'PUTRA', 'LAKI-LAKI'])) { $bg='bg-blue-50'; $txt='text-blue-600'; $icon='👨'; $lbl='PUTRA'; } 
+                elseif(in_array($genderCode, ['P', 'FEMALE', 'PUTRI', 'PEREMPUAN'])) { $bg='bg-pink-50'; $txt='text-pink-600'; $icon='👩'; $lbl='PUTRI'; } 
                 else { $bg='bg-purple-50'; $txt='text-purple-600'; $icon='👫'; $lbl='MIXED'; }
 
-                $badgeClass = $isReady ? "bg-emerald-50 text-emerald-600 border-emerald-100" : "bg-slate-100 text-slate-400 border-slate-200";
-                $badgeText = $isReady ? "✅ SIAP ($count ATLET)" : "🚫 MENUNGGU DATA";
-
-                // STRING PENCARIAN (Event Number + Name + Stroke + Distance)
-                $searchString = strtolower($ev['event_number'] . " " . $ev['event_name'] . " " . $ev['distance'] . " " . $ev['stroke'] . " " . $ev['age_group']);
+                $ageGroup = isset($ev['age_group']) ? $ev['age_group'] : '-';
+                $searchString = strtolower($ev['event_number'] . " " . $ev['event_name'] . " " . $ev['distance'] . " " . $ev['stroke'] . " " . $ageGroup);
             ?>
 
             <div class="event-item group relative rounded-[2rem] p-5 border transition flex flex-col md:flex-row items-center gap-6 <?= $cardOpacity ?> <?= $cardBorder ?>" 
@@ -147,16 +165,16 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                 
                 <div class="shrink-0 w-20 h-20 rounded-3xl bg-slate-900 text-white flex flex-col items-center justify-center shadow-lg shadow-slate-200 group-hover:scale-105 transition">
                     <span class="text-[9px] font-bold text-slate-400 uppercase">Event</span>
-                    <span class="text-3xl font-black italic"><?= $ev['event_number'] ?></span>
+                    <span class="text-3xl font-black italic"><?= htmlspecialchars($ev['event_number']) ?></span>
                 </div>
 
                 <div class="flex-1 text-center md:text-left">
                     <div class="inline-flex items-center gap-2 mb-1">
                         <span class="px-2 py-1 rounded-md <?= $bg ?> <?= $txt ?> text-[9px] font-black uppercase tracking-widest border border-slate-100"><?= $icon ?> <?= $lbl ?></span>
-                        <span class="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded-md uppercase border border-slate-200"><?= $ev['distance'] ?>M <?= $ev['stroke'] ?></span>
-                        <span class="text-[10px] font-bold text-slate-400 px-1">KU: <?= htmlspecialchars($ev['age_group']) ?></span>
+                        <span class="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded-md uppercase border border-slate-200"><?= htmlspecialchars($ev['distance']) ?>M <?= htmlspecialchars($ev['stroke']) ?></span>
+                        <span class="text-[10px] font-bold text-slate-400 px-1">KU: <?= htmlspecialchars($ageGroup) ?></span>
                     </div>
-                    <h3 class="text-xl font-black text-slate-800 uppercase italic tracking-tight"><?= $ev['event_name'] ?></h3>
+                    <h3 class="text-xl font-black text-slate-800 uppercase italic tracking-tight"><?= htmlspecialchars($ev['event_name']) ?></h3>
                 </div>
 
                 <div class="flex gap-2 w-full md:w-auto">
@@ -190,18 +208,15 @@ document.addEventListener('DOMContentLoaded', function() {
             let hasVisible = false;
 
             items.forEach(item => {
-                // Ambil string pencarian dari attribute data-search
                 const searchData = item.getAttribute('data-search');
-                
-                if(searchData.includes(term)) {
-                    item.style.display = ""; // Tampilkan
+                if(searchData && searchData.includes(term)) {
+                    item.style.display = ""; 
                     hasVisible = true;
                 } else {
-                    item.style.display = "none"; // Sembunyikan
+                    item.style.display = "none"; 
                 }
             });
 
-            // Tampilkan pesan jika tidak ada yang cocok
             if(noResults) {
                 noResults.style.display = hasVisible ? "none" : "block";
             }
