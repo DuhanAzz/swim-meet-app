@@ -45,6 +45,50 @@ function getTeamName($row, $type) {
     }
 }
 
+// --- DATA EVENT ---
+$stmtRace = $pdo->prepare("SELECT * FROM event_numbers WHERE id = ?");
+$stmtRace->execute([$cat_id]);
+$raceInfo = $stmtRace->fetch(PDO::FETCH_ASSOC);
+if (!$raceInfo) die("Nomor lomba tidak ditemukan.");
+
+// AMBIL PROFIL EVENT (UNTUK TAHUN EVENT & DATA KU)
+$eventId = $raceInfo['event_id'] ?? 0; // Pastikan event_id ada di tabel event_numbers
+// Jika event_id kosong, fallback ke organizer_id (meski kurang akurat jika 1 organizer punya banyak event)
+if (empty($eventId)) {
+    $stmtEvent = $pdo->prepare("SELECT * FROM events WHERE user_id = ? ORDER BY id DESC LIMIT 1");
+    $stmtEvent->execute([$raceInfo['organizer_id']]);
+    $eventProfile = $stmtEvent->fetch(PDO::FETCH_ASSOC);
+    $eventId = $eventProfile['id'];
+} else {
+    $stmtEvent = $pdo->prepare("SELECT * FROM events WHERE id = ?");
+    $stmtEvent->execute([$eventId]);
+    $eventProfile = $stmtEvent->fetch(PDO::FETCH_ASSOC);
+}
+
+$event_year = date('Y', strtotime($eventProfile['event_start_date']));
+
+// AMBIL DEFINISI AGE GROUP DARI DATABASE
+$stmtAgeGroups = $pdo->prepare("SELECT * FROM event_age_groups WHERE event_id = ? ORDER BY min_age ASC");
+$stmtAgeGroups->execute([$eventId]);
+$ageGroups = $stmtAgeGroups->fetchAll(PDO::FETCH_ASSOC);
+
+// Helper function untuk menentukan Nama KU berdasarkan Tanggal Lahir
+function getAgeGroupLabel($dob, $eventYear, $ageGroups) {
+    if (empty($dob) || $dob == '0000-00-00') return 'UMUR TIDAK DIKETAHUI';
+    
+    $birthYear = date('Y', strtotime($dob));
+    $age = $eventYear - $birthYear;
+    
+    foreach ($ageGroups as $group) {
+        if ($age >= $group['min_age'] && $age <= $group['max_age']) {
+            return $group['group_name']; // Misal: "KU 3" atau "KU 2019"
+        }
+    }
+    
+    return "DILUAR KATEGORI ($age TH)"; // Fallback jika tidak masuk range manapun
+}
+
+
 // --- PROSES SIMPAN DATA (DATABASE) ---
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
@@ -81,7 +125,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmtRank = $pdo->prepare("UPDATE event_entries SET final_rank = ? WHERE id = ?");
 
         if ($rankModePost === 'overall') {
-            // MODE GABUNGAN
+            // MODE GABUNGAN (OVERALL)
             $valid = []; $invalid = [];
             foreach ($allSwimmers as $s) {
                 if ($s['is_dq'] == 0 && !empty($s['final_time']) && $s['final_time'] != 'NT') {
@@ -101,15 +145,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $msg_success = "Data disimpan! Ranking dihitung GABUNGAN (OVERALL).";
 
         } else {
-            // MODE PER TAHUN
+            // MODE PER KELOMPOK UMUR (SPLIT BY AGE GROUP)
             $groupedSwimmers = [];
             foreach ($allSwimmers as $s) {
-                $year = date('Y', strtotime($s['tanggal_lahir']));
-                $groupedSwimmers[$year][] = $s;
+                // Tentukan Grup berdasarkan tabel event_age_groups
+                $groupName = getAgeGroupLabel($s['tanggal_lahir'], $event_year, $ageGroups);
+                $groupedSwimmers[$groupName][] = $s;
             }
-            foreach ($groupedSwimmers as $year => $swimmersInYear) {
+            
+            // Loop per Grup KU
+            foreach ($groupedSwimmers as $groupName => $swimmersInGroup) {
                 $valid = []; $invalid = [];
-                foreach ($swimmersInYear as $s) {
+                foreach ($swimmersInGroup as $s) {
                     if ($s['is_dq'] == 0 && !empty($s['final_time']) && $s['final_time'] != 'NT') {
                         $s['ms'] = timeToMs($s['final_time']);
                         $valid[] = $s;
@@ -125,7 +172,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 foreach ($invalid as $s) { $stmtRank->execute([NULL, $s['id']]); }
             }
-            $msg_success = "Data disimpan! Ranking dihitung PER TAHUN KELAHIRAN.";
+            $msg_success = "Data disimpan! Ranking dihitung PER KELOMPOK UMUR (DATABASE).";
         }
 
         $pdo->commit();
@@ -133,12 +180,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $pdo->rollBack(); $msg_error = "Gagal menyimpan: " . $e->getMessage();
     }
 }
-
-// --- DATA EVENT ---
-$stmtRace = $pdo->prepare("SELECT * FROM event_numbers WHERE id = ?");
-$stmtRace->execute([$cat_id]);
-$raceInfo = $stmtRace->fetch(PDO::FETCH_ASSOC);
-if (!$raceInfo) die("Nomor lomba tidak ditemukan.");
 
 // NAVIGASI
 $currentOrganizerId = $raceInfo['organizer_id'];
@@ -154,17 +195,15 @@ $rowNext = $stmtNext->fetch(PDO::FETCH_ASSOC);
 $nextUrl = $rowNext ? "input_result.php?category_id=" . $rowNext['id'] : "#";
 $nextClass = $rowNext ? "bg-slate-700 hover:bg-slate-800 text-white" : "bg-slate-200 text-slate-400 cursor-not-allowed pointer-events-none";
 
-// PROFIL
-$eventProfile = [];
-if (!empty($raceInfo['organizer_id'])) {
-    $stmtEvent = $pdo->prepare("SELECT * FROM events WHERE user_id = ? ORDER BY id DESC LIMIT 1");
-    $stmtEvent->execute([$raceInfo['organizer_id']]);
-    $eventProfile = $stmtEvent->fetch(PDO::FETCH_ASSOC);
-}
-
+// VARIABLES HEADER
 $header_title = strtoupper($eventProfile['nama_event'] ?? 'KEJUARAAN RENANG');
 $venue_name   = strtoupper($eventProfile['venue_name'] ?? ($eventProfile['lokasi'] ?? ''));
-$event_date   = !empty($eventProfile['event_start_date']) ? $eventProfile['event_start_date'] : date('Y-m-d');
+$display_date = strtoupper(date('d F Y', strtotime($eventProfile['event_start_date'])));
+
+if(!empty($eventProfile['event_end_date']) && strtotime($eventProfile['event_start_date']) != strtotime($eventProfile['event_end_date'])) {
+    $header_date_range = date('d', strtotime($eventProfile['event_start_date'])) . ' - ' . date('d F Y', strtotime($eventProfile['event_end_date']));
+} else { $header_date_range = $display_date; }
+
 $total_lintasan = (int)($eventProfile['lane_count'] ?? 8);
 $pool_type    = strtoupper($eventProfile['pool_type'] ?? 'LCM');
 $poolSuffix   = ($pool_type == 'SCM') ? ' - SCM' : ' - LCM';
@@ -172,11 +211,6 @@ $participationType = $eventProfile['participation_type'] ?? 'club';
 
 $logo_left  = !empty($eventProfile['logo_left']) ? '../../../public/' . $eventProfile['logo_left'] : null;
 $logo_right = !empty($eventProfile['logo_right']) ? '../../../public/' . $eventProfile['logo_right'] : null;
-$display_date = strtoupper(date('d F Y', strtotime($event_date)));
-$event_year   = date('Y', strtotime($event_date));
-if(!empty($eventProfile['event_end_date']) && strtotime($eventProfile['event_start_date']) != strtotime($eventProfile['event_end_date'])) {
-    $header_date_range = date('d', strtotime($eventProfile['event_start_date'])) . ' - ' . date('d F Y', strtotime($eventProfile['event_end_date']));
-} else { $header_date_range = $display_date; }
 
 $cleanStroke = trim(str_ireplace(['Gaya', 'GAYA'], '', $raceInfo['stroke'] ?? ''));
 $gender_label = (in_array($raceInfo['jenis_kelamin'], ['L','Male','Man'])) ? 'PUTRA' : 'PUTRI';
@@ -184,9 +218,8 @@ $judul_tengah = $raceInfo['distance'] . " M GAYA " . strtoupper($cleanStroke) . 
 $nomor_acara = "#" . $raceInfo['event_number'];
 
 // SPONSOR (Dipakai di Footer)
-$parentEventId = $eventProfile['id'] ?? 0;
 $stmtSpon = $pdo->prepare("SELECT image_path FROM event_sponsors WHERE event_id = ?");
-$stmtSpon->execute([$parentEventId]);
+$stmtSpon->execute([$eventId]);
 $sponsors = $stmtSpon->fetchAll(PDO::FETCH_COLUMN);
 
 // DATA PESERTA
@@ -207,10 +240,11 @@ try {
 $heats = [];
 foreach ($raw_data as $row) { $heats[$row['heat']][$row['lane']] = $row; }
 
-// GROUPING RESULTS
+// GROUPING RESULTS UNTUK TAMPILAN CETAK
 $groupedResults = [];
 
 if ($currentMode === 'overall') {
+    // MODE GABUNGAN
     $kelompokUmurLabel = $raceInfo['age_group'] ?? 'SEMUA UMUR';
     $groupTitle = "KELOMPOK UMUR (" . $kelompokUmurLabel . ")";
 
@@ -225,18 +259,23 @@ if ($currentMode === 'overall') {
         }
     }
 } else {
+    // MODE SPLIT BY AGE GROUP (DATABASE)
     foreach ($raw_data as $row) {
         if (!empty($row['swimmer_id'])) {
-            $year = date('Y', strtotime($row['tanggal_lahir']));
+            // Gunakan fungsi helper yang sama untuk konsistensi tampilan
+            $groupName = getAgeGroupLabel($row['tanggal_lahir'], $event_year, $ageGroups);
+            
             $row['ms_sort'] = 9999999999; 
             if (($row['is_dq']??0) == 1) { $row['ms_sort'] = 9999999999 + 100; } 
             elseif (!empty($row['final_time']) && $row['final_time'] != 'NT') {
                 $row['ms_sort'] = timeToMs($row['final_time']);
             }
-            $groupedResults[$year][] = $row;
+            $groupedResults[$groupName][] = $row;
         }
     }
-    krsort($groupedResults);
+    // Urutkan Nama Grup secara Ascending (Misal: KU 2019, KU 2018...)
+    // Jika nama grup mengandung angka, ksort() biasanya sudah cukup rapi
+    ksort($groupedResults);
 }
 
 foreach ($groupedResults as $key => &$rows) {
@@ -350,7 +389,7 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                         <label for="modeToggle" class="toggle-label block overflow-hidden h-6 rounded-full bg-gray-300 cursor-pointer"></label>
                     </div>
                     <span id="modeLabel" class="text-xs font-bold <?= $currentMode === 'overall' ? 'text-blue-600' : 'text-slate-600' ?>">
-                        <?= $currentMode === 'overall' ? 'GABUNGAN (OVERALL)' : 'PER TAHUN (SPLIT)' ?>
+                        <?= $currentMode === 'overall' ? 'GABUNGAN (OVERALL)' : 'PER KELOMPOK UMUR (SPLIT)' ?>
                     </span>
                 </div>
             </div>
@@ -445,11 +484,9 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                 </div>
 
                 <div class="print-only">
-                    <?php foreach($groupedResults as $groupTitle => $swimmers): 
-                        $headerText = (is_numeric($groupTitle)) ? "KELOMPOK UMUR " . $groupTitle : $groupTitle;
-                    ?>
+                    <?php foreach($groupedResults as $groupTitle => $swimmers): ?>
                     <div class="year-group">
-                        <div class="year-header"><?= $headerText ?></div>
+                        <div class="year-header"><?= $groupTitle ?></div>
                         <table class="rank-table" style="margin-top: 0;">
                             <colgroup><col style="width: 8%;"><col style="width: 30%;"><col style="width: 25%;"><col style="width: 17%;"><col style="width: 20%;"></colgroup>
                             <thead>
@@ -540,7 +577,7 @@ function updateModeInput() {
         label.classList.add('text-blue-600');
     } else {
         hiddenInput.value = 'split';
-        label.innerText = 'PER TAHUN (SPLIT)';
+        label.innerText = 'PER KELOMPOK UMUR (SPLIT)';
         label.classList.remove('text-blue-600');
         label.classList.add('text-slate-600');
     }
