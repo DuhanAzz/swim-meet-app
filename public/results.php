@@ -1,4 +1,5 @@
 <?php
+// FILE: public/results.php
 // 1. KONEKSI DATABASE
 require_once __DIR__ . '/../src/config/database.php';
 if (session_status() === PHP_SESSION_NONE) session_start();
@@ -7,18 +8,23 @@ if (session_status() === PHP_SESSION_NONE) session_start();
 $s = $pdo->query("SELECT * FROM site_settings WHERE id=1")->fetch();
 $heroTitle = $s['hero_title'] ?? 'SWIMMEET CHAMPIONSHIP'; 
 
-// 3. LOGIC PENCARIAN & FILTER DATA
+// 3. LOGIC PENCARIAN & FILTER DATA (REVISI: Tabel Events)
 $search = $_GET['q'] ?? '';
-$sql = "SELECT * FROM users WHERE role = 'admin'";
+
+// Ubah query: Ambil dari tabel 'events', bukan 'users'
+$sql = "SELECT * FROM events WHERE event_status != 'Draft'"; 
 $params = [];
 
 if (!empty($search)) {
-    $sql .= " AND (nama_lengkap LIKE ? OR location LIKE ?)";
+    // Revisi kolom pencarian: nama_lengkap -> event_name, location -> event_location
+    $sql .= " AND (event_name LIKE ? OR event_location LIKE ?)";
     $params[] = "%$search%";
     $params[] = "%$search%";
 }
 
-$sql .= " ORDER BY event_start_date DESC";
+// Revisi Order: event_start_date -> event_date_start
+$sql .= " ORDER BY event_date_start DESC";
+
 $stmt = $pdo->prepare($sql);
 $stmt->execute($params);
 $events = $stmt->fetchAll();
@@ -34,30 +40,12 @@ $events = $stmt->fetchAll();
     <style>
         body { font-family: 'Inter', sans-serif; }
         
-        /* --- LIQUID PRELOADER STYLE (SAMA DENGAN INDEX) --- */
-        #preloader {
-            position: fixed; inset: 0; z-index: 9999;
-            background-color: #0F172A;
-            display: flex; flex-direction: column; align-items: center; justify-content: center;
-        }
+        /* --- LIQUID PRELOADER STYLE --- */
+        #preloader { position: fixed; inset: 0; z-index: 9999; background-color: #0F172A; display: flex; flex-direction: column; align-items: center; justify-content: center; }
         .loader-container { position: relative; width: 150px; height: 150px; }
-        .circle-loader {
-            position: relative; width: 100%; height: 100%;
-            border: 6px solid #1e293b; border-radius: 50%;
-            overflow: hidden; background: #161e31;
-            box-shadow: 0 0 50px rgba(59, 130, 246, 0.2);
-        }
-        .liquid {
-            position: absolute; top: 100%; left: -50%;
-            width: 200%; height: 200%; background-color: #3b82f6;
-            border-radius: 40%; animation: wave 4s infinite linear;
-            transition: top 0.3s ease;
-        }
-        .liquid::after {
-            content: ''; position: absolute; width: 100%; height: 100%;
-            background-color: rgba(59, 130, 246, 0.6);
-            border-radius: 35%; animation: wave 6s infinite linear;
-        }
+        .circle-loader { position: relative; width: 100%; height: 100%; border: 6px solid #1e293b; border-radius: 50%; overflow: hidden; background: #161e31; box-shadow: 0 0 50px rgba(59, 130, 246, 0.2); }
+        .liquid { position: absolute; top: 100%; left: -50%; width: 200%; height: 200%; background-color: #3b82f6; border-radius: 40%; animation: wave 4s infinite linear; transition: top 0.3s ease; }
+        .liquid::after { content: ''; position: absolute; width: 100%; height: 100%; background-color: rgba(59, 130, 246, 0.6); border-radius: 35%; animation: wave 6s infinite linear; }
         @keyframes wave { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         .load-text { margin-top: 30px; color: white; font-weight: 900; letter-spacing: 0.4em; font-size: 12px; text-transform: uppercase; }
         .loader-finish { opacity: 0; visibility: hidden; transition: opacity 0.5s ease, visibility 0.5s; }
@@ -80,11 +68,7 @@ $events = $stmt->fetchAll();
 <body class="bg-slate-50 text-slate-800 flex flex-col min-h-screen">
 
     <div id="preloader">
-        <div class="loader-container">
-            <div class="circle-loader">
-                <div class="liquid" id="liquid-level"></div>
-            </div>
-        </div>
+        <div class="loader-container"><div class="circle-loader"><div class="liquid" id="liquid-level"></div></div></div>
         <div class="load-text">LOADING <span id="load-perc" class="text-blue-500">0%</span></div>
     </div>
 
@@ -100,7 +84,11 @@ $events = $stmt->fetchAll();
                 </div>
                 <div class="flex items-center border-l border-white/20 pl-10">
                     <?php if(isset($_SESSION['user_id'])): 
-                        $dashLink = ($_SESSION['role'] == 'admin') ? '../src/admin/dashboard.php' : '../src/user/dashboard.php';
+                        // REVISI: Link Dashboard sesuai Role
+                        $dashLink = 'dashboard.php';
+                        if($_SESSION['role'] == 'master') $dashLink = '../src/master/dashboard.php';
+                        if($_SESSION['role'] == 'admin') $dashLink = '../src/admin/dashboard.php';
+                        if($_SESSION['role'] == 'user') $dashLink = '../src/user/dashboard.php';
                     ?>
                         <a href="<?= $dashLink ?>" class="bg-blue-600 hover:bg-blue-700 text-white px-10 py-3 rounded-full font-black text-xs uppercase tracking-widest shadow-xl transition transform hover:scale-105">Dashboard</a>
                     <?php else: ?>
@@ -140,11 +128,10 @@ $events = $stmt->fetchAll();
             <div class="grid grid-cols-1 gap-8">
                 <?php foreach($events as $e): 
                     // Cek Status untuk Badge
-                    $status = $e['event_status'] ?? 'Upcoming';
-                    $statusColor = ($status == 'Finished') ? 'bg-slate-600' : (($status == 'Running') ? 'bg-red-600 animate-pulse' : 'bg-emerald-500');
+                    $status = $e['event_status'] ?? 'Registration';
+                    $statusColor = ($status == 'Finished' || $status == 'Closed') ? 'bg-slate-600' : (($status == 'Running') ? 'bg-red-600 animate-pulse' : 'bg-emerald-500');
                     
-                    // Ambil File Dummy (Sesuaikan query ini jika tabel event_results Anda berbeda)
-                    // Disini kita cek apakah ada file Startlist atau Result
+                    // Ambil File Dokumen dari tabel event_results
                     $stmtDoc = $pdo->prepare("SELECT file_path, category FROM event_results WHERE event_id = ?");
                     $stmtDoc->execute([$e['id']]);
                     $docs = $stmtDoc->fetchAll();
@@ -158,7 +145,7 @@ $events = $stmt->fetchAll();
                 ?>
                 <div class="group bg-white rounded-3xl p-8 border border-slate-200 hover:shadow-2xl hover:border-blue-200 transition-all duration-300 flex flex-col md:flex-row md:items-center gap-8 relative overflow-hidden">
                     
-                    <span class="absolute -right-6 -bottom-10 text-[10rem] font-black text-slate-50 italic select-none pointer-events-none group-hover:text-blue-50 transition"><?= date('d', strtotime($e['event_start_date'])) ?></span>
+                    <span class="absolute -right-6 -bottom-10 text-[10rem] font-black text-slate-50 italic select-none pointer-events-none group-hover:text-blue-50 transition"><?= date('d', strtotime($e['event_date_start'])) ?></span>
 
                     <div class="flex-1 relative z-10">
                         <div class="flex items-center gap-3 mb-3">
@@ -166,14 +153,16 @@ $events = $stmt->fetchAll();
                                 <?= $status ?>
                             </span>
                             <span class="text-slate-400 text-[10px] font-bold uppercase tracking-wider">
-                                <?= date('d F Y', strtotime($e['event_start_date'])) ?>
+                                <?= date('d F Y', strtotime($e['event_date_start'])) ?>
                             </span>
                         </div>
+                        
                         <h3 class="text-2xl md:text-3xl font-black uppercase italic text-slate-800 leading-none mb-2 group-hover:text-blue-600 transition">
-                            <?= htmlspecialchars($e['nama_lengkap']) ?>
+                            <?= htmlspecialchars($e['event_name']) ?>
                         </h3>
+                        
                         <p class="text-slate-500 font-bold text-xs uppercase flex items-center gap-1">
-                            <span>📍</span> <?= htmlspecialchars($e['location']) ?>
+                            <span>📍</span> <?= htmlspecialchars($e['event_location']) ?>
                         </p>
                     </div>
 
@@ -243,7 +232,7 @@ $events = $stmt->fetchAll();
             const preloader = document.getElementById('preloader');
             let progress = 0;
             const interval = setInterval(() => {
-                progress += Math.floor(Math.random() * 20) + 10; // Lebih cepat sedikit dari index
+                progress += Math.floor(Math.random() * 20) + 10;
                 if (progress >= 100) { 
                     progress = 100; 
                     clearInterval(interval); 
@@ -258,7 +247,7 @@ $events = $stmt->fetchAll();
         const navbar = document.getElementById('navbar');
         const logo = document.getElementById('nav-logo');
         window.addEventListener('scroll', () => { 
-            if(window.scrollY > 20) { // Trigger lebih cepat karena header pendek
+            if(window.scrollY > 20) { 
                 navbar.classList.add('scrolled'); 
                 if(logo) logo.classList.replace('h-24', 'h-16'); 
             } 

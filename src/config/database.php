@@ -18,3 +18,14 @@ try {
     die("DB Error: " . $e->getMessage());
 }
 // END OF FILE - DO NOT ADD CLOSING TAG
+// Tambahkan fungsi ini di paling bawah file config/database.php
+
+function writeLog($pdo, $userId, $action, $targetId, $desc) {
+    try {
+        $stmt = $pdo->prepare("INSERT INTO system_logs (user_id, action_type, target_id, description, ip_address) VALUES (?, ?, ?, ?, ?)");
+        $ip = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
+        $stmt->execute([$userId, $action, $targetId, $desc, $ip]);
+    } catch (Exception $e) {
+        // Silent fail: Jangan sampai error log mengganggu fungsi utama
+    }
+}
