@@ -1,13 +1,27 @@
 <?php
+// FILE: public/events.php
 // 1. KONEKSI & SESSION
 require_once __DIR__ . '/../src/config/database.php';
 if (session_status() === PHP_SESSION_NONE) session_start();
 
-// 2. LOGIC DATA
-// Ambil semua user dengan role 'admin' (Penyelenggara Lomba)
-// Urutkan berdasarkan tanggal lomba (Terbaru di atas)
-$stmt = $pdo->query("SELECT id, nama_lengkap, location, event_start_date, event_status, profile_image FROM users WHERE role = 'admin' ORDER BY event_start_date DESC");
-$events = $stmt->fetchAll();
+// 2. LOGIC DATA (REVISI QUERY)
+// Mengambil data dari tabel 'events', join ke 'users' untuk ambil foto profil penyelenggara
+// Mengubah nama kolom user.photo menjadi 'profile_image' agar HTML di bawah tidak perlu banyak ubahan
+$sql = "SELECT 
+            e.id, 
+            e.event_name, 
+            e.event_location, 
+            e.event_date_start, 
+            e.event_status, 
+            u.photo as profile_image 
+        FROM events e 
+        LEFT JOIN users u ON e.created_by = u.id 
+        WHERE e.event_status != 'Draft' 
+        ORDER BY e.event_date_start ASC";
+
+$stmt = $pdo->prepare($sql);
+$stmt->execute();
+$events = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 // Helper Function: Cek File PDF
 function getDoc($pdo, $id, $cat) {
@@ -70,7 +84,11 @@ function getDoc($pdo, $id, $cat) {
                 </div>
                 <div class="flex items-center border-l border-white/20 pl-10">
                     <?php if(isset($_SESSION['user_id'])): 
-                        $dashLink = ($_SESSION['role'] == 'admin') ? '../src/admin/dashboard.php' : '../src/user/dashboard.php';
+                        // REVISI LINK DASHBOARD
+                        $dashLink = 'dashboard.php';
+                        if($_SESSION['role'] == 'master') $dashLink = '../src/master/dashboard.php';
+                        if($_SESSION['role'] == 'admin') $dashLink = '../src/admin/dashboard.php';
+                        if($_SESSION['role'] == 'user') $dashLink = '../src/user/dashboard.php';
                     ?>
                         <a href="<?= $dashLink ?>" class="bg-blue-600 hover:bg-blue-700 text-white px-10 py-3 rounded-full font-black text-xs uppercase tracking-widest shadow-xl transition transform hover:scale-105">Dashboard</a>
                     <?php else: ?>
@@ -108,19 +126,19 @@ function getDoc($pdo, $id, $cat) {
                     
                     // Logic Tampilan Status
                     $status = $ev['event_status'] ?? 'Registration';
-                    $isClosed = ($status == 'Finished');
+                    $isClosed = ($status == 'Finished' || $status == 'Closed');
                     
                     // Warna Badge
                     $badgeColor = 'bg-emerald-500';
                     $badgeText = 'Registration Open';
                     if($status == 'Running') { $badgeColor = 'bg-red-600 animate-pulse'; $badgeText = 'Live Now'; }
-                    if($status == 'Finished') { $badgeColor = 'bg-slate-600'; $badgeText = 'Event Closed'; }
+                    if($isClosed) { $badgeColor = 'bg-slate-600'; $badgeText = 'Event Closed'; }
                 ?>
                 
                 <div class="bg-white p-8 md:p-10 rounded-[2.5rem] border border-slate-200 shadow-xl shadow-slate-200/50 hover:shadow-2xl hover:border-blue-300 transition-all duration-300 group flex flex-col md:flex-row gap-8 items-start relative overflow-hidden">
                     
                     <div class="absolute -right-6 -top-6 text-[120px] font-black text-slate-50 italic select-none pointer-events-none group-hover:text-blue-50 transition leading-none">
-                        <?= date('d', strtotime($ev['event_start_date'])) ?>
+                        <?= date('d', strtotime($ev['event_date_start'])) ?>
                     </div>
 
                     <div class="w-full md:w-32 md:h-32 bg-slate-100 rounded-3xl flex items-center justify-center text-4xl shrink-0 overflow-hidden shadow-inner border border-slate-100 relative z-10">
@@ -137,17 +155,17 @@ function getDoc($pdo, $id, $cat) {
                                 <?= $badgeText ?>
                             </span>
                             <span class="text-slate-400 text-[10px] font-bold uppercase tracking-wider">
-                                <?= date('F Y', strtotime($ev['event_start_date'])) ?>
+                                <?= date('F Y', strtotime($ev['event_date_start'])) ?>
                             </span>
                         </div>
                         
                         <h3 class="text-2xl md:text-3xl font-black uppercase text-slate-800 leading-none mb-3 italic group-hover:text-blue-600 transition">
-                            <?= htmlspecialchars($ev['nama_lengkap']) ?>
+                            <?= htmlspecialchars($ev['event_name']) ?>
                         </h3>
                         
                         <div class="flex items-center gap-2 text-slate-500 font-bold text-xs uppercase tracking-wider">
                             <span class="text-lg">📍</span> 
-                            <span><?= htmlspecialchars($ev['location']) ?></span>
+                            <span><?= htmlspecialchars($ev['event_location']) ?></span>
                         </div>
                     </div>
 

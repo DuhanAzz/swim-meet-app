@@ -1,197 +1,266 @@
 <?php
+// FILE: src/master/dashboard.php
 session_start();
-require_once __DIR__ . '/../../src/config/database.php';
 
+// --- 1. KONEKSI DATABASE ---
+require_once __DIR__ . '/../config/database.php';
+
+// --- 2. CEK AKSES MASTER ---
 if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'master') {
     header("Location: ../../public/login.php"); exit;
 }
 
-// --- 1. STATISTIK UTAMA (DATA GLOBAL) ---
-$totalEO = $pdo->query("SELECT COUNT(*) FROM users WHERE role = 'admin'")->fetchColumn();
-$totalClub = $pdo->query("SELECT COUNT(*) FROM users WHERE role = 'user'")->fetchColumn();
-$totalAtlet = $pdo->query("SELECT COUNT(*) FROM swimmers")->fetchColumn();
-$totalEntries = $pdo->query("SELECT COUNT(*) FROM event_entries")->fetchColumn();
+// --- 3. LOGIC DATA (DATA GATHERING) ---
+$stats = [
+    'eo' => 0,
+    'clubs' => 0,
+    'athletes' => 0,
+    'entries' => 0,
+    'revenue' => 0
+];
+$liveEvents = [];
+$recentUsers = [];
+$systemStatus = 0; // 0: Online, 1: Maintenance
 
-// --- 2. CEK EVENT YANG SEDANG BERLANGSUNG (LIVE) ---
-$today = date('Y-m-d');
-$stmtLive = $pdo->prepare("SELECT * FROM users WHERE role = 'admin' AND event_start_date <= ? AND (event_end_date >= ? OR event_end_date IS NULL) ORDER BY event_start_date ASC");
-$stmtLive->execute([$today, $today]);
-$liveEvents = $stmtLive->fetchAll();
+try {
+    // A. Statistik Dasar
+    $stats['eo']       = $pdo->query("SELECT COUNT(*) FROM users WHERE role = 'admin'")->fetchColumn();
+    $stats['clubs']    = $pdo->query("SELECT COUNT(*) FROM users WHERE role = 'user'")->fetchColumn();
+    $stats['athletes'] = $pdo->query("SELECT COUNT(*) FROM swimmers")->fetchColumn();
+    
+    // Hitung Entries (Gabungan Aktif + Arsip jika ada)
+    $countActive  = $pdo->query("SELECT COUNT(*) FROM event_entries")->fetchColumn();
+    $countArchive = 0;
+    try {
+        $countArchive = $pdo->query("SELECT COUNT(*) FROM event_entries_archive")->fetchColumn();
+    } catch (Exception $e) { /* Tabel arsip mungkin belum dibuat, abaikan */ }
+    $stats['entries'] = $countActive + $countArchive;
 
-// --- 3. PENGATURAN HALAMAN PUBLIK ---
-$webSet = $pdo->query("SELECT * FROM site_settings WHERE id=1")->fetch();
-$heroTitle = $webSet['hero_title'] ?? 'SwimMeet Competition System';
-$heroImg = $webSet['hero_image'] ?? '';
+    // B. Statistik Keuangan (NEW FEATURE)
+    // Ambil total uang yang statusnya 'Paid'
+    try {
+        $stats['revenue'] = $pdo->query("SELECT SUM(amount) FROM payments WHERE status = 'Paid'")->fetchColumn() ?: 0;
+    } catch (Exception $e) { /* Abaikan jika tabel payments belum ada */ }
 
-// --- 4. AKTIVITAS SISTEM TERBARU (Gabungan Pendaftaran & User) ---
-$recentActivities = $pdo->query("SELECT u.nama_lengkap, u.role, u.created_at, u.username
-                                 FROM users u 
-                                 ORDER BY u.created_at DESC LIMIT 6")->fetchAll();
+    // C. Cek Status Maintenance & Web Settings
+    $settings = $pdo->query("SELECT * FROM site_settings WHERE id=1")->fetch();
+    $systemStatus = $settings['maintenance_mode'] ?? 0;
+    $heroTitle    = $settings['app_name'] ?? 'SwimMeet App';
 
+    // D. Event Live / Mendatang (Hanya yang BUKAN Draft)
+    $sqlLive = "
+        SELECT e.*, u.nama_lengkap as eo_name 
+        FROM events e 
+        LEFT JOIN users u ON e.created_by = u.id 
+        WHERE e.event_status != 'Draft' 
+        AND e.event_date_start >= CURDATE()
+        ORDER BY e.event_date_start ASC 
+        LIMIT 3
+    ";
+    $liveEvents = $pdo->query($sqlLive)->fetchAll();
+
+    // E. User Terbaru (Gabung Admin EO & Klub)
+    $sqlRecent = "
+        SELECT id, username, role, created_at, nama_lengkap, email
+        FROM users 
+        ORDER BY created_at DESC 
+        LIMIT 5
+    ";
+    $recentUsers = $pdo->query($sqlRecent)->fetchAll();
+
+} catch (PDOException $e) {
+    die("Database Error: " . $e->getMessage());
+}
+
+// --- 4. TAMPILAN ---
 include __DIR__ . '/../../views/layout/topbar.php'; 
 include __DIR__ . '/../../views/layout/sidebar.php'; 
 ?>
 
 <div class="p-6 sm:ml-64 pt-24 bg-slate-50 min-h-screen font-sans">
     
-    <div class="flex flex-col xl:flex-row justify-between items-start xl:items-center mb-10 gap-6">
+    <div class="flex flex-col xl:flex-row justify-between items-start xl:items-center mb-8 gap-6">
         <div>
-            <h1 class="text-4xl font-black text-slate-900 uppercase italic tracking-tighter leading-none">Master Control</h1>
-            <p class="text-sm text-slate-500 font-bold uppercase tracking-widest mt-2">Pusat Kendali Ekosistem Digital SwimMeet</p>
+            <h1 class="text-3xl font-black text-slate-800 uppercase italic tracking-tighter">
+                Master Dashboard
+            </h1>
+            <p class="text-sm text-slate-500 font-medium">
+                Selamat Datang, Super Admin! Berikut laporan sistem hari ini.
+            </p>
         </div>
-        <div class="flex flex-wrap gap-3">
-            <a href="settings/backup.php" class="bg-white border border-slate-200 text-slate-700 px-5 py-3 rounded-2xl font-black text-[10px] uppercase hover:bg-slate-900 hover:text-white transition shadow-sm flex items-center gap-2">
-                <span>💾</span> Backup Database
-            </a>
-            <a href="settings/public_page.php" class="bg-blue-600 text-white px-5 py-3 rounded-2xl font-black text-[10px] uppercase hover:bg-blue-700 transition shadow-lg shadow-blue-200 flex items-center gap-2">
-                <span>🌐</span> Kelola Landing Page
-            </a>
-        </div>
-    </div>
-
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
         
-        <div class="bg-slate-900 rounded-[2rem] p-8 text-white shadow-2xl relative overflow-hidden group">
-            <div class="absolute -right-4 -top-4 opacity-10 group-hover:scale-110 transition duration-500">
-                <svg class="w-32 h-32" fill="currentColor" viewBox="0 0 20 20"><path d="M5 4a2 2 0 012-2h6a2 2 0 012 2v14l-5-2.5L5 18V4z"></path></svg>
-            </div>
-            <p class="text-slate-400 text-[10px] font-black uppercase tracking-[0.2em] mb-2">Kompetisi Live</p>
-            <div class="flex items-end gap-2">
-                <h2 class="text-5xl font-black italic"><?= count($liveEvents) ?></h2>
-                <span class="text-xs font-bold text-emerald-400 mb-2 uppercase animate-pulse">● Active</span>
-            </div>
-        </div>
-
-        <div class="bg-white rounded-[2rem] p-8 border border-slate-200 shadow-sm group hover:border-blue-500 transition-all duration-500">
-            <p class="text-slate-400 text-[10px] font-black uppercase tracking-[0.2em] mb-4">Total Atlet Terdaftar</p>
-            <div class="flex justify-between items-center">
-                <h2 class="text-4xl font-black text-slate-900 italic"><?= number_format($totalAtlet) ?></h2>
-                <div class="w-12 h-12 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center text-2xl group-hover:bg-blue-600 group-hover:text-white transition">🏊</div>
-            </div>
-        </div>
-
-        <div class="bg-white rounded-[2rem] p-8 border border-slate-200 shadow-sm group hover:border-emerald-500 transition-all duration-500">
-            <p class="text-slate-400 text-[10px] font-black uppercase tracking-[0.2em] mb-4">Klub / Sekolah</p>
-            <div class="flex justify-between items-center">
-                <h2 class="text-4xl font-black text-slate-900 italic"><?= $totalClub ?></h2>
-                <div class="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center text-2xl group-hover:bg-emerald-600 group-hover:text-white transition">🏢</div>
-            </div>
-        </div>
-
-        <div class="bg-white rounded-[2rem] p-8 border border-slate-200 shadow-sm group hover:border-purple-500 transition-all duration-500">
-            <p class="text-slate-400 text-[10px] font-black uppercase tracking-[0.2em] mb-4">Total Partisipasi</p>
-            <div class="flex justify-between items-center">
-                <h2 class="text-4xl font-black text-slate-900 italic"><?= number_format($totalEntries) ?></h2>
-                <div class="w-12 h-12 bg-purple-50 text-purple-600 rounded-2xl flex items-center justify-center text-2xl group-hover:bg-purple-600 group-hover:text-white transition">📈</div>
-            </div>
+        <div class="flex gap-3">
+            <a href="maintenance/system_health.php" class="bg-white border border-slate-200 text-slate-600 px-4 py-2 rounded-xl font-bold text-xs uppercase hover:bg-slate-100 transition shadow-sm flex items-center gap-2">
+                <span>🛡️</span> System Health
+            </a>
+            <a href="settings/global_config.php" class="bg-slate-800 text-white px-4 py-2 rounded-xl font-bold text-xs uppercase hover:bg-slate-900 transition shadow-lg flex items-center gap-2">
+                <span>⚙️</span> Config
+            </a>
         </div>
     </div>
 
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-10">
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         
-        <div class="bg-white rounded-[2.5rem] shadow-sm border border-slate-200 p-8 flex flex-col">
-            <div class="flex justify-between items-center mb-6">
-                <h3 class="font-black text-slate-800 uppercase italic text-sm tracking-widest">Public Landing Page</h3>
-                <span class="bg-emerald-500 text-white px-3 py-1 rounded-full text-[8px] font-black uppercase">Live</span>
+        <div class="bg-gradient-to-br from-emerald-600 to-teal-800 rounded-2xl p-6 text-white shadow-lg relative overflow-hidden group">
+            <div class="relative z-10">
+                <p class="text-emerald-100 text-[10px] font-black uppercase tracking-widest mb-1">Total Pendapatan</p>
+                <h2 class="text-2xl font-black">Rp <?= number_format($stats['revenue'], 0, ',', '.') ?></h2>
+                <div class="mt-4 text-[10px] font-bold bg-white/20 inline-block px-2 py-1 rounded">All Events</div>
             </div>
-            
-            <div class="relative w-full aspect-video rounded-[2rem] overflow-hidden bg-slate-900 mb-6 group cursor-pointer">
-                <?php if($heroImg): ?>
-                    <img src="../../public/<?= $heroImg ?>" class="w-full h-full object-cover opacity-50 group-hover:scale-110 transition duration-700">
-                <?php else: ?>
-                    <div class="w-full h-full bg-gradient-to-br from-slate-700 to-slate-900"></div>
-                <?php endif; ?>
-                <div class="absolute inset-0 flex flex-col items-center justify-center p-6 text-center">
-                    <p class="text-white font-black text-xs uppercase tracking-[0.2em] drop-shadow-lg"><?= htmlspecialchars($heroTitle) ?></p>
-                </div>
-            </div>
-
-            <div class="space-y-4">
-                <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                    <p class="text-[10px] font-bold text-slate-500 uppercase">Logo Sistem</p>
-                    <p class="text-xs font-black text-slate-800 uppercase mt-1">SwimMeet Default Logo</p>
-                </div>
-                <a href="settings/public_page.php" class="block w-full text-center py-4 rounded-2xl bg-slate-100 text-slate-600 text-[10px] font-black uppercase hover:bg-slate-900 hover:text-white transition tracking-widest">Konfigurasi Visual</a>
+            <div class="absolute -right-4 -bottom-4 opacity-10 group-hover:scale-110 transition duration-500 text-white">
+                <svg class="w-24 h-24" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1.41 16.09V20h-2.67v-1.93c-1.71-.36-3.15-1.46-3.27-3.4h1.96c.1 1.05 1.18 1.91 2.53 1.91 1.29 0 2.13-.81 2.13-1.88 0-1.1-.68-1.57-1.75-2.25-1.55-.98-2.69-1.66-2.69-3.5 0-1.81 1.4-2.97 3.09-3.32V4h2.67v1.93c1.71.36 3.15 1.46 3.27 3.4h-1.96c-.1-1.05-1.18-1.91-2.53-1.91-1.29 0-2.13.81-2.13 1.88 0 1.1.68 1.57 1.75 2.25 1.55.98 2.69 1.66 2.69 3.5 0 1.81-1.4 2.97-3.09 3.32z"/></svg>
             </div>
         </div>
 
-        <div class="lg:col-span-2 bg-white rounded-[2.5rem] shadow-sm border border-slate-200 p-8">
-            <div class="flex justify-between items-center mb-8">
-                <h3 class="font-black text-slate-800 uppercase italic text-sm tracking-widest flex items-center gap-3">
-                    <span class="animate-ping w-2 h-2 bg-red-500 rounded-full"></span>
-                    Kompetisi Berjalan
-                </h3>
-                <a href="users/index.php?role=admin" class="text-[10px] font-black text-blue-600 uppercase hover:underline">Kelola Semua EO &rarr;</a>
-            </div>
-            
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <?php if(empty($liveEvents)): ?>
-                    <div class="col-span-2 p-12 text-center bg-slate-50 rounded-[2rem] border-2 border-dashed border-slate-200">
-                        <p class="text-sm text-slate-400 font-black uppercase tracking-widest italic">Belum ada kompetisi aktif hari ini.</p>
-                    </div>
-                <?php else: ?>
-                    <?php foreach($liveEvents as $ev): ?>
-                    <div class="group p-6 bg-white border border-slate-100 rounded-[2rem] hover:shadow-xl hover:border-blue-500 transition-all duration-300">
-                        <div class="flex justify-between items-start mb-4">
-                            <span class="bg-blue-50 text-blue-600 px-3 py-1 rounded-full text-[8px] font-black uppercase italic tracking-tighter">Event Organizer</span>
-                            <span class="text-[9px] font-bold text-slate-300">#<?= $ev['id'] ?></span>
-                        </div>
-                        <h4 class="font-black text-slate-800 text-sm uppercase leading-tight group-hover:text-blue-600 transition"><?= htmlspecialchars($ev['nama_lengkap']) ?></h4>
-                        <div class="mt-4 flex flex-col gap-1">
-                            <div class="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase">
-                                <span>📍</span> <?= htmlspecialchars($ev['location']) ?>
-                            </div>
-                            <div class="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase">
-                                <span>📅</span> <?= date('d M Y', strtotime($ev['event_start_date'])) ?>
-                            </div>
-                        </div>
-                    </div>
-                    <?php endforeach; ?>
-                <?php endif; ?>
+        <div class="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm hover:border-blue-400 transition">
+            <div class="flex justify-between items-start">
+                <div>
+                    <p class="text-slate-400 text-[10px] font-black uppercase tracking-widest mb-1">Database Atlet</p>
+                    <h2 class="text-3xl font-black text-slate-800"><?= number_format($stats['athletes']) ?></h2>
+                </div>
+                <div class="w-10 h-10 bg-blue-50 text-blue-600 rounded-lg flex items-center justify-center text-xl">🏊</div>
             </div>
         </div>
+
+        <div class="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm hover:border-purple-400 transition">
+            <div class="flex justify-between items-start">
+                <div>
+                    <p class="text-slate-400 text-[10px] font-black uppercase tracking-widest mb-1">Total User</p>
+                    <h2 class="text-3xl font-black text-slate-800"><?= number_format($stats['eo'] + $stats['clubs']) ?></h2>
+                    <p class="text-[10px] text-slate-400 mt-1"><?= $stats['clubs'] ?> Klub / <?= $stats['eo'] ?> EO</p>
+                </div>
+                <div class="w-10 h-10 bg-purple-50 text-purple-600 rounded-lg flex items-center justify-center text-xl">👥</div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm hover:border-slate-400 transition">
+            <div class="flex justify-between items-start">
+                <div>
+                    <p class="text-slate-400 text-[10px] font-black uppercase tracking-widest mb-1">Status Server</p>
+                    <?php if($systemStatus == 0): ?>
+                        <h2 class="text-xl font-black text-emerald-600 flex items-center gap-2">
+                            <span class="w-3 h-3 bg-emerald-500 rounded-full animate-pulse"></span> ONLINE
+                        </h2>
+                        <p class="text-[10px] text-slate-400 mt-1">Publik dapat mengakses.</p>
+                    <?php else: ?>
+                        <h2 class="text-xl font-black text-red-600 flex items-center gap-2">
+                            <span class="w-3 h-3 bg-red-500 rounded-full animate-pulse"></span> MAINTENANCE
+                        </h2>
+                        <p class="text-[10px] text-slate-400 mt-1">Hanya Master yang bisa akses.</p>
+                    <?php endif; ?>
+                </div>
+                <div class="w-10 h-10 bg-slate-100 text-slate-600 rounded-lg flex items-center justify-center text-xl">🖥️</div>
+            </div>
+        </div>
+
     </div>
 
-    <div class="bg-white rounded-[2.5rem] shadow-sm border border-slate-200 overflow-hidden">
-        <div class="p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/30">
-            <h3 class="font-black text-slate-800 uppercase italic text-sm tracking-widest">Log Aktivitas Pengguna</h3>
-            <div class="flex gap-2">
-                <span class="bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-[8px] font-black uppercase">EO Active: <?= $totalEO ?></span>
-                <span class="bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full text-[8px] font-black uppercase">Clubs: <?= $totalClub ?></span>
-            </div>
-        </div>
-        <div class="overflow-x-auto">
-            <table class="w-full text-left text-sm">
-                <thead class="bg-white text-slate-400 font-black uppercase text-[10px] border-b border-slate-100">
-                    <tr>
-                        <th class="px-8 py-5 tracking-widest">Identitas</th>
-                        <th class="px-8 py-5 tracking-widest">Tingkat Akses</th>
-                        <th class="px-8 py-5 tracking-widest">Username</th>
-                        <th class="px-8 py-5 text-right tracking-widest">Tanggal Bergabung</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-slate-50">
-                    <?php foreach($recentActivities as $u): ?>
-                    <tr class="hover:bg-slate-50/50 transition duration-300">
-                        <td class="px-8 py-5">
-                            <div class="font-black text-slate-800 uppercase italic"><?= htmlspecialchars($u['nama_lengkap']) ?></div>
-                        </td>
-                        <td class="px-8 py-5">
-                            <span class="px-4 py-1.5 rounded-full text-[9px] font-black uppercase tracking-wider
-                                <?= $u['role']=='admin'?'bg-slate-900 text-white':($u['role']=='user'?'bg-blue-50 text-blue-600 border border-blue-100':'bg-slate-100 text-slate-500') ?>">
-                                <?= $u['role'] == 'admin' ? 'Event Organizer' : 'Klub Member' ?>
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        
+        <div class="lg:col-span-2 space-y-8">
+            
+            <div class="bg-white rounded-[2rem] shadow-sm border border-slate-200 p-8">
+                <div class="flex justify-between items-center mb-6">
+                    <h3 class="font-black text-slate-800 uppercase italic text-sm tracking-widest">🗓️ Kompetisi Mendatang</h3>
+                    <a href="events/index.php" class="text-[10px] font-bold text-blue-600 hover:underline">Lihat Semua</a>
+                </div>
+
+                <div class="space-y-4">
+                    <?php if(empty($liveEvents)): ?>
+                        <div class="text-center py-8 text-slate-400 text-xs italic bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                            Tidak ada event aktif dalam waktu dekat.
+                        </div>
+                    <?php else: ?>
+                        <?php foreach($liveEvents as $ev): ?>
+                        <div class="flex items-center justify-between p-4 bg-slate-50 border border-slate-100 rounded-2xl hover:bg-white hover:shadow-md transition group">
+                            <div class="flex items-center gap-4">
+                                <div class="w-12 h-12 bg-blue-100 text-blue-600 rounded-xl flex flex-col items-center justify-center font-bold text-[10px] leading-tight shadow-sm">
+                                    <span><?= date('M', strtotime($ev['event_date_start'])) ?></span>
+                                    <span class="text-lg"><?= date('d', strtotime($ev['event_date_start'])) ?></span>
+                                </div>
+                                <div>
+                                    <h4 class="font-black text-slate-800 text-sm uppercase group-hover:text-blue-600 transition"><?= htmlspecialchars($ev['event_name']) ?></h4>
+                                    <p class="text-[10px] text-slate-500 font-bold uppercase">📍 <?= htmlspecialchars($ev['event_location']) ?></p>
+                                </div>
+                            </div>
+                            <span class="hidden sm:block px-3 py-1 bg-emerald-100 text-emerald-700 rounded-full text-[9px] font-black uppercase tracking-wide">
+                                <?= $ev['event_status'] ?>
                             </span>
-                        </td>
-                        <td class="px-8 py-5 font-mono text-xs text-slate-400">@<?= htmlspecialchars($u['username']) ?></td>
-                        <td class="px-8 py-5 text-right text-slate-400 font-bold text-xs italic"><?= date('d/m/Y H:i', strtotime($u['created_at'])) ?></td>
-                    </tr>
-                    <?php endforeach; ?>
-                </tbody>
-            </table>
+                        </div>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden">
+                <div class="bg-slate-50 px-8 py-4 border-b border-slate-100">
+                    <h3 class="font-black text-slate-800 uppercase italic text-sm tracking-widest">👤 Registrasi Terbaru</h3>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-sm">
+                        <tbody class="divide-y divide-slate-50">
+                            <?php foreach($recentUsers as $u): ?>
+                            <tr class="hover:bg-blue-50/30 transition">
+                                <td class="px-8 py-4">
+                                    <div class="font-bold text-slate-700"><?= htmlspecialchars($u['nama_lengkap']) ?></div>
+                                    <div class="text-[10px] text-slate-400">@<?= htmlspecialchars($u['username']) ?></div>
+                                </td>
+                                <td class="px-8 py-4">
+                                    <span class="px-2 py-1 rounded text-[9px] font-black uppercase 
+                                        <?= $u['role']=='admin' ? 'bg-slate-800 text-white' : 'bg-blue-100 text-blue-600' ?>">
+                                        <?= $u['role'] == 'admin' ? 'Event Org' : 'Club' ?>
+                                    </span>
+                                </td>
+                                <td class="px-8 py-4 text-right text-[10px] text-slate-400 font-mono">
+                                    <?= date('d/m/Y H:i', strtotime($u['created_at'])) ?>
+                                </td>
+                            </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
         </div>
-        <div class="p-6 bg-slate-50/50 text-center">
-            <a href="users/index.php" class="text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-blue-600 transition">Lihat Seluruh Database Pengguna &rarr;</a>
+
+        <div class="space-y-8">
+            
+            <div class="bg-slate-800 rounded-[2rem] p-8 text-white shadow-xl">
+                <h3 class="font-black uppercase italic text-sm tracking-widest mb-6 text-slate-400">⚡ Akses Cepat</h3>
+                <div class="grid grid-cols-2 gap-4">
+                    <a href="users/index.php" class="bg-slate-700 hover:bg-blue-600 p-4 rounded-xl text-center transition group">
+                        <div class="text-2xl mb-2 group-hover:scale-110 transition">👥</div>
+                        <span class="text-[9px] font-bold uppercase tracking-wider">User Manager</span>
+                    </a>
+                    <a href="finance/revenue.php" class="bg-slate-700 hover:bg-emerald-600 p-4 rounded-xl text-center transition group">
+                        <div class="text-2xl mb-2 group-hover:scale-110 transition">💰</div>
+                        <span class="text-[9px] font-bold uppercase tracking-wider">Keuangan</span>
+                    </a>
+                    <a href="maintenance/data_cleanup.php" class="bg-slate-700 hover:bg-red-600 p-4 rounded-xl text-center transition group">
+                        <div class="text-2xl mb-2 group-hover:scale-110 transition">🧹</div>
+                        <span class="text-[9px] font-bold uppercase tracking-wider">Bersihkan Data</span>
+                    </a>
+                    <a href="settings/public_page.php" class="bg-slate-700 hover:bg-indigo-600 p-4 rounded-xl text-center transition group">
+                        <div class="text-2xl mb-2 group-hover:scale-110 transition">🎨</div>
+                        <span class="text-[9px] font-bold uppercase tracking-wider">Tampilan Web</span>
+                    </a>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-[2rem] border border-slate-200 p-8 text-center">
+                <div class="w-16 h-16 bg-slate-100 rounded-full mx-auto flex items-center justify-center text-3xl mb-4">
+                    🚀
+                </div>
+                <h4 class="font-black text-slate-800 uppercase tracking-tight"><?= htmlspecialchars($heroTitle) ?></h4>
+                <p class="text-xs text-slate-500 mt-2">Versi 1.0.0 (Beta)</p>
+                <div class="mt-6 pt-6 border-t border-slate-100">
+                    <p class="text-[10px] text-slate-400 uppercase font-bold">Waktu Server</p>
+                    <p class="text-lg font-mono font-bold text-slate-700"><?= date('H:i') ?> <span class="text-xs text-slate-400">WIB</span></p>
+                </div>
+            </div>
+
         </div>
+
     </div>
 
 </div>

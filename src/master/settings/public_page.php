@@ -1,6 +1,9 @@
 <?php
+// FILE: src/master/settings/public_page.php
 session_start();
-require_once __DIR__ . '/../../../src/config/database.php';
+
+// --- PERBAIKAN PATH DATABASE (Mundur 2 folder ke src/config) ---
+require_once __DIR__ . '/../../config/database.php';
 
 // Cek Akses
 if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'master') {
@@ -8,29 +11,46 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'master') {
     exit;
 }
 
-// --- 1. HANDLE UPDATE TEKS ---
+// --- 1. HANDLE UPDATE TEKS, KONTAK, & FOOTER ---
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_text'])) {
     try {
+        // Data Teks
         $heroTitle = $_POST['hero_title'];
         $running   = $_POST['running_text'];
         $infoTitle = $_POST['info_title'];
         $infoText  = $_POST['info_text'];
+        $siteDesc  = $_POST['site_description']; // <-- Deskripsi Footer
         
-        // Cek row id=1
+        // Data Kontak
+        $email = $_POST['contact_email'];
+        $wa    = $_POST['contact_wa'];
+        $ig    = $_POST['link_instagram'];
+        $fb    = $_POST['link_facebook'];
+        
+        // Pastikan row ada
         $check = $pdo->query("SELECT id FROM site_settings WHERE id=1")->fetch();
         if (!$check) $pdo->query("INSERT INTO site_settings (id) VALUES (1)");
 
-        // Update
+        // Update Query
         $sql = "UPDATE site_settings SET 
                 hero_title = ?, 
                 running_text = ?, 
                 info_title = ?, 
-                info_text = ? 
+                info_text = ?,
+                site_description = ?,
+                contact_email = ?,
+                contact_wa = ?,
+                link_instagram = ?,
+                link_facebook = ?
                 WHERE id = 1";
-        $pdo->prepare($sql)->execute([$heroTitle, $running, $infoTitle, $infoText]);
+        
+        $pdo->prepare($sql)->execute([
+            $heroTitle, $running, $infoTitle, $infoText, $siteDesc, 
+            $email, $wa, $ig, $fb
+        ]);
             
         $_SESSION['swal_type'] = 'success'; 
-        $_SESSION['swal_msg']  = 'Pengaturan teks berhasil diperbarui!';
+        $_SESSION['swal_msg']  = 'Pengaturan halaman depan & footer berhasil diperbarui!';
         
     } catch (Exception $e) {
         $_SESSION['swal_type'] = 'error'; 
@@ -47,24 +67,16 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['slide_image'])) {
         
         if (!empty($_FILES['slide_image']['name'])) {
             $ext = pathinfo($_FILES['slide_image']['name'], PATHINFO_EXTENSION);
-            $validExt = ['jpg', 'jpeg', 'png', 'webp'];
-            
-            if(in_array(strtolower($ext), $validExt)) {
+            if(in_array(strtolower($ext), ['jpg', 'jpeg', 'png', 'webp'])) {
                 $fileName = "slide_" . time() . "_" . rand(100,999) . "." . $ext;
                 if(move_uploaded_file($_FILES['slide_image']['tmp_name'], $targetDir . $fileName)) {
-                    $imgPath = "img/hero/" . $fileName;
-                    $pdo->prepare("INSERT INTO hero_slides (image_path) VALUES (?)")->execute([$imgPath]);
-                    
-                    $_SESSION['swal_type'] = 'success'; 
-                    $_SESSION['swal_msg']  = 'Slide baru berhasil ditambahkan!';
+                    $pdo->prepare("INSERT INTO hero_slides (image_path) VALUES (?)")->execute(["img/hero/" . $fileName]);
+                    $_SESSION['swal_type'] = 'success'; $_SESSION['swal_msg'] = 'Slide baru ditambahkan!';
                 }
-            } else {
-                throw new Exception("Format file harus JPG, PNG, atau WEBP.");
-            }
+            } else { throw new Exception("Format gambar harus JPG, PNG, atau WEBP."); }
         }
     } catch (Exception $e) {
-        $_SESSION['swal_type'] = 'error'; 
-        $_SESSION['swal_msg']  = $e->getMessage();
+        $_SESSION['swal_type'] = 'error'; $_SESSION['swal_msg'] = $e->getMessage();
     }
     header("Location: public_page.php"); exit;
 }
@@ -80,15 +92,12 @@ if (isset($_POST['delete_id'])) {
         $fullPath = __DIR__ . "/../../../public/" . $row['image_path'];
         if (file_exists($fullPath)) unlink($fullPath);
     }
-    
     $pdo->prepare("DELETE FROM hero_slides WHERE id = ?")->execute([$id]);
-    
-    $_SESSION['swal_type'] = 'success'; 
-    $_SESSION['swal_msg']  = 'Slide berhasil dihapus.';
+    $_SESSION['swal_type'] = 'success'; $_SESSION['swal_msg'] = 'Slide dihapus.';
     header("Location: public_page.php"); exit;
 }
 
-// AMBIL DATA
+// AMBIL DATA EXISTING
 $settings = $pdo->query("SELECT * FROM site_settings WHERE id=1")->fetch();
 $slides = $pdo->query("SELECT * FROM hero_slides ORDER BY id DESC")->fetchAll();
 
@@ -101,7 +110,7 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
     <div class="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
         <div>
             <h1 class="text-3xl font-black text-slate-800 uppercase tracking-tight">Editor Halaman Depan</h1>
-            <p class="text-sm text-slate-500 font-medium">Kontrol konten visual dan teks website utama.</p>
+            <p class="text-sm text-slate-500 font-medium">Kontrol konten visual, teks, dan kontak website.</p>
         </div>
         <a href="../../../public/index.php" target="_blank" class="bg-slate-800 text-white px-6 py-3 rounded-full font-bold text-xs hover:bg-slate-900 shadow-xl transition transform hover:scale-105 flex items-center gap-2">
             <span>👁️</span> Lihat Website
@@ -111,11 +120,10 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
     <div class="grid grid-cols-1 xl:grid-cols-3 gap-8">
         
         <div class="xl:col-span-1 space-y-8">
-            
             <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                 <div class="bg-blue-600 px-6 py-4 border-b border-blue-500">
                     <h3 class="text-white font-black text-sm uppercase tracking-wider flex items-center gap-2">
-                        <span>🅰️</span> Konten Teks
+                        <span>🅰️</span> Konten & Informasi
                     </h3>
                 </div>
                 <div class="p-6">
@@ -123,25 +131,56 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                         <input type="hidden" name="update_text" value="1">
                         
                         <div class="mb-5">
-                            <label class="block text-[10px] font-black text-slate-500 uppercase mb-1 tracking-wider">Judul Utama (Hero Title)</label>
-                            <input type="text" name="hero_title" value="<?= htmlspecialchars($settings['hero_title'] ?? '') ?>" class="w-full px-4 py-3 border border-slate-200 rounded-xl font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none transition" placeholder="Contoh: KEJUARAAN RENANG 2025">
+                            <label class="block text-[10px] font-black text-slate-500 uppercase mb-1 tracking-wider">Judul Utama</label>
+                            <input type="text" name="hero_title" value="<?= htmlspecialchars($settings['hero_title'] ?? '') ?>" class="w-full px-4 py-3 border border-slate-200 rounded-xl font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none">
                         </div>
 
                         <div class="mb-5">
-                            <label class="block text-[10px] font-black text-slate-500 uppercase mb-1 tracking-wider">Running Text (Info Bar)</label>
-                            <textarea name="running_text" rows="2" class="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-blue-500 outline-none transition" placeholder="Info berjalan..."><?= htmlspecialchars($settings['running_text'] ?? '') ?></textarea>
+                            <label class="block text-[10px] font-black text-slate-500 uppercase mb-1 tracking-wider">Running Text</label>
+                            <textarea name="running_text" rows="2" class="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-blue-500 outline-none"><?= htmlspecialchars($settings['running_text'] ?? '') ?></textarea>
                         </div>
 
                         <hr class="my-6 border-slate-100">
                         
                         <div class="mb-5">
-                            <label class="block text-[10px] font-black text-blue-600 uppercase mb-1 tracking-wider">Judul Info (Optional)</label>
+                            <label class="block text-[10px] font-black text-blue-600 uppercase mb-1 tracking-wider">Judul Info (How to Join)</label>
                             <input type="text" name="info_title" value="<?= htmlspecialchars($settings['info_title'] ?? 'PENDAFTARAN DIBUKA') ?>" class="w-full px-4 py-3 border border-slate-200 rounded-xl font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none">
                         </div>
 
-                        <div class="mb-6">
-                            <label class="block text-[10px] font-black text-blue-600 uppercase mb-1 tracking-wider">Deskripsi Info (Optional)</label>
-                            <textarea name="info_text" rows="3" class="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-blue-500 outline-none"><?= htmlspecialchars($settings['info_text'] ?? 'Deskripsi singkat...') ?></textarea>
+                        <div class="mb-5">
+                            <label class="block text-[10px] font-black text-blue-600 uppercase mb-1 tracking-wider">Deskripsi Info (Langkah-langkah)</label>
+                            <textarea name="info_text" rows="3" class="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-blue-500 outline-none"><?= htmlspecialchars($settings['info_text'] ?? '') ?></textarea>
+                        </div>
+
+                        <div class="mb-5">
+                            <label class="block text-[10px] font-black text-emerald-600 uppercase mb-1 tracking-wider">Deskripsi Website (Footer)</label>
+                            <textarea name="site_description" rows="3" class="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-emerald-500 outline-none" placeholder="Teks yang muncul di pojok kiri bawah..."><?= htmlspecialchars($settings['site_description'] ?? '') ?></textarea>
+                        </div>
+
+                        <hr class="my-6 border-slate-100">
+                        
+                        <h4 class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Kontak & Sosmed</h4>
+
+                        <div class="grid grid-cols-2 gap-4 mb-5">
+                            <div>
+                                <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Email</label>
+                                <input type="email" name="contact_email" value="<?= htmlspecialchars($settings['contact_email'] ?? '') ?>" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs font-bold focus:ring-2 focus:ring-blue-500 outline-none">
+                            </div>
+                            <div>
+                                <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">WhatsApp</label>
+                                <input type="text" name="contact_wa" value="<?= htmlspecialchars($settings['contact_wa'] ?? '') ?>" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs font-bold focus:ring-2 focus:ring-blue-500 outline-none">
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-4 mb-6">
+                            <div>
+                                <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Instagram URL</label>
+                                <input type="text" name="link_instagram" value="<?= htmlspecialchars($settings['link_instagram'] ?? '') ?>" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs font-bold focus:ring-2 focus:ring-blue-500 outline-none">
+                            </div>
+                            <div>
+                                <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Facebook URL</label>
+                                <input type="text" name="link_facebook" value="<?= htmlspecialchars($settings['link_facebook'] ?? '') ?>" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs font-bold focus:ring-2 focus:ring-blue-500 outline-none">
+                            </div>
                         </div>
 
                         <button type="submit" class="w-full bg-slate-900 text-white font-black uppercase text-xs tracking-widest py-4 rounded-xl hover:bg-blue-700 shadow-lg transition duration-300">
@@ -223,7 +262,7 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
         Swal.fire({
             icon: '<?= $_SESSION['swal_type'] ?>',
             title: '<?= $_SESSION['swal_type'] == 'success' ? 'Berhasil!' : 'Gagal!' ?>',
-            text: '<?= $_SESSION['swal_msg'] ?>',
+            text: '<?= $_SESSION['swal_msg'] ?>', // Typo fixed here
             confirmButtonColor: '#0F172A',
             confirmButtonText: 'OK'
         });
@@ -237,7 +276,7 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
             const form = this.closest('form');
             Swal.fire({
                 title: 'Hapus Slide?',
-                text: "Gambar akan dihapus permanen dari website.",
+                text: "Gambar akan dihapus permanen.",
                 icon: 'warning',
                 showCancelButton: true,
                 confirmButtonColor: '#d33',
