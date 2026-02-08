@@ -1,32 +1,33 @@
 <?php
 // FILE: src/master/swimmers/get_detail.php
+session_start();
 require_once __DIR__ . '/../../config/database.php';
 
+header('Content-Type: application/json');
+
 if (!isset($_GET['id'])) {
-    echo json_encode(['error' => 'No ID']);
+    echo json_encode(['records' => []]);
     exit;
 }
 
 $id = $_GET['id'];
+$records = [];
 
-// 1. AMBIL REKOR LATIHAN (Dari tabel athlete_records)
-$stmtRecord = $pdo->prepare("
-    SELECT nomor_lomba, waktu_terbaik, tanggal_dicapai 
-    FROM athlete_records 
-    WHERE swimmer_id = ? 
-    ORDER BY tanggal_dicapai DESC
-");
-$stmtRecord->execute([$id]);
-$records = $stmtRecord->fetchAll(PDO::FETCH_ASSOC);
+try {
+    // Coba ambil data (Jika tabel belum ada, akan masuk catch)
+    $stmtRecord = $pdo->prepare("
+        SELECT nomor_lomba, waktu_terbaik, tanggal_dicapai 
+        FROM athlete_records 
+        WHERE swimmer_id = ? 
+        ORDER BY tanggal_dicapai DESC
+    ");
+    $stmtRecord->execute([$id]);
+    $records = $stmtRecord->fetchAll(PDO::FETCH_ASSOC);
 
-// 2. AMBIL RIWAYAT LOMBA (Opsional: Dari tabel entries/results jika ada)
-// (Sementara kita kosongkan dulu agar tidak error jika tabel belum siap)
-$history = []; 
+} catch (Exception $e) {
+    // Jika tabel tidak ada, abaikan error dan kirim array kosong
+    // $records tetap []
+}
 
-// Kirim data JSON ke Javascript
-header('Content-Type: application/json');
-echo json_encode([
-    'records' => $records,
-    'history' => $history
-]);
+echo json_encode(['records' => $records]);
 ?>

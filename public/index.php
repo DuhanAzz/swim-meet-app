@@ -31,8 +31,8 @@ if ($isMaintenance && !$isMaster) {
             <div class="text-6xl mb-6">🚧</div>
             <h1 class="text-3xl font-black text-white uppercase tracking-tighter mb-4">Under Maintenance</h1>
             <p class="text-slate-400 text-sm leading-relaxed mb-8">
-                Sistem <b><?= htmlspecialchars($s['app_name'] ?? 'SwimMeet') ?></b> sedang dalam perbaikan atau pembaruan database. 
-                Silakan kembali lagi dalam beberapa saat.
+                Sistem <b><?= htmlspecialchars($s['app_name'] ?? 'SwimMeet') ?></b> sedang dalam perbaikan. 
+                Silakan kembali lagi nanti.
             </p>
             <div class="animate-pulse bg-slate-700/50 text-slate-500 text-xs font-mono py-2 rounded-lg">
                 Status Code: 503 Service Unavailable
@@ -46,7 +46,7 @@ if ($isMaintenance && !$isMaster) {
     </body>
     </html>
     <?php
-    exit; // STOP SCRIPT DISINI AGAR KONTEN KEBAWAH TIDAK DIMUAT
+    exit; 
 }
 // ============================================================
 
@@ -84,11 +84,18 @@ $upcoming_preview = $pdo->query($sql)->fetchAll();
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet">
     <style>
         body { font-family: 'Inter', sans-serif; }
+        
+        /* --- PRELOADER BARU (LIQUID STYLE - SESUAI REQUEST) --- */
         #preloader { position: fixed; inset: 0; z-index: 9999; background-color: #0F172A; display: flex; flex-direction: column; align-items: center; justify-content: center; }
-        .circle-loader { width: 100px; height: 100px; border: 6px solid #1e293b; border-radius: 50%; overflow: hidden; background: #161e31; position: relative; }
+        .loader-container { position: relative; width: 150px; height: 150px; }
+        .circle-loader { position: relative; width: 100%; height: 100%; border: 6px solid #1e293b; border-radius: 50%; overflow: hidden; background: #161e31; box-shadow: 0 0 50px rgba(59, 130, 246, 0.2); }
         .liquid { position: absolute; top: 100%; left: -50%; width: 200%; height: 200%; background-color: #3b82f6; border-radius: 40%; animation: wave 4s infinite linear; transition: top 0.3s ease; }
+        .liquid::after { content: ''; position: absolute; width: 100%; height: 100%; background-color: rgba(59, 130, 246, 0.6); border-radius: 35%; animation: wave 6s infinite linear; }
         @keyframes wave { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        .loader-finish { opacity: 0; visibility: hidden; transition: 0.5s; }
+        .load-text { margin-top: 30px; color: white; font-weight: 900; letter-spacing: 0.4em; font-size: 12px; text-transform: uppercase; }
+        .loader-finish { opacity: 0; visibility: hidden; transition: opacity 0.5s ease, visibility 0.5s; }
+
+        /* --- STYLE LAMA (TIDAK DIUBAH) --- */
         .hero-slide { position: absolute; inset: 0; width: 100%; height: 100%; background-size: cover; background-position: center; opacity: 0; transition: opacity 1.5s ease-in-out; z-index: -1; }
         .hero-slide.active { opacity: 1; }
         .hero-overlay { background: linear-gradient(to bottom, rgba(15, 23, 42, 0.85), rgba(15, 23, 42, 0.4), rgba(15, 23, 42, 0.9)); }
@@ -99,7 +106,10 @@ $upcoming_preview = $pdo->query($sql)->fetchAll();
 </head>
 <body class="bg-slate-50 text-slate-800">
 
-    <div id="preloader"><div class="circle-loader"><div class="liquid" id="liquid-level"></div></div></div>
+    <div id="preloader">
+        <div class="loader-container"><div class="circle-loader"><div class="liquid" id="liquid-level"></div></div></div>
+        <div class="load-text">LOADING <span id="load-perc" class="text-blue-500">0%</span></div>
+    </div>
 
     <nav id="navbar" class="fixed w-full z-50 top-0 start-0 transparent px-10">
         <div class="max-w-screen-2xl flex items-center justify-between mx-auto w-full">
@@ -112,9 +122,21 @@ $upcoming_preview = $pdo->query($sql)->fetchAll();
                     <a href="#instruction" class="nav-link font-bold uppercase text-yellow-400 text-sm">Panduan</a>
                 </div>
                 <div class="flex items-center border-l border-white/20 pl-10">
-                    <a href="<?= isset($_SESSION['user_id']) ? 'dashboard.php' : 'login.php' ?>" class="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-full font-black text-xs uppercase tracking-widest shadow-xl transition transform hover:scale-105">
-                        <?= isset($_SESSION['user_id']) ? 'Dashboard' : 'Login / Daftar' ?>
-                    </a>
+                    <?php if(isset($_SESSION['user_id'])): 
+                        // Logic Redirect Dashboard
+                        $dashLink = 'dashboard.php';
+                        if($_SESSION['role'] == 'master') $dashLink = '../src/master/dashboard.php';
+                        if($_SESSION['role'] == 'admin') $dashLink = '../src/admin/dashboard.php';
+                        if($_SESSION['role'] == 'user') $dashLink = '../src/user/dashboard.php';
+                    ?>
+                        <a href="<?= $dashLink ?>" class="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-full font-black text-xs uppercase tracking-widest shadow-xl transition transform hover:scale-105">
+                            Dashboard
+                        </a>
+                    <?php else: ?>
+                        <a href="login.php" class="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-full font-black text-xs uppercase tracking-widest shadow-xl transition transform hover:scale-105">
+                            Login / Daftar
+                        </a>
+                    <?php endif; ?>
                 </div>
             </div>
         </div>
@@ -218,9 +240,24 @@ $upcoming_preview = $pdo->query($sql)->fetchAll();
 
     <script>
         document.addEventListener('DOMContentLoaded', () => {
-            let p=0, preloader=document.getElementById('preloader'), liquid=document.getElementById('liquid-level');
-            let i=setInterval(()=>{ p+=Math.floor(Math.random()*15)+5; if(p>=100){ p=100; clearInterval(i); setTimeout(()=>{preloader.classList.add('loader-finish')},500); } liquid.style.top=(100-p)+'%'; },80);
+            const liquid = document.getElementById('liquid-level');
+            const textPerc = document.getElementById('load-perc');
+            const preloader = document.getElementById('preloader');
+            let progress = 0;
+            const interval = setInterval(() => {
+                progress += Math.floor(Math.random() * 15) + 5; // Kecepatan sedikit diacak agar natural
+                if (progress >= 100) { 
+                    progress = 100; 
+                    clearInterval(interval); 
+                    setTimeout(() => { preloader.classList.add('loader-finish'); }, 500); 
+                }
+                // Update CSS dan Text
+                if(liquid) liquid.style.top = (100 - progress) + '%'; 
+                if(textPerc) textPerc.innerText = progress + '%';
+            }, 80);
         });
+
+        // Script Navbar & Slider Lama
         window.addEventListener('scroll', () => { document.getElementById('navbar').classList.toggle('scrolled', window.scrollY>50); document.getElementById('nav-logo').classList.replace(window.scrollY>50?'h-24':'h-16', window.scrollY>50?'h-16':'h-24'); });
         let cur=0, s=document.querySelectorAll('.hero-slide');
         if(s.length>1) setInterval(()=>{ s[cur].classList.remove('active'); cur=(cur+1)%s.length; s[cur].classList.add('active'); },6000);

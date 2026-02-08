@@ -8,13 +8,16 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'master') {
     header("Location: ../../../public/login.php"); exit;
 }
 
-// --- HELPER LOGGING (Jika belum ada di global) ---
+// --- HELPER LOGGING ---
 if (!function_exists('writeLog')) {
     function writeLog($pdo, $userId, $action, $targetId, $desc) {
         try {
+            // Pastikan tabel system_logs ada. Jika tidak, blok ini akan skip (catch) tanpa error fatal.
             $stmt = $pdo->prepare("INSERT INTO system_logs (user_id, action_type, target_id, description, ip_address) VALUES (?, ?, ?, ?, ?)");
             $stmt->execute([$userId, $action, $targetId, $desc, $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0']);
-        } catch (Exception $e) {}
+        } catch (Exception $e) {
+            // Logging gagal diabaikan agar tidak mengganggu fungsi utama
+        }
     }
 }
 
@@ -38,23 +41,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['merge_clubs'])) {
         try {
             $pdo->beginTransaction();
 
-            // A. Pindahkan Atlet
+            // A. Pindahkan Atlet (Update club_id di tabel swimmers)
             $stmtUpdate = $pdo->prepare("UPDATE swimmers SET club_id = ? WHERE club_id = ?");
             $stmtUpdate->execute([$targetId, $sourceId]);
             $countMoved = $stmtUpdate->rowCount();
 
-            // B. Ambil Nama Klub untuk Log
-            $clubName = $pdo->query("SELECT nama_klub FROM clubs WHERE id = $sourceId")->fetchColumn();
-            $targetName = $pdo->query("SELECT nama_klub FROM clubs WHERE id = $targetId")->fetchColumn();
+            // B. Ambil Nama Klub untuk keperluan Log
+            $stmtName = $pdo->prepare("SELECT nama_klub FROM clubs WHERE id = ?");
+            
+            $stmtName->execute([$sourceId]);
+            $clubNameSource = $stmtName->fetchColumn();
 
-            // C. Hapus Klub Lama
+            $stmtName->execute([$targetId]);
+            $clubNameTarget = $stmtName->fetchColumn();
+
+            // C. Hapus Klub Lama (Source)
             $pdo->prepare("DELETE FROM clubs WHERE id = ?")->execute([$sourceId]);
 
             // D. Catat Log
-            writeLog($pdo, $_SESSION['user_id'], 'MERGE_CLUB', $targetId, "Menggabungkan '$clubName' ke '$targetName'. $countMoved atlet dipindahkan.");
+            writeLog($pdo, $_SESSION['user_id'], 'MERGE_CLUB', $targetId, "Menggabungkan '$clubNameSource' ke '$clubNameTarget'. $countMoved atlet dipindahkan.");
 
             $pdo->commit();
-            $msg = "Berhasil menggabungkan klub! $countMoved atlet telah dipindahkan.";
+            $msg = "SUKSES! Klub '$clubNameSource' telah dihapus dan $countMoved atlet dipindahkan ke '$clubNameTarget'.";
             $msgType = "success";
 
         } catch (Exception $e) {
@@ -68,7 +76,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['merge_clubs'])) {
 // ==========================================
 // 2. HANDLE ACTION: CLEANUP EVENT
 // ==========================================
-if (isset($_POST['cleanup_events'])) {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['cleanup_events'])) {
     try {
         // Hapus event status 'Draft' yang dibuat lebih dari 30 hari lalu
         $sql = "DELETE FROM events WHERE event_status = 'Draft' AND created_at < DATE_SUB(NOW(), INTERVAL 30 DAY)";
@@ -81,7 +89,7 @@ if (isset($_POST['cleanup_events'])) {
             $msg = "Berhasil menghapus $deleted event draft yang usang.";
             $msgType = "success";
         } else {
-            $msg = "Tidak ada event draft usang yang ditemukan.";
+            $msg = "Tidak ada event draft usang yang ditemukan saat eksekusi.";
             $msgType = "info";
         }
     } catch (Exception $e) {
@@ -91,11 +99,20 @@ if (isset($_POST['cleanup_events'])) {
 }
 
 // --- DATA UNTUK VIEW ---
-// 1. List Klub untuk Dropdown
-$clubs = $pdo->query("SELECT id, nama_klub, city FROM clubs ORDER BY nama_klub ASC")->fetchAll();
+
+// 1. List Klub untuk Dropdown (FIX: city -> kota)
+// Menggunakan 'kota' agar sesuai database Bapak
+$clubs = $pdo->query("SELECT id, nama_klub, kota FROM clubs ORDER BY nama_klub ASC")->fetchAll();
 
 // 2. List Event Draft Usang (Preview)
-$oldDrafts = $pdo->query("SELECT * FROM events WHERE event_status = 'Draft' AND created_at < DATE_SUB(NOW(), INTERVAL 30 DAY)")->fetchAll();
+// Pastikan tabel 'events' punya kolom 'event_status' dan 'created_at'.
+// Kita bungkus try-catch agar jika tabel events belum ada/beda kolom, halaman tidak blank.
+$oldDrafts = [];
+try {
+    $oldDrafts = $pdo->query("SELECT * FROM events WHERE event_status = 'Draft' AND created_at < DATE_SUB(NOW(), INTERVAL 30 DAY)")->fetchAll();
+} catch (Exception $e) {
+    // Abaikan error view jika tabel events bermasalah
+}
 
 include __DIR__ . '/../../../views/layout/sidebar.php';
 include __DIR__ . '/../../../views/layout/topbar.php';
@@ -129,7 +146,7 @@ include __DIR__ . '/../../../views/layout/topbar.php';
                 <p class="text-blue-100 text-xs mt-1">Pindahkan semua atlet dari klub salah ke klub benar, lalu hapus klub salah.</p>
             </div>
             
-            <form method="POST" class="p-8" onsubmit="return confirm('PERINGATAN: Klub Asal akan DIHAPUS permanen setelah atlet dipindahkan. Lanjutkan?');">
+            <form method="POST" class="p-8" onsubmit="return confirm('PERINGATAN KERAS:\n\nKlub Asal akan DIHAPUS PERMANEN setelah semua atlet dipindahkan.\n\nTindakan ini tidak bisa dibatalkan.\n\nApakah Anda yakin?');">
                 <input type="hidden" name="merge_clubs" value="1">
                 
                 <div class="space-y-6">
@@ -138,7 +155,7 @@ include __DIR__ . '/../../../views/layout/topbar.php';
                         <select name="source_club_id" class="w-full px-4 py-3 rounded-xl border border-red-200 focus:border-red-500 focus:ring-0 font-bold text-slate-700 text-sm bg-white" required>
                             <option value="">-- Pilih Klub Salah --</option>
                             <?php foreach($clubs as $c): ?>
-                                <option value="<?= $c['id'] ?>"><?= htmlspecialchars($c['nama_klub']) ?> (<?= htmlspecialchars($c['city']) ?>)</option>
+                                <option value="<?= $c['id'] ?>"><?= htmlspecialchars($c['nama_klub']) ?> (<?= htmlspecialchars($c['kota'] ?? '-') ?>)</option>
                             <?php endforeach; ?>
                         </select>
                     </div>
@@ -152,7 +169,7 @@ include __DIR__ . '/../../../views/layout/topbar.php';
                         <select name="target_club_id" class="w-full px-4 py-3 rounded-xl border border-emerald-200 focus:border-emerald-500 focus:ring-0 font-bold text-slate-700 text-sm bg-white" required>
                             <option value="">-- Pilih Klub Benar --</option>
                             <?php foreach($clubs as $c): ?>
-                                <option value="<?= $c['id'] ?>"><?= htmlspecialchars($c['nama_klub']) ?> (<?= htmlspecialchars($c['city']) ?>)</option>
+                                <option value="<?= $c['id'] ?>"><?= htmlspecialchars($c['nama_klub']) ?> (<?= htmlspecialchars($c['kota'] ?? '-') ?>)</option>
                             <?php endforeach; ?>
                         </select>
                     </div>
@@ -177,6 +194,7 @@ include __DIR__ . '/../../../views/layout/topbar.php';
                     <h3 class="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-3 sticky top-0 bg-slate-50 pb-2">
                         Preview Data yang akan dihapus:
                     </h3>
+                    
                     <?php if(empty($oldDrafts)): ?>
                         <div class="text-center py-8 text-slate-400 italic text-sm">
                             Hore! Tidak ada file sampah. Database bersih. ✨

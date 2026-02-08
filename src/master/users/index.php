@@ -9,11 +9,10 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'master') {
 }
 
 // 2. SETUP VARIABEL
-$targetRole = $_GET['role'] ?? 'admin'; 
+$targetRole = $_GET['role'] ?? 'admin'; // 'admin' = EO Event, 'user' = Klub
 $search     = $_GET['q'] ?? '';
-$msg        = $_GET['msg'] ?? '';
 
-// --- HELPER LOGGING (Jaga-jaga jika fungsi belum ada di config) ---
+// --- HELPER LOGGING ---
 if (!function_exists('writeLog')) {
     function writeLog($pdo, $userId, $action, $targetId, $desc) {
         try {
@@ -24,145 +23,160 @@ if (!function_exists('writeLog')) {
     }
 }
 
-// --- HANDLE ACTION: UBAH STATUS (APPROVE/SUSPEND) ---
+// ==================================================================================
+// HANDLE ACTION: UBAH STATUS (APPROVE/SUSPEND)
+// ==================================================================================
 if (isset($_GET['action']) && isset($_GET['uid']) && isset($_GET['status'])) {
     $uid = $_GET['uid'];
     $newStatus = $_GET['status'];
     
     if (in_array($newStatus, ['active', 'pending', 'suspended'])) {
-        // Cek jangan blokir diri sendiri
         if ($uid == $_SESSION['user_id']) {
-            echo "<script>alert('Tidak bisa mengubah status akun sendiri!'); window.location='index.php?role=$targetRole';</script>"; exit;
+            $_SESSION['swal_type'] = 'error';
+            $_SESSION['swal_msg'] = 'Tidak bisa memblokir akun sendiri!';
+        } else {
+            try {
+                $pdo->prepare("UPDATE users SET account_status = ? WHERE id = ?")->execute([$newStatus, $uid]);
+                writeLog($pdo, $_SESSION['user_id'], 'CHANGE_STATUS', $uid, "Ubah status user ID $uid menjadi $newStatus");
+                
+                $_SESSION['swal_type'] = 'success';
+                $_SESSION['swal_msg'] = 'Status akun berhasil diperbarui';
+            } catch (Exception $e) {
+                $_SESSION['swal_type'] = 'error';
+                $_SESSION['swal_msg'] = 'Gagal update: ' . $e->getMessage();
+            }
         }
-
-        try {
-            $pdo->prepare("UPDATE users SET account_status = ? WHERE id = ?")->execute([$newStatus, $uid]);
-            
-            // CATAT LOG
-            writeLog($pdo, $_SESSION['user_id'], 'CHANGE_STATUS', $uid, "Ubah status user ID $uid menjadi $newStatus");
-            
-            header("Location: index.php?role=$targetRole&msg=status_updated"); exit;
-        } catch (Exception $e) {
-            die("Error: " . $e->getMessage());
-        }
+        header("Location: index.php?role=$targetRole"); exit;
     }
 }
 
-// --- HANDLE ACTION: SIMPAN (TAMBAH/EDIT) ---
+// ==================================================================================
+// HANDLE ACTION: SIMPAN (TAMBAH / EDIT)
+// ==================================================================================
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['save_user'])) {
-    $nama     = trim($_POST['nama_lengkap']);
-    $email    = trim($_POST['email']);
-    $phone    = $_POST['phone'] ?? null;
-    $username = $email; // Username disamakan email
-    $pass     = $_POST['password'];
-    $role     = $_POST['role_type'];
-    $userId   = $_POST['user_id'] ?? '';
-    
-    // Data Spesifik Role
-    $location   = $_POST['location'] ?? null;
-    $eventType  = $_POST['event_type'] ?? 'Langsung Final';
-    $eventDate  = $_POST['event_date'] ?? date('Y-m-d');
-    $city       = $_POST['city'] ?? null;
-
     try {
         $pdo->beginTransaction();
 
+        // 1. Ambil Data Form
+        $userId   = $_POST['user_id'] ?? ''; 
+        $role     = $_POST['role_type'];
+        
+        // Data Akun (Tabel Users)
+        $namaAkun = trim($_POST['nama_lengkap']); 
+        $email    = trim($_POST['email']);
+        $phone    = trim($_POST['phone']); // AMBIL DATA PHONE DARI FORM
+        $username = $email; 
+        $pass     = $_POST['password'];
+
+        // Data Detail (Tabel Clubs / Events)
+        $namaEntitas = trim($_POST['nama_detail']); 
+
+        if ($role == 'admin') {
+            // Data Events
+            $compSystem = $_POST['competition_system'] ?? 'Langsung Final';
+            $location   = $_POST['event_location'] ?? null;
+            $eventDate  = !empty($_POST['event_date_start']) ? $_POST['event_date_start'] : date('Y-m-d');
+        } else {
+            // Data Clubs
+            $kota       = $_POST['kota'] ?? null;
+        }
+
+        // 3. PROSES UPDATE / INSERT
         if ($userId) {
-            // --- MODE EDIT ---
+            // === UPDATE ===
+            
+            // A. Update Users (SUDAH TERMASUK PHONE)
             if (!empty($pass)) {
                 $pdo->prepare("UPDATE users SET nama_lengkap=?, email=?, phone=?, username=?, password=? WHERE id=?")
-                    ->execute([$nama, $email, $phone, $username, password_hash($pass, PASSWORD_DEFAULT), $userId]);
+                    ->execute([$namaAkun, $email, $phone, $username, password_hash($pass, PASSWORD_DEFAULT), $userId]);
             } else {
                 $pdo->prepare("UPDATE users SET nama_lengkap=?, email=?, phone=?, username=? WHERE id=?")
-                    ->execute([$nama, $email, $phone, $username, $userId]);
+                    ->execute([$namaAkun, $email, $phone, $username, $userId]);
             }
 
-            // Update Detail Table
+            // B. Update Detail
             if ($role == 'admin') {
-                $check = $pdo->prepare("SELECT id FROM events WHERE created_by = ?");
+                $check = $pdo->prepare("SELECT id FROM events WHERE user_id = ?");
                 $check->execute([$userId]);
                 if ($check->rowCount() > 0) {
-                    $pdo->prepare("UPDATE events SET event_name=?, event_type=?, event_location=?, event_date_start=? WHERE created_by=?")
-                        ->execute([$nama, $eventType, $location, $eventDate, $userId]);
+                    $pdo->prepare("UPDATE events SET event_name=?, competition_system=?, event_location=?, event_date_start=? WHERE user_id=?")
+                        ->execute([$namaEntitas, $compSystem, $location, $eventDate, $userId]);
                 } else {
-                    $pdo->prepare("INSERT INTO events (created_by, event_name, event_type, event_location, event_date_start) VALUES (?, ?, ?, ?, ?)")
-                        ->execute([$userId, $nama, $eventType, $location, $eventDate]);
+                    $pdo->prepare("INSERT INTO events (user_id, event_name, competition_system, event_location, event_date_start, event_status, event_type, lane_count, pool_type) VALUES (?, ?, ?, ?, ?, 'Upcoming', 'Standard', 8, '50m')")
+                        ->execute([$userId, $namaEntitas, $compSystem, $location, $eventDate]);
                 }
             } elseif ($role == 'user') {
                 $check = $pdo->prepare("SELECT id FROM clubs WHERE user_id = ?");
                 $check->execute([$userId]);
                 if ($check->rowCount() > 0) {
-                    $pdo->prepare("UPDATE clubs SET nama_klub=?, city=? WHERE user_id=?")
-                        ->execute([$nama, $city, $userId]);
+                    $pdo->prepare("UPDATE clubs SET nama_klub=?, kota=? WHERE user_id=?")
+                        ->execute([$namaEntitas, $kota, $userId]);
                 } else {
-                    $pdo->prepare("INSERT INTO clubs (user_id, nama_klub, city) VALUES (?, ?, ?)")
-                        ->execute([$userId, $nama, $city]);
+                    $pdo->prepare("INSERT INTO clubs (user_id, nama_klub, kota) VALUES (?, ?, ?)")
+                        ->execute([$userId, $namaEntitas, $kota]);
                 }
             }
-
-            // CATAT LOG EDIT
-            writeLog($pdo, $_SESSION['user_id'], 'EDIT_USER', $userId, "Edit user: $nama ($role)");
+            $msg = 'Data berhasil diperbarui!';
 
         } else {
-            // --- MODE TAMBAH BARU ---
-            // Cek Email Kembar
+            // === INSERT BARU ===
             $cekMail = $pdo->prepare("SELECT id FROM users WHERE email = ?");
             $cekMail->execute([$email]);
-            if($cekMail->rowCount() > 0) {
-                throw new Exception("Email $email sudah terdaftar!");
-            }
+            if($cekMail->rowCount() > 0) throw new Exception("Email $email sudah terdaftar!");
 
+            // Insert Users (SUDAH TERMASUK PHONE)
             $pdo->prepare("INSERT INTO users (nama_lengkap, email, phone, username, password, role, account_status) VALUES (?, ?, ?, ?, ?, ?, 'active')")
-                ->execute([$nama, $email, $phone, $username, password_hash($pass, PASSWORD_DEFAULT), $role]);
+                ->execute([$namaAkun, $email, $phone, $username, password_hash($pass, PASSWORD_DEFAULT), $role]);
             $newUserId = $pdo->lastInsertId();
 
             if ($role == 'admin') {
-                $pdo->prepare("INSERT INTO events (created_by, event_name, event_type, event_location, event_date_start, event_status) VALUES (?, ?, ?, ?, ?, 'Registration')")
-                    ->execute([$newUserId, $nama, $eventType, $location, $eventDate]);
+                $pdo->prepare("INSERT INTO events (user_id, event_name, competition_system, event_location, event_date_start, event_status, event_type, lane_count, pool_type) VALUES (?, ?, ?, ?, ?, 'Upcoming', 'Standard', 8, '50m')")
+                    ->execute([$newUserId, $namaEntitas, $compSystem, $location, $eventDate]);
             } elseif ($role == 'user') {
-                $pdo->prepare("INSERT INTO clubs (user_id, nama_klub, city) VALUES (?, ?, ?)")
-                    ->execute([$newUserId, $nama, $city]);
+                $pdo->prepare("INSERT INTO clubs (user_id, nama_klub, kota) VALUES (?, ?, ?)")
+                    ->execute([$newUserId, $namaEntitas, $kota]);
             }
-
-            // CATAT LOG CREATE
-            writeLog($pdo, $_SESSION['user_id'], 'CREATE_USER', $newUserId, "User baru: $nama ($role)");
+            $msg = 'Data berhasil ditambahkan!';
         }
 
         $pdo->commit();
-        header("Location: index.php?role=" . $role . "&msg=saved"); exit;
+        $_SESSION['swal_type'] = 'success'; $_SESSION['swal_msg'] = $msg;
+        header("Location: index.php?role=" . $role); exit;
 
     } catch (Exception $e) { 
         $pdo->rollBack();
-        $errorMsg = urlencode($e->getMessage());
-        header("Location: index.php?role=$role&msg=error&text=$errorMsg"); exit;
+        $_SESSION['swal_type'] = 'error'; $_SESSION['swal_msg'] = 'Error: ' . $e->getMessage();
+        header("Location: index.php?role=" . $role); exit;
     }
 }
 
-// --- HANDLE ACTION: HAPUS ---
+// ==================================================================================
+// HANDLE ACTION: HAPUS
+// ==================================================================================
 if (isset($_GET['delete'])) {
     $id = $_GET['delete'];
-    if ($id == $_SESSION['user_id']) die("Access Denied: Cannot delete yourself.");
-    
-    try {
-        $pdo->beginTransaction();
-        
-        // CATAT LOG DELETE SEBELUM DIHAPUS
-        writeLog($pdo, $_SESSION['user_id'], 'DELETE_USER', $id, "Hapus permanen user ID: $id");
-
-        // Hapus Data
-        $pdo->prepare("DELETE FROM events WHERE created_by = ?")->execute([$id]); 
-        $pdo->prepare("DELETE FROM clubs WHERE user_id = ?")->execute([$id]);   
-        $pdo->prepare("DELETE FROM users WHERE id = ?")->execute([$id]);        
-        
-        $pdo->commit();
-        header("Location: index.php?role=" . $targetRole . "&msg=deleted"); exit;
-    } catch (Exception $e) {
-        $pdo->rollBack();
-        die("Gagal Hapus: " . $e->getMessage());
+    if ($id == $_SESSION['user_id']) {
+        $_SESSION['swal_type'] = 'error';
+        $_SESSION['swal_msg'] = 'Tidak bisa menghapus akun sendiri';
+    } else {
+        try {
+            $pdo->beginTransaction();
+            $pdo->prepare("DELETE FROM events WHERE user_id = ?")->execute([$id]); 
+            $pdo->prepare("DELETE FROM clubs WHERE user_id = ?")->execute([$id]);
+            $pdo->prepare("DELETE FROM users WHERE id = ?")->execute([$id]);        
+            $pdo->commit();
+            $_SESSION['swal_type'] = 'success'; $_SESSION['swal_msg'] = 'Data berhasil dihapus permanen';
+        } catch (Exception $e) {
+            $pdo->rollBack();
+            $_SESSION['swal_type'] = 'error'; $_SESSION['swal_msg'] = 'Gagal menghapus: ' . $e->getMessage();
+        }
     }
+    header("Location: index.php?role=" . $targetRole); exit;
 }
 
-// --- QUERY GET DATA ---
+// ==================================================================================
+// QUERY GET DATA
+// ==================================================================================
 $params = ['role' => $targetRole];
 $searchSql = "";
 if (!empty($search)) {
@@ -171,16 +185,14 @@ if (!empty($search)) {
 }
 
 if ($targetRole == 'admin') {
-    // Query Admin (EO)
     $sql = "SELECT u.*, 
-                   e.event_type, e.event_name, e.event_location, e.event_date_start, e.event_status 
+                   e.competition_system, e.event_name, e.event_location, e.event_date_start, e.event_status 
             FROM users u 
-            LEFT JOIN events e ON u.id = e.created_by 
+            LEFT JOIN events e ON u.id = e.user_id 
             WHERE u.role = :role $searchSql ORDER BY u.created_at DESC";
 } else {
-    // Query User (Klub) + Hitung Atlet
     $sql = "SELECT u.*, 
-                   c.nama_klub, c.city, c.club_code,
+                   c.nama_klub, c.kota,
                    (SELECT COUNT(*) FROM swimmers s WHERE s.user_id = u.id) as total_atlet 
             FROM users u 
             LEFT JOIN clubs c ON u.id = c.user_id 
@@ -191,7 +203,6 @@ $stmt = $pdo->prepare($sql);
 $stmt->execute($params);
 $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-// --- VIEW UTAMA ---
 include __DIR__ . '/../../../views/layout/topbar.php'; 
 include __DIR__ . '/../../../views/layout/sidebar.php'; 
 ?>
@@ -204,7 +215,7 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                 <a href="../dashboard.php" class="hover:text-blue-600">← Control Center</a>
             </nav>
             <h1 class="text-3xl font-black text-slate-900 uppercase tracking-tighter italic leading-none">
-                Manajemen <?= $targetRole == 'admin' ? 'Admin EO' : 'User Klub' ?>
+                Manajemen <?= $targetRole == 'admin' ? 'Event Organizer' : 'User Klub' ?>
             </h1>
             <p class="text-slate-500 text-xs font-medium mt-2">Total Data: <?= count($users) ?></p>
         </div>
@@ -212,23 +223,17 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
         <div class="flex flex-col md:flex-row gap-3 w-full md:w-auto">
             <form method="GET" class="relative">
                 <input type="hidden" name="role" value="<?= $targetRole ?>">
-                <input type="text" name="q" value="<?= htmlspecialchars($search) ?>" placeholder="Cari nama / email..." 
+                <input type="text" name="q" value="<?= htmlspecialchars($search) ?>" placeholder="Cari..." 
                        class="pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 text-xs font-bold w-full md:w-64 focus:outline-none focus:border-blue-500 shadow-sm">
                 <span class="absolute left-3 top-2.5 text-slate-400">🔍</span>
             </form>
 
             <div class="flex gap-1 bg-white p-1 rounded-xl shadow-sm border border-slate-200">
                 <a href="index.php?role=user" class="px-4 py-2 rounded-lg text-[10px] font-black uppercase transition <?= $targetRole == 'user' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-400 hover:bg-slate-50' ?>">Klub</a>
-                <a href="index.php?role=admin" class="px-4 py-2 rounded-lg text-[10px] font-black uppercase transition <?= $targetRole == 'admin' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:bg-slate-50' ?>">EO</a>
+                <a href="index.php?role=admin" class="px-4 py-2 rounded-lg text-[10px] font-black uppercase transition <?= $targetRole == 'admin' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:bg-slate-50' ?>">EO / Event</a>
             </div>
         </div>
     </div>
-
-    <?php if($msg == 'error'): ?>
-        <div class="bg-red-50 text-red-700 p-4 rounded-xl mb-6 border border-red-200 text-sm font-bold flex items-center gap-2 shadow-sm">
-            <span class="text-xl">⚠️</span> Gagal: <?= htmlspecialchars($_GET['text'] ?? 'Unknown Error') ?>
-        </div>
-    <?php endif; ?>
 
     <div class="flex justify-end mb-6">
         <button onclick="openModal()" class="bg-slate-900 text-white px-6 py-3 rounded-xl font-black text-[10px] uppercase tracking-[0.1em] shadow-xl hover:bg-blue-600 transition flex items-center gap-2 hover:-translate-y-1 transform duration-200">
@@ -301,14 +306,15 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                                             📅 <?= !empty($u['event_date_start']) ? date('d M Y', strtotime($u['event_date_start'])) : '-' ?>
                                         </span>
                                     </div>
+                                    <span class="text-[9px] italic text-slate-400"><?= htmlspecialchars($u['competition_system'] ?? '-') ?></span>
                                 </div>
                             <?php else: ?>
                                 <div class="space-y-1">
                                     <div class="text-xs font-black text-slate-700 uppercase">
-                                        <?= htmlspecialchars($u['nama_klub'] ?? 'No Club Name') ?>
+                                        <?= htmlspecialchars($u['nama_klub'] ?? '-') ?>
                                     </div>
                                     <span class="bg-slate-100 px-1.5 py-0.5 rounded text-[9px] font-bold text-slate-500 border border-slate-200 inline-block">
-                                        🏠 <?= htmlspecialchars($u['city'] ?? 'Kota -') ?>
+                                        🏠 <?= htmlspecialchars($u['kota'] ?? '-') ?>
                                     </span>
                                 </div>
                             <?php endif; ?>
@@ -352,7 +358,14 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
 
                         <td class="px-6 py-5 align-top text-right">
                             <div class="flex justify-end gap-2">
-                                <button onclick='editAdmin(<?= json_encode($u) ?>)' class="w-8 h-8 flex items-center justify-center bg-white border border-slate-200 rounded-lg hover:border-blue-500 hover:text-blue-600 transition text-slate-400 shadow-sm">✏️</button>
+                                <button 
+                                    type="button"
+                                    data-user="<?= htmlspecialchars(json_encode($u), ENT_QUOTES, 'UTF-8') ?>"
+                                    onclick="editAdmin(this)"
+                                    class="w-8 h-8 flex items-center justify-center bg-white border border-slate-200 rounded-lg hover:border-blue-500 hover:text-blue-600 transition text-slate-400 shadow-sm">
+                                    ✏️
+                                </button>
+                                
                                 <a href="?delete=<?= $u['id'] ?>&role=<?= $targetRole ?>" onclick="return confirm('Hapus permanen? Data event/klub terkait akan hilang.')" class="w-8 h-8 flex items-center justify-center bg-white border border-slate-200 rounded-lg hover:border-red-500 hover:text-red-600 transition text-slate-400 shadow-sm">🗑️</a>
                             </div>
                         </td>
@@ -376,8 +389,13 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
             <input type="hidden" name="role_type" value="<?= $targetRole ?>">
             
             <div class="space-y-3">
-                <h4 class="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 pb-1">Info Login & Kontak</h4>
+                <h4 class="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 pb-1">Info Login (Akun)</h4>
                 
+                <div>
+                    <label class="text-[10px] font-bold text-slate-500 uppercase">Nama Pemilik Akun</label>
+                    <input type="text" name="nama_lengkap" id="form-nama" class="w-full px-4 py-3 border border-slate-200 bg-slate-50 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none" required placeholder="Nama Admin / Ketua Klub">
+                </div>
+
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                         <label class="text-[10px] font-bold text-slate-500 uppercase">Email (Username)</label>
@@ -397,36 +415,38 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
 
             <div class="space-y-3 pt-2">
                 <h4 class="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 pb-1">
-                    <?= $targetRole == 'admin' ? 'Detail Event' : 'Detail Klub' ?>
+                    <?= $targetRole == 'admin' ? 'Detail Event (Tabel Events)' : 'Detail Klub (Tabel Clubs)' ?>
                 </h4>
                 
                 <div>
-                    <label class="text-[10px] font-bold text-slate-500 uppercase">Nama Lengkap / Nama Klub</label>
-                    <input type="text" name="nama_lengkap" id="form-nama" class="w-full px-4 py-3 border border-slate-200 bg-slate-50 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none" required>
+                    <label class="text-[10px] font-bold text-slate-500 uppercase">
+                        <?= $targetRole == 'admin' ? 'Nama Event (Kejuaraan)' : 'Nama Klub Renang' ?>
+                    </label>
+                    <input type="text" name="nama_detail" id="form-nama-detail" class="w-full px-4 py-3 border border-slate-200 bg-slate-50 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none" required placeholder="<?= $targetRole == 'admin' ? 'Contoh: O2SN 2026' : 'Contoh: Pari Sakti SC' ?>">
                 </div>
 
                 <?php if($targetRole == 'admin'): ?>
                     <div class="grid grid-cols-2 gap-4">
                         <div>
-                            <label class="text-[10px] font-bold text-slate-500 uppercase">Tipe Event</label>
-                            <select name="event_type" id="form-mode" class="w-full px-4 py-3 border border-slate-200 bg-slate-50 rounded-xl text-xs font-bold uppercase outline-none">
-                                <option value="Langsung Final">Timed Final</option>
-                                <option value="Babak Penyisihan">Heats & Finals</option>
+                            <label class="text-[10px] font-bold text-slate-500 uppercase">Sistem Lomba</label>
+                            <select name="competition_system" id="form-mode" class="w-full px-4 py-3 border border-slate-200 bg-slate-50 rounded-xl text-xs font-bold uppercase outline-none">
+                                <option value="Langsung Final">Langsung Final</option>
+                                <option value="Babak Penyisihan">Babak Penyisihan</option>
                             </select>
                         </div>
                         <div>
-                            <label class="text-[10px] font-bold text-slate-500 uppercase">Tanggal Event</label>
-                            <input type="date" name="event_date" id="form-date" class="w-full px-4 py-3 border border-slate-200 bg-slate-50 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none">
+                            <label class="text-[10px] font-bold text-slate-500 uppercase">Tanggal Mulai</label>
+                            <input type="date" name="event_date_start" id="form-date" class="w-full px-4 py-3 border border-slate-200 bg-slate-50 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none">
                         </div>
                     </div>
                     <div>
-                        <label class="text-[10px] font-bold text-slate-500 uppercase">Lokasi (Kota)</label>
-                        <input type="text" name="location" id="form-location" class="w-full px-4 py-3 border border-slate-200 bg-slate-50 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none">
+                        <label class="text-[10px] font-bold text-slate-500 uppercase">Lokasi (Venue)</label>
+                        <input type="text" name="event_location" id="form-location" class="w-full px-4 py-3 border border-slate-200 bg-slate-50 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none">
                     </div>
                 <?php else: ?>
                     <div>
                         <label class="text-[10px] font-bold text-slate-500 uppercase">Kota Asal Klub</label>
-                        <input type="text" name="city" id="form-city" class="w-full px-4 py-3 border border-slate-200 bg-slate-50 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none" placeholder="Cth: Surabaya">
+                        <input type="text" name="kota" id="form-kota" class="w-full px-4 py-3 border border-slate-200 bg-slate-50 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none" placeholder="Cth: Yogyakarta (Boleh Kosong)">
                     </div>
                 <?php endif; ?>
             </div>
@@ -441,49 +461,98 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
 <script>
 const modal = document.getElementById('modal-admin');
 
-// NOTIFIKASI TOAST SEDERHANA
-window.onload = function() {
-    const urlParams = new URLSearchParams(window.location.search);
-    const msg = urlParams.get('msg');
-    if(msg === 'saved') alert('Berhasil menyimpan data!');
-    if(msg === 'deleted') alert('Data berhasil dihapus.');
-    if(msg === 'status_updated') alert('Status akun diperbarui.');
-}
-
+// 1. Reset Form saat Tambah Baru
 function openModal() {
     document.getElementById('modal-title').innerText = "Tambah <?= strtoupper($targetRole) ?> Baru";
-    document.getElementById('form-id').value = "";
+    document.getElementById('form-id').value = ""; // ID Kosong = Insert
+    
+    // Reset Data Dasar
     document.getElementById('form-nama').value = "";
     document.getElementById('form-email').value = "";
     document.getElementById('form-phone').value = "";
     document.getElementById('form-pass').required = true;
+    document.getElementById('form-pass').value = "";
     
-    // Reset optional fields
+    // Reset Detail
+    document.getElementById('form-nama-detail').value = "";
+    
     if(document.getElementById('form-location')) document.getElementById('form-location').value = "";
-    if(document.getElementById('form-city')) document.getElementById('form-city').value = "";
     if(document.getElementById('form-date')) document.getElementById('form-date').value = ""; 
+    if(document.getElementById('form-mode')) document.getElementById('form-mode').selectedIndex = 0;
+    if(document.getElementById('form-kota')) document.getElementById('form-kota').value = "";
     
     modal.classList.remove('hidden');
 }
 
-function editAdmin(data) {
-    document.getElementById('modal-title').innerText = "Edit <?= strtoupper($targetRole) ?>";
-    document.getElementById('form-id').value = data.id;
-    document.getElementById('form-nama').value = data.nama_lengkap;
-    document.getElementById('form-email').value = data.email;
-    document.getElementById('form-phone').value = data.phone || '';
-    
-    // Isi data spesifik
-    if(document.getElementById('form-mode')) document.getElementById('form-mode').value = data.event_type || 'Langsung Final';
-    if(document.getElementById('form-location')) document.getElementById('form-location').value = data.event_location || '';
-    if(document.getElementById('form-date')) document.getElementById('form-date').value = data.event_date_start || ''; 
-    if(document.getElementById('form-city')) document.getElementById('form-city').value = data.city || '';
+// 2. Isi Form saat Edit (MAPPING DATA)
+function editAdmin(buttonElement) {
+    try {
+        const jsonString = buttonElement.getAttribute('data-user');
+        const data = JSON.parse(jsonString);
 
-    document.getElementById('form-pass').required = false; 
-    modal.classList.remove('hidden');
+        document.getElementById('modal-title').innerText = "Edit <?= strtoupper($targetRole) ?>";
+        
+        // Isi Data Dasar Users
+        document.getElementById('form-id').value = data.id; 
+        document.getElementById('form-nama').value = data.nama_lengkap; // Nama User Akun
+        document.getElementById('form-email').value = data.email;
+        document.getElementById('form-phone').value = data.phone || '';
+        document.getElementById('form-pass').required = false; 
+        document.getElementById('form-pass').value = ""; 
+
+        // --- MAPPING DETAIL ---
+        // Prioritas ambil dari tabel detail. Jika kosong, baru ambil dari user.
+        const detailName = data.nama_klub || data.event_name || data.nama_lengkap;
+        document.getElementById('form-nama-detail').value = detailName;
+
+        // --- ADMIN / EVENT FIELDS ---
+        if(document.getElementById('form-mode')) {
+            document.getElementById('form-mode').value = data.competition_system || 'Langsung Final';
+        }
+        if(document.getElementById('form-location')) {
+            document.getElementById('form-location').value = data.event_location || '';
+        }
+        if(document.getElementById('form-date')) {
+            document.getElementById('form-date').value = data.event_date_start || ''; 
+        }
+        
+        // --- USER / CLUB FIELDS ---
+        if(document.getElementById('form-kota')) {
+            document.getElementById('form-kota').value = data.kota || '';
+        }
+
+        modal.classList.remove('hidden');
+    } catch (e) {
+        console.error("Gagal parse data user:", e);
+        alert("Terjadi kesalahan saat mengambil data. Cek console.");
+    }
 }
 
 function closeModal() { 
     modal.classList.add('hidden'); 
 }
+</script>
+
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script>
+    <?php if(isset($_SESSION['swal_type'])): ?>
+        const Toast = Swal.mixin({
+            toast: true,
+            position: 'top-end',
+            showConfirmButton: false, 
+            timer: 3000,
+            timerProgressBar: true,
+            didOpen: (toast) => {
+                toast.addEventListener('mouseenter', Swal.stopTimer)
+                toast.addEventListener('mouseleave', Swal.resumeTimer)
+            }
+        });
+
+        Toast.fire({
+            icon: '<?= $_SESSION['swal_type'] ?>',
+            title: '<?= $_SESSION['swal_msg'] ?>'
+        });
+
+        <?php unset($_SESSION['swal_type']); unset($_SESSION['swal_msg']); ?>
+    <?php endif; ?>
 </script>
