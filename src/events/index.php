@@ -1,5 +1,5 @@
 <?php
-// src/events/index.php
+// FILE: src/events/index.php
 session_start();
 require_once __DIR__ . '/../../src/config/database.php';
 
@@ -10,13 +10,16 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
 
 $adminId = $_SESSION['user_id'];
 
-// --- 0. AMBIL DATA EVENT UTAMA (Untuk Config Harga) ---
+// --- 0. AMBIL DATA EVENT TERAKHIR (AKTIF) ---
+// Kita ambil event terakhir yang dibuat oleh admin ini
 $stmtEvent = $pdo->prepare("SELECT * FROM events WHERE user_id = ? ORDER BY id DESC LIMIT 1");
 $stmtEvent->execute([$adminId]);
 $activeEvent = $stmtEvent->fetch();
+
+// Jika belum ada event sama sekali, set eventId = 0
 $eventId = $activeEvent['id'] ?? 0;
 
-// Config Pool
+// Config Pool (Label)
 $poolLabel = ($activeEvent['pool_type'] ?? 'LCM') === 'SCM' ? 'SCM' : 'LCM';
 
 // ==========================================
@@ -25,12 +28,16 @@ $poolLabel = ($activeEvent['pool_type'] ?? 'LCM') === 'SCM' ? 'SCM' : 'LCM';
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     
+    // Pastikan ada event yang aktif sebelum menyimpan data
+    if ($eventId == 0) {
+        $_SESSION['toast'] = ['type' => 'error', 'msg' => 'Buat Event Dulu di Menu Settings!'];
+        header("Location: index.php"); exit;
+    }
+
     // --- A. UPDATE KONFIGURASI HARGA ---
     if (isset($_POST['action']) && $_POST['action'] === 'update_pricing') {
         try {
             $mode = $_POST['pricing_mode']; 
-            
-            // Validasi input harga (cegah error string kosong)
             $pkgPrice = !empty($_POST['package_price']) ? $_POST['package_price'] : 0;
             $pkgLimit = !empty($_POST['package_limit']) ? $_POST['package_limit'] : 0;
             $pkgExtra = !empty($_POST['extra_price']) ? $_POST['extra_price'] : 0;
@@ -53,8 +60,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     // --- B. TAMBAH KELOMPOK UMUR ---
     if (isset($_POST['action']) && $_POST['action'] === 'add_ku') {
         try {
+            // [FIX] Menggunakan $eventId agar KU terikat ke Event spesifik, bukan cuma ke User
             $stmt = $pdo->prepare("INSERT INTO event_age_groups (event_id, group_name, min_age, max_age) VALUES (?, ?, ?, ?)");
-            $stmt->execute([$adminId, strtoupper($_POST['group_name']), $_POST['min_age'], $_POST['max_age']]);
+            $stmt->execute([$eventId, strtoupper($_POST['group_name']), $_POST['min_age'], $_POST['max_age']]);
             $_SESSION['toast'] = ['type' => 'success', 'msg' => 'Kelompok Umur Berhasil Ditambahkan!'];
         } catch (Exception $e) {
             $_SESSION['toast'] = ['type' => 'error', 'msg' => 'Gagal: ' . $e->getMessage()];
@@ -64,7 +72,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
     // --- C. HAPUS KELOMPOK UMUR ---
     if (isset($_POST['action']) && $_POST['action'] === 'delete_ku') {
-        $pdo->prepare("DELETE FROM event_age_groups WHERE id = ? AND event_id = ?")->execute([$_POST['id'], $adminId]);
+        // [FIX] Hapus berdasarkan ID dan Event ID agar aman
+        $pdo->prepare("DELETE FROM event_age_groups WHERE id = ? AND event_id = ?")->execute([$_POST['id'], $eventId]);
         $_SESSION['toast'] = ['type' => 'success', 'msg' => 'Kelompok Umur Dihapus'];
         header("Location: index.php"); exit;
     }
@@ -77,16 +86,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $jarak  = $_POST['jarak'];
             $gaya   = $_POST['gaya'];
             $jk     = $_POST['jenis_kelamin'];
-            
-            // Konversi harga ke float untuk mencegah error database jika kosong
-            $hargaInput = $_POST['biaya_pendaftaran'] ?? 0;
-            $harga = (float)$hargaInput; 
+            $harga  = (float)($_POST['biaya_pendaftaran'] ?? 0);
             
             // 2. Validasi KU
             $selected_kus = $_POST['selected_kus'] ?? []; 
             if(empty($selected_kus)) throw new Exception("Pilih minimal satu Kelompok Umur!");
 
-            // 3. Ambil detail KU
+            // 3. Ambil detail KU untuk digabung namanya
             $placeholders = str_repeat('?,', count($selected_kus) - 1) . '?';
             $stmtKU = $pdo->prepare("SELECT * FROM event_age_groups WHERE id IN ($placeholders)");
             $stmtKU->execute($selected_kus);
@@ -102,19 +108,20 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $ageGroupString = implode(", ", $kuNames);
             $selectedIdsString = implode(",", $selected_kus);
 
-            // 4. Buat Nama Event
+            // 4. Buat Nama Event Otomatis
             $labelJK = ($jk == 'L') ? 'PUTRA' : (($jk == 'P') ? 'PUTRI' : 'MIXED');
             $eventName = "$jarak M " . strtoupper($gaya) . " $labelJK - $poolLabel";
 
-            // 5. Insert
+            // 5. Insert Database
+            // [FIX] Kita isi kolom 'event_id' supaya data tidak NULL lagi
             $sql = "INSERT INTO event_numbers 
-                    (organizer_id, event_number, event_name, distance, stroke, jenis_kelamin, 
+                    (organizer_id, event_id, event_number, event_name, distance, stroke, jenis_kelamin, 
                     age_group, age_min, age_max, selected_ku_ids, price, created_at) 
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())";
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())";
             
             $stmt = $pdo->prepare($sql);
             $stmt->execute([
-                $adminId, $nomor, $eventName, $jarak, $gaya, $jk, 
+                $adminId, $eventId, $nomor, $eventName, $jarak, $gaya, $jk, 
                 $ageGroupString, $globalMin, $globalMax, $selectedIdsString, $harga
             ]);
 
@@ -128,6 +135,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
     // --- E. HAPUS NOMOR LOMBA ---
     if (isset($_POST['action']) && $_POST['action'] === 'delete_event') {
+        // [FIX] Hapus juga memastikan event_id cocok (opsional tapi lebih aman)
         $pdo->prepare("DELETE FROM event_numbers WHERE id = ? AND organizer_id = ?")->execute([$_POST['id'], $adminId]);
         $_SESSION['toast'] = ['type' => 'success', 'msg' => 'Nomor Lomba Dihapus'];
         header("Location: index.php"); exit;
@@ -135,17 +143,19 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 }
 
 // ==========================================
-// GET DATA FOR VIEW
+// GET DATA FOR VIEW (READ)
 // ==========================================
+
+// 1. Ambil KU khusus untuk Event ID ini saja
 $kus = $pdo->prepare("SELECT * FROM event_age_groups WHERE event_id = ? ORDER BY min_age ASC");
-$kus->execute([$adminId]);
+$kus->execute([$eventId]);
 $listKU = $kus->fetchAll();
 
-// --- UPDATE SORTING DISINI ---
-// Menggunakan CAST(event_number AS UNSIGNED) agar urutan menjadi 1, 2, ... 10
-// Bukan urutan text 1, 10, 11, 2
-$events = $pdo->prepare("SELECT * FROM event_numbers WHERE organizer_id = ? ORDER BY CAST(event_number AS UNSIGNED) ASC");
-$events->execute([$adminId]);
+// 2. Ambil Nomor Lomba (Prioritas filter by event_id, backup organizer_id untuk data lama)
+// Logika: Tampilkan jika event_id nya cocok.
+// CAST(event_number AS UNSIGNED) agar sorting angka benar (1, 2, 10 bukan 1, 10, 2)
+$events = $pdo->prepare("SELECT * FROM event_numbers WHERE (event_id = ? OR (event_id IS NULL AND organizer_id = ?)) ORDER BY CAST(event_number AS UNSIGNED) ASC");
+$events->execute([$eventId, $adminId]);
 $listEvents = $events->fetchAll();
 
 include __DIR__ . '/../../views/layout/topbar.php'; 
@@ -169,7 +179,8 @@ function togglePricingMode(mode) {
         <div>
             <h1 class="text-3xl font-black uppercase italic text-slate-900 leading-none">Manajemen Lomba</h1>
             <p class="text-xs text-slate-500 font-bold uppercase tracking-widest mt-2">
-                Event: <?= htmlspecialchars($activeEvent['nama_event'] ?? 'Draft') ?>
+                Event Aktif: <span class="text-blue-600"><?= htmlspecialchars($activeEvent['nama_event'] ?? 'Belum Ada Event') ?></span> 
+                <span class="text-slate-300 mx-2">|</span> ID: #<?= $eventId ?>
             </p>
         </div>
         
@@ -181,6 +192,18 @@ function togglePricingMode(mode) {
             <?php unset($_SESSION['toast']); ?>
         <?php endif; ?>
     </div>
+
+    <?php if($eventId == 0): ?>
+        <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-8">
+            <div class="flex">
+                <div class="ml-3">
+                    <p class="text-sm text-yellow-700 font-bold">
+                        Anda belum membuat Event Profile. Silakan ke menu <a href="../admin/settings/event_profile.php" class="underline">Event Profile</a> terlebih dahulu.
+                    </p>
+                </div>
+            </div>
+        </div>
+    <?php else: ?>
 
     <div class="max-w-7xl mx-auto space-y-8">
         
@@ -214,16 +237,13 @@ function togglePricingMode(mode) {
                                 </div>
                             </label>
                         </div>
-                        <p class="text-[10px] text-indigo-300 mt-2 opacity-70">
-                            *Pilih <strong>Sistem Paket</strong> untuk menerapkan aturan "3 nomor pertama X rupiah".
-                        </p>
                     </div>
 
                     <div id="packageConfig" class="<?= ($activeEvent['pricing_mode'] ?? 'per_item') == 'package' ? '' : 'hidden' ?> bg-indigo-800/50 p-4 rounded-xl border border-indigo-700">
                         <label class="block text-[10px] font-bold text-emerald-300 uppercase mb-3">Konfigurasi Paket</label>
                         <div class="space-y-3">
                             <div class="flex items-center gap-3">
-                                <span class="text-xs font-bold w-24">Biaya Awal:</span>
+                                <span class="text-xs font-bold w-24">Biaya Paket:</span>
                                 <input type="number" name="package_price" value="<?= $activeEvent['package_price'] ?? 0 ?>" placeholder="Rp 130.000" class="flex-1 bg-indigo-900/50 border border-indigo-600 rounded px-3 py-1 text-sm font-bold focus:border-emerald-400 outline-none">
                             </div>
                             <div class="flex items-center gap-3">
@@ -268,9 +288,9 @@ function togglePricingMode(mode) {
                 </div>
 
                 <div class="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-200 max-h-[500px] overflow-y-auto">
-                    <h3 class="font-black uppercase text-xs text-slate-400 mb-4 tracking-widest">Daftar KU Tersedia</h3>
+                    <h3 class="font-black uppercase text-xs text-slate-400 mb-4 tracking-widest">Daftar KU (Event #<?= $eventId ?>)</h3>
                     <?php if(empty($listKU)): ?>
-                        <p class="text-xs text-slate-300 italic text-center py-4">Belum ada data KU</p>
+                        <p class="text-xs text-slate-300 italic text-center py-4">Belum ada KU untuk event ini</p>
                     <?php else: ?>
                         <div class="space-y-2">
                             <?php foreach($listKU as $ku): ?>
@@ -353,9 +373,7 @@ function togglePricingMode(mode) {
                                 <input type="number" name="biaya_pendaftaran" value="50000" class="w-full bg-slate-50 border-2 border-slate-100 rounded-xl px-4 py-2 font-bold text-sm outline-none placeholder:text-slate-300">
                                 <p class="text-[9px] text-slate-400 mt-1 italic">
                                     <?php if(($activeEvent['pricing_mode'] ?? '') == 'package'): ?>
-                                        ⚠ Mode Paket Aktif. Biaya ini mungkin diabaikan sistem kecuali diset khusus.
-                                    <?php else: ?>
-                                        Biaya per item.
+                                        ⚠ Mode Paket Aktif. Biaya ini mungkin diabaikan sistem.
                                     <?php endif; ?>
                                 </p>
                             </div>
@@ -366,7 +384,7 @@ function togglePricingMode(mode) {
                             
                             <?php if(empty($listKU)): ?>
                                 <div class="p-4 bg-red-50 text-red-600 text-xs font-bold rounded-xl border border-red-100 flex items-center gap-2">
-                                    ⚠️ Buat Kelompok Umur (KU) dulu!
+                                    ⚠️ Buat Kelompok Umur (KU) di kolom kiri dulu!
                                 </div>
                             <?php else: ?>
                                 <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
@@ -374,7 +392,7 @@ function togglePricingMode(mode) {
                                     <label class="cursor-pointer relative group">
                                         <input type="checkbox" name="selected_kus[]" value="<?= $ku['id'] ?>" class="peer sr-only">
                                         <div class="p-3 bg-slate-50 border-2 border-slate-100 rounded-xl text-center hover:bg-white hover:shadow-sm transition peer-checked:border-blue-600 peer-checked:bg-blue-50">
-                                            <span class="block text-xs font-black text-slate-700 peer-checked:text-blue-700"><?= $ku['group_name'] ?></span>
+                                            <span class="block text-xs font-black text-slate-700 peer-checked:text-blue-700"><?= htmlspecialchars($ku['group_name']) ?></span>
                                             <span class="text-[9px] text-slate-400 font-bold peer-checked:text-blue-400"><?= $ku['min_age'] ?>-<?= $ku['max_age'] ?> Th</span>
                                         </div>
                                         <div class="absolute top-1 right-1 w-2 h-2 bg-blue-600 rounded-full opacity-0 peer-checked:opacity-100 transition"></div>
@@ -397,7 +415,7 @@ function togglePricingMode(mode) {
                     
                     <?php if(empty($listEvents)): ?>
                         <div class="p-10 text-center">
-                            <p class="text-slate-300 font-bold text-sm italic">Belum ada nomor lomba dibuat.</p>
+                            <p class="text-slate-300 font-bold text-sm italic">Belum ada nomor lomba untuk event ini.</p>
                         </div>
                     <?php else: ?>
                         <div class="divide-y divide-slate-100">
@@ -445,4 +463,5 @@ function togglePricingMode(mode) {
 
         </div>
     </div>
+    <?php endif; ?>
 </div>
