@@ -9,83 +9,75 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
 }
 $uid = $_SESSION['user_id'];
 
-// 2. AMBIL EVENT AKTIF (1 Admin = 1 Event)
-$stmtEvent = $pdo->prepare("SELECT * FROM events WHERE created_by = ? ORDER BY id DESC LIMIT 1");
+// 2. AMBIL EVENT AKTIF (LOGIKA BARU: user_id)
+$stmtEvent = $pdo->prepare("SELECT * FROM events WHERE user_id = ? ORDER BY id DESC LIMIT 1");
 $stmtEvent->execute([$uid]);
 $event = $stmtEvent->fetch(PDO::FETCH_ASSOC);
 
-// Jika belum ada event, set default
+// Variable Default
 $eventId   = $event['id'] ?? 0;
 $eventName = $event['event_name'] ?? 'Belum Ada Event';
-$eventDate = $event['event_start_date'] ?? date('Y-m-d');
-$eventLoc  = $event['location'] ?? '-';
+$eventDate = $event['event_date_start'] ?? date('Y-m-d'); // Sesuaikan nama kolom di DB Bapak
+$eventLoc  = $event['event_location'] ?? '-';
+$eventStatus = $event['event_status'] ?? 'Draft';
 
-// 3. HITUNG STATISTIK (Hanya untuk Event ini)
+// 3. HITUNG STATISTIK (LOGIKA BARU: Pakai Tabel Hybrid)
 $stats = ['atlet' => 0, 'entries' => 0, 'clubs' => 0, 'revenue' => 0];
 
 if ($eventId > 0) {
     try {
-        // A. Total Entries (Nomor yang diikuti)
-        $stmtEntry = $pdo->prepare("SELECT COUNT(*) FROM event_entries WHERE event_id = ?");
+        // A. Total Entries (Nomor Lomba)
+        $stmtEntry = $pdo->prepare("SELECT COUNT(*) FROM event_entries WHERE event_id = ? AND status != 'Scratched'");
         $stmtEntry->execute([$eventId]);
         $stats['entries'] = $stmtEntry->fetchColumn();
 
-        // B. Total Atlet (Unik berdasarkan entries di event ini)
+        // B. Total Atlet (Unik)
         $stmtAtlet = $pdo->prepare("SELECT COUNT(DISTINCT swimmer_id) FROM event_entries WHERE event_id = ?");
         $stmtAtlet->execute([$eventId]);
         $stats['atlet'] = $stmtAtlet->fetchColumn();
 
-        // C. Total Klub (Yang berpartisipasi di event ini)
-        $stmtClub = $pdo->prepare("
-            SELECT COUNT(DISTINCT s.club_id) 
-            FROM event_entries ee
-            JOIN swimmers s ON ee.swimmer_id = s.id 
-            WHERE ee.event_id = ?
-        ");
+        // C. Total Klub (Unik - Langsung dari kolom club_id)
+        $stmtClub = $pdo->prepare("SELECT COUNT(DISTINCT club_id) FROM event_entries WHERE event_id = ?");
         $stmtClub->execute([$eventId]);
         $stats['clubs'] = $stmtClub->fetchColumn();
 
-        // D. Revenue (Dari tabel payments yang terkait user/event ini)
-        // Asumsi: Payments dihubungkan ke event via user_id atau event_id (sesuaikan tabel payment Anda)
-        // Disini kita ambil payment milik EO ini yang statusnya 'Paid'
-        $stmtRev = $pdo->prepare("SELECT SUM(amount) FROM payments WHERE user_id = ? AND status = 'Paid'");
-        $stmtRev->execute([$uid]); // Mengambil payment yang masuk ke Admin ini
-        $stats['revenue'] = $stmtRev->fetchColumn() ?: 0;
+        // D. Revenue (Placeholder/Sementara)
+        $stats['revenue'] = 0; 
 
-    } catch (Exception $e) {
-        // Silent error handling untuk dashboard
-    }
+    } catch (Exception $e) { /* Silent Error */ }
 }
 
-// 4. DATA UNTUK GRAFIK (Top 5 Klub Terbanyak Kirim Atlet)
+// 4. DATA CHART (Top 5 Klub)
 $chartLabels = [];
 $chartValues = [];
 
 if ($eventId > 0) {
+    // Sesuaikan join ini dengan nama tabel user/club Bapak
+    // Asumsi: club_id di entries merujuk ke tabel users.id
     $sqlChart = "
-        SELECT c.nama_klub, COUNT(DISTINCT ee.swimmer_id) as jumlah_atlet
+        SELECT u.nama_lengkap as nama_klub, COUNT(DISTINCT ee.swimmer_id) as jumlah_atlet
         FROM event_entries ee
-        JOIN swimmers s ON ee.swimmer_id = s.id
-        JOIN clubs c ON s.club_id = c.id
+        JOIN users u ON ee.club_id = u.id
         WHERE ee.event_id = ?
-        GROUP BY c.id
+        GROUP BY u.id
         ORDER BY jumlah_atlet DESC
         LIMIT 5
     ";
-    $stmtChart = $pdo->prepare($sqlChart);
-    $stmtChart->execute([$eventId]);
-    $dataChart = $stmtChart->fetchAll(PDO::FETCH_ASSOC);
-
-    foreach ($dataChart as $d) {
-        $chartLabels[] = $d['nama_klub'];
-        $chartValues[] = $d['jumlah_atlet'];
-    }
+    try {
+        $stmtChart = $pdo->prepare($sqlChart);
+        $stmtChart->execute([$eventId]);
+        $dataChart = $stmtChart->fetchAll(PDO::FETCH_ASSOC);
+        foreach ($dataChart as $d) {
+            $chartLabels[] = $d['nama_klub'];
+            $chartValues[] = $d['jumlah_atlet'];
+        }
+    } catch(Exception $e) {}
 }
 
-// Format JSON untuk JS
 $jsLabels = json_encode($chartLabels);
 $jsValues = json_encode($chartValues);
 
+// INCLUDE LAYOUT (Gaya Bapak)
 include __DIR__ . '/../../views/layout/topbar.php'; 
 include __DIR__ . '/../../views/layout/sidebar.php'; 
 ?>
@@ -109,7 +101,7 @@ include __DIR__ . '/../../views/layout/sidebar.php';
         <?php else: ?>
             <div class="flex gap-2">
                 <span class="px-4 py-2 bg-emerald-100 text-emerald-700 rounded-lg text-xs font-black uppercase tracking-wide border border-emerald-200">
-                    Status: <?= $event['event_status'] ?? 'Draft' ?>
+                    Status: <?= $eventStatus ?>
                 </span>
                 <a href="settings/event_profile.php?event_id=<?= $eventId ?>" class="px-4 py-2 bg-slate-800 text-white rounded-lg text-xs font-bold uppercase hover:bg-slate-700 transition">
                     ⚙️ Edit Event
@@ -182,13 +174,15 @@ include __DIR__ . '/../../views/layout/sidebar.php';
             <div class="bg-white rounded-[2rem] p-6 border border-slate-200 shadow-sm">
                 <h3 class="font-black text-slate-800 uppercase italic text-xs tracking-widest mb-4">⚡ Menu Cepat</h3>
                 <div class="grid grid-cols-1 gap-3">
-                    <a href="verifikasi.php" class="flex items-center gap-3 p-3 bg-slate-50 hover:bg-blue-50 rounded-xl transition group border border-slate-100">
+                    
+                    <a href="entries/index.php" class="flex items-center gap-3 p-3 bg-slate-50 hover:bg-blue-50 rounded-xl transition group border border-slate-100">
                         <span class="w-8 h-8 flex items-center justify-center bg-white rounded-full shadow-sm text-xs border border-slate-100 group-hover:scale-110 transition">✅</span>
                         <div>
                             <p class="text-xs font-black text-slate-700 uppercase">Verifikasi Atlet</p>
                             <p class="text-[10px] text-slate-400">Cek kelayakan peserta</p>
                         </div>
                     </a>
+
                     <a href="seeding/index.php" class="flex items-center gap-3 p-3 bg-slate-50 hover:bg-purple-50 rounded-xl transition group border border-slate-100">
                         <span class="w-8 h-8 flex items-center justify-center bg-white rounded-full shadow-sm text-xs border border-slate-100 group-hover:scale-110 transition">🎲</span>
                         <div>
@@ -196,6 +190,7 @@ include __DIR__ . '/../../views/layout/sidebar.php';
                             <p class="text-[10px] text-slate-400">Atur lintasan lomba</p>
                         </div>
                     </a>
+
                     <a href="results/index.php" class="flex items-center gap-3 p-3 bg-slate-50 hover:bg-emerald-50 rounded-xl transition group border border-slate-100">
                         <span class="w-8 h-8 flex items-center justify-center bg-white rounded-full shadow-sm text-xs border border-slate-100 group-hover:scale-110 transition">⏱️</span>
                         <div>
@@ -211,9 +206,12 @@ include __DIR__ . '/../../views/layout/sidebar.php';
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
 <script>
+    // 1. Chart Config
     const ctx = document.getElementById('clubChart');
-    if(ctx) {
+    if(ctx && <?= count($chartLabels) ?> > 0) {
         new Chart(ctx, {
             type: 'bar',
             data: {
@@ -239,4 +237,27 @@ include __DIR__ . '/../../views/layout/sidebar.php';
             }
         });
     }
+
+    // 2. SweetAlert Toast Notification
+    <?php if(isset($_SESSION['swal_type'])): ?>
+        const Toast = Swal.mixin({
+            toast: true,
+            position: 'top-end',    
+            showConfirmButton: false, 
+            timer: 3000,            
+            timerProgressBar: true,
+            didOpen: (toast) => {
+                toast.addEventListener('mouseenter', Swal.stopTimer)
+                toast.addEventListener('mouseleave', Swal.resumeTimer)
+            }
+        });
+
+        Toast.fire({
+            icon: '<?= $_SESSION['swal_type'] ?>',
+            title: '<?= $_SESSION['swal_msg'] ?>'
+        });
+
+        // Hapus session
+        <?php unset($_SESSION['swal_type']); unset($_SESSION['swal_msg']); ?>
+    <?php endif; ?>
 </script>
