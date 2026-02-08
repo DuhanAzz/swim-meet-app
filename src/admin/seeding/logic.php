@@ -1,124 +1,147 @@
 <?php
-// src/admin/seeding/process_seeding.php
+// FILE: src/admin/seeding/logic.php
 session_start();
 require_once __DIR__ . '/../../../src/config/database.php';
 
-// CEK KEAMANAN
-if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
-    header("Location: ../../../public/login.php"); exit;
-}
+if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') { die("Akses Ditolak"); }
 
-$catId = $_GET['category_id'] ?? 0;
-if ($catId == 0) die("Error: Kategori lomba tidak ditemukan.");
+$eventId = $_GET['category_id'] ?? 0;
+if ($eventId == 0) die("Error: ID Kategori tidak ditemukan.");
+
+// --- FUNGSI BANTUAN KONVERSI WAKTU ---
+function timeToMs($timeStr) {
+    $cleanStr = str_replace([':', ' '], '.', trim($timeStr));
+    if (empty($cleanStr) || strpos($cleanStr, '99') === 0 || strtoupper($cleanStr) == 'NT') {
+        return 999999999; // NT = Angka Besar
+    }
+    $parts = explode('.', $cleanStr);
+    $menit = 0; $detik = 0; $mili = 0;
+    
+    if (count($parts) >= 3) {
+        $menit = (int)$parts[0]; $detik = (int)$parts[1]; $mili = (int)$parts[2];
+    } elseif (count($parts) == 2) {
+        $detik = (int)$parts[0]; $mili = (int)$parts[1];
+    } else {
+        $detik = (int)$parts[0];
+    }
+    return ($menit * 60000) + ($detik * 1000) + ($mili * 10); 
+}
 
 try {
     $pdo->beginTransaction();
 
-    // 1. AMBIL JUMLAH LINTASAN DARI TABEL EVENTS
-    $stmtConfig = $pdo->prepare("
-        SELECT e.lane_count 
+    // 1. AMBIL INFO EVENT & LANE COUNT
+    // Kita perlu tahu apakah ini kategori "OPEN" atau tidak dari nama age_group
+    $stmtCheck = $pdo->prepare("
+        SELECT en.id, en.age_group, e.lane_count 
         FROM event_numbers en
         JOIN events e ON en.organizer_id = e.id
         WHERE en.id = ?
     ");
-    $stmtConfig->execute([$catId]);
-    $config = $stmtConfig->fetch(PDO::FETCH_ASSOC);
-    $LANE_COUNT = !empty($config['lane_count']) ? (int)$config['lane_count'] : 8;
+    $stmtCheck->execute([$eventId]);
+    $info = $stmtCheck->fetch(PDO::FETCH_ASSOC);
+    
+    if (!$info) throw new Exception("Data nomor lomba tidak valid");
 
-    // 2. TENTUKAN URUTAN PRIORITAS LINTASAN (SPEARHEAD)
-    $lanePriority = [];
-    switch ($LANE_COUNT) {
-        case 4: $lanePriority = [2, 3, 1, 4]; break;
-        case 5: $lanePriority = [3, 2, 4, 1, 5]; break;
-        case 6: $lanePriority = [3, 4, 2, 5, 1, 6]; break;
-        case 8: $lanePriority = [4, 5, 3, 6, 2, 7, 1, 8]; break;
-        case 10: $lanePriority = [4, 5, 3, 6, 2, 7, 1, 8, 0, 9]; break;
-        default: 
-            // Default 8 lintasan jika aneh
-            $lanePriority = [4, 5, 3, 6, 2, 7, 1, 8]; 
-    }
+    $LANE_COUNT = !empty($info['lane_count']) ? (int)$info['lane_count'] : 8;
+    
+    // Cek apakah kategori OPEN? (Case Insensitive)
+    // Jika nama grup mengandung kata 'OPEN', flag true
+    $isOpenCategory = (stripos($info['age_group'], 'OPEN') !== false);
 
-    // 3. RESET SEEDING LAMA
-    $pdo->prepare("UPDATE event_entries SET heat = NULL, lane = NULL WHERE category_id = ?")->execute([$catId]);
+    // 2. PRIORITAS LINTASAN (SPEARHEAD)
+    $lanePriority = ($LANE_COUNT == 6) ? [3, 4, 2, 5, 1, 6] : [4, 5, 3, 6, 2, 7, 1, 8];
 
-    // 4. AMBIL DATA PESERTA (URUTKAN: TERCEPAT -> TERLAMBAT)
-    // Penting: NT/Null ditaruh di paling belakang
-    $sqlSwimmers = "
-        SELECT id, entry_time 
-        FROM event_entries 
-        WHERE category_id = ?
-        ORDER BY 
-            CASE 
-                WHEN entry_time IS NULL OR entry_time = '' OR entry_time = '00:00.00' OR entry_time = '99:99.99' THEN 1 
-                ELSE 0 
-            END ASC,
-            entry_time ASC
-    ";
-    $stmt = $pdo->prepare($sqlSwimmers);
-    $stmt->execute([$catId]);
+    // 3. AMBIL DATA ATLET
+    // Kita butuh 'tanggal_lahir' untuk logika sorting OPEN
+    $stmt = $pdo->prepare("
+        SELECT ee.id, ee.entry_time, s.tanggal_lahir 
+        FROM event_entries ee
+        JOIN swimmers s ON ee.swimmer_id = s.id
+        WHERE ee.category_id = ? AND ee.status = 'Approved'
+    ");
+    $stmt->execute([$eventId]);
     $swimmers = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     $totalSwimmers = count($swimmers);
 
     if ($totalSwimmers > 0) {
         
-        // 5. BAGI KE DALAM SERI (CHUNKS) AWAL
-        // Chunk 0 = Tercepat, Chunk Terakhir = Terlambat
+        // 4. HITUNG MS
+        foreach ($swimmers as &$s) {
+            $s['ms'] = timeToMs($s['entry_time']);
+        }
+        unset($s);
+
+        // 5. SORTING (LOGIKA UTAMA)
+        usort($swimmers, function($a, $b) use ($isOpenCategory) {
+            // A. Cek Waktu Dulu
+            if ($a['ms'] != $b['ms']) {
+                return ($a['ms'] < $b['ms']) ? -1 : 1; // Waktu Kecil (Cepat) -> Diatas
+            }
+
+            // B. Jika Waktu SAMA (Biasanya kasus sesama NT/999999999)
+            // Dan Kategori adalah OPEN
+            if ($isOpenCategory && $a['ms'] == 999999999) {
+                // Urutkan berdasarkan UMUR (TUA ditaruh lebih atas/mendekati seri cepat)
+                // Tanggal lahir LEBIH KECIL = LEBIH TUA
+                if ($a['tanggal_lahir'] != $b['tanggal_lahir']) {
+                    return ($a['tanggal_lahir'] < $b['tanggal_lahir']) ? -1 : 1;
+                }
+            }
+
+            return 0;
+        });
+
+        // 6. BAGI SERI (CHUNKS)
         $chunks = array_chunk($swimmers, $LANE_COUNT);
-        
-        // 6. LOGIKA BARU: RE-BALANCE JIKA SERI TERAKHIR (TERLAMBAT) KURANG DARI 3
-        // Kita hanya melakukan ini jika jumlah seri lebih dari 1
         $totalHeats = count($chunks);
-        
+
+        // 7. RE-BALANCE (Jika seri terakhir < 3 orang)
         if ($totalHeats > 1) {
-            $lastChunkIndex = $totalHeats - 1; // Index seri terlambat (Seri 1)
+            $lastChunkIndex = $totalHeats - 1; 
             $countLast = count($chunks[$lastChunkIndex]);
             
-            // Jika seri terakhir isinya < 3 orang
             if ($countLast < 3) {
-                // Hitung berapa yang perlu ditarik (agar jadi 3)
-                $needed = 3 - $countLast; 
-                
-                // Ambil dari seri sebelumnya (Seri 2 / Next Fastest)
-                // Kita ambil dari bagian "belakang" seri sebelumnya (karena itu yang paling lambat di grup cepat)
+                $needed = 3 - $countLast;
                 $donorIndex = $lastChunkIndex - 1;
-                
-                // Pastikan donor punya cukup orang (minimal sisa 3 juga, atau ambil secukupnya)
-                // Tapi aturan mainnya biasanya kita paksa tarik biar Seri 1 jadi 3.
-                
+                // Ambil dari belakang donor (paling lambat di grup cepat)
                 $movers = array_splice($chunks[$donorIndex], -$needed);
-                
-                // Masukkan ke DEPAN seri terakhir (karena movers lebih cepat dari yang ada di seri terakhir)
+                // Taruh di depan recipient (paling cepat di grup lambat)
                 $chunks[$lastChunkIndex] = array_merge($movers, $chunks[$lastChunkIndex]);
             }
         }
 
-        // 7. INPUT KE DATABASE
-        // Loop chunks yang sudah diperbaiki posisinya
-        $stmtUpdate = $pdo->prepare("UPDATE event_entries SET heat = ?, lane = ? WHERE id = ?");
-
+        // 8. SIMPAN HASIL KE TABEL event_seeding
         foreach ($chunks as $i => $batchSwimmers) {
-            // Hitung Nomor Seri
-            // Chunk 0 (Tercepat) -> Dapat Heat Tertinggi (Misal Heat 3)
-            // Chunk Terakhir (Terlambat) -> Dapat Heat 1
+            // Chunk 0 (Tercepat/Tertua di NT) -> Heat Terbesar
             $heatNumber = $totalHeats - $i; 
 
-            // Assign Lintasan (Spearhead)
             foreach ($batchSwimmers as $rank => $swimmer) {
                 $lane = $lanePriority[$rank] ?? 0;
+                
                 if ($lane > 0) {
-                    $stmtUpdate->execute([$heatNumber, $lane, $swimmer['id']]);
+                    // Cek Insert/Update
+                    $chk = $pdo->prepare("SELECT id FROM event_seeding WHERE entry_id = ?");
+                    $chk->execute([$swimmer['id']]);
+                    
+                    if ($chk->rowCount() > 0) {
+                        $upd = $pdo->prepare("UPDATE event_seeding SET heat_prelim = ?, lane_prelim = ?, time_prelim = ?, time_prelim_ms = ? WHERE entry_id = ?");
+                        $upd->execute([$heatNumber, $lane, $swimmer['entry_time'], $swimmer['ms'], $swimmer['id']]);
+                    } else {
+                        $ins = $pdo->prepare("INSERT INTO event_seeding (entry_id, heat_prelim, lane_prelim, time_prelim, time_prelim_ms) VALUES (?, ?, ?, ?, ?)");
+                        $ins->execute([$swimmer['id'], $heatNumber, $lane, $swimmer['entry_time'], $swimmer['ms']]);
+                    }
                 }
             }
         }
     }
 
     $pdo->commit();
-    header("Location: view_startlist.php?event_id=" . $catId . "&msg=success");
-    exit;
+    echo "Sukses: $totalSwimmers atlet diproses.";
 
 } catch (Exception $e) {
     $pdo->rollBack();
-    die("Error: " . $e->getMessage());
+    echo "Error: " . $e->getMessage();
 }
 ?>
