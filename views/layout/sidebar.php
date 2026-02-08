@@ -67,15 +67,15 @@ else $dashLink = '/swim-meet/public/login.php';
              <span class="w-6 text-center mr-3 text-lg">💰</span> 
              <span class="font-bold text-[11px] tracking-widest uppercase">Keuangan</span>
          </a>
-         <a href="/swim-meet/src/master/settings/global_config.php" class="<?= (strpos($req,"global_config")!==false) ? $activeLink : $baseLink ?>">
-            <span class="w-6 text-center mr-3 text-lg">⚙️</span> 
-            <span class="font-bold text-[11px] tracking-widest uppercase">Global Config</span>
-         </a>
-
+         
          <div class="px-8 mt-6 mb-2 text-[10px] font-black text-slate-600 uppercase tracking-widest">Global Settings</div>
          <a href="/swim-meet/src/master/settings/public_page.php" class="<?= (strpos($req,"public_page")!==false) ? $activeLink : $baseLink ?>">
             <span class="w-6 text-center mr-3 text-lg">⚙️</span> 
             <span class="font-bold text-[11px] tracking-widest uppercase">Landing Page</span>
+         </a>
+         <a href="/swim-meet/src/master/settings/global_config.php" class="<?= (strpos($req,"global_config")!==false) ? $activeLink : $baseLink ?>">
+            <span class="w-6 text-center mr-3 text-lg">⚙️</span> 
+            <span class="font-bold text-[11px] tracking-widest uppercase">Global Config</span>
          </a>
       <?php endif; ?>
 

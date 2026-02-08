@@ -18,62 +18,95 @@ $swimmer = $stmt->fetch();
 
 if (!$swimmer) { die("Data atlet tidak ditemukan."); }
 
-// Ambil List Klub untuk Dropdown
-$clubs = $pdo->query("SELECT id, nama_klub, city FROM clubs ORDER BY nama_klub ASC")->fetchAll();
+// 3. AMBIL LIST KLUB
+$clubs = $pdo->query("SELECT id, nama_klub, kota FROM clubs ORDER BY nama_klub ASC")->fetchAll();
 
-// 3. PROSES SIMPAN DATA (POST)
+// 4. PROSES SIMPAN DATA (POST)
 $message = "";
 $error   = "";
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     
-    // --- INI BAGIAN YANG TADI HILANG ---
+    // Tangkap Input
     $uid        = $_POST['uid'];
     $nama       = $_POST['nama_atlet'];
     $gender     = $_POST['jenis_kelamin'];
-    $tgl_lahir  = $_POST['tanggal_lahir']; // <-- Ini yang bikin error tadi
-    $sekolah    = $_POST['asal_sekolah'];  // <-- Ini juga
+    $tgl_lahir  = $_POST['tanggal_lahir'];
+    $sekolah    = $_POST['asal_sekolah'];
     $club_id    = !empty($_POST['club_id']) ? $_POST['club_id'] : NULL;
 
     try {
-        $pdo->beginTransaction(); // Mulai Transaksi biar aman
+        $pdo->beginTransaction(); // Mulai Transaksi
 
-        // A. CEK MUTASI (Perubahan Klub)
-        // Kita ambil data club_id yang ada di database sekarang (sebelum di-update)
+        // ============================================================
+        // A. LOGIKA MUTASI (UPDATE: Tambah Log ke System Health)
+        // ============================================================
+        
+        // 1. Ambil Club ID Lama
         $stmtOld = $pdo->prepare("SELECT club_id FROM swimmers WHERE id = ?");
         $stmtOld->execute([$id]);
-        $currentDbData = $stmtOld->fetch();
+        $currentData = $stmtOld->fetch();
+        $old_club_id = $currentData['club_id'];
 
-        // Jika club_id di form BEDA dengan yang di database, berarti pindah klub
-        if ($currentDbData && $currentDbData['club_id'] != $club_id) {
-            $sqlTransfer = "INSERT INTO swimmer_transfers (swimmer_id, old_club_id, new_club_id, processed_by, notes) VALUES (?, ?, ?, ?, ?)";
+        // 2. Cek apakah Klub Berubah?
+        if ($old_club_id != $club_id) {
+            
+            // a. Catat di tabel swimmer_transfers (Untuk Menu Riwayat Mutasi)
+            $sqlTransfer = "INSERT INTO swimmer_transfers (swimmer_id, old_club_id, new_club_id, processed_by, notes, transfer_date) 
+                            VALUES (?, ?, ?, ?, ?, NOW())";
             $pdo->prepare($sqlTransfer)->execute([
-                $id, 
-                $currentDbData['club_id'], 
-                $club_id, 
-                $_SESSION['user_id'], 
-                "Mutasi Klub via Master Edit"
+                $id,                    
+                $old_club_id,           
+                $club_id,               
+                $_SESSION['user_id'],   
+                "Mutasi via Edit Data (Manual)" 
+            ]);
+
+            // b. Catat di tabel system_logs (BARU: Agar muncul di System Health)
+            $logDesc = "Mutasi Klub atlet: $nama (UID: $uid)";
+            $sqlLog = "INSERT INTO system_logs (user_id, action_type, target_id, description, ip_address) 
+                       VALUES (?, 'MUTASI_KLUB', ?, ?, ?)";
+            $pdo->prepare($sqlLog)->execute([
+                $_SESSION['user_id'],
+                $id,
+                $logDesc,
+                $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0'
+            ]);
+        }
+        else {
+            // Jika klub TIDAK berubah, tapi data lain berubah, catat sebagai UPDATE biasa
+            $logDesc = "Update data profil atlet: $nama";
+            $sqlLog = "INSERT INTO system_logs (user_id, action_type, target_id, description, ip_address) 
+                       VALUES (?, 'UPDATE_SWIMMER', ?, ?, ?)";
+            $pdo->prepare($sqlLog)->execute([
+                $_SESSION['user_id'],
+                $id,
+                $logDesc,
+                $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0'
             ]);
         }
 
-        // B. UPDATE DATA UTAMA
-        $sql = "UPDATE swimmers SET uid=?, nama_atlet=?, jenis_kelamin=?, tanggal_lahir=?, asal_sekolah=?, club_id=? WHERE id=?";
+        // ============================================================
+        // B. UPDATE DATA UTAMA ATLET
+        // ============================================================
+        $sql = "UPDATE swimmers SET 
+                    uid = ?, 
+                    nama_atlet = ?, 
+                    jenis_kelamin = ?, 
+                    tanggal_lahir = ?, 
+                    asal_sekolah = ?, 
+                    club_id = ? 
+                WHERE id = ?";
+        
         $stmt = $pdo->prepare($sql);
         $stmt->execute([$uid, $nama, $gender, $tgl_lahir, $sekolah, $club_id, $id]);
 
-        // C. CATAT LOG
-        // Pastikan fungsi writeLog ada, kalau tidak ada kita skip biar gak error
-        if (function_exists('writeLog')) {
-            writeLog($pdo, $_SESSION['user_id'], 'UPDATE_SWIMMER', $id, "Update data atlet: $nama");
-        }
+        $pdo->commit(); 
 
-        $pdo->commit(); // Simpan permanen
-        
-        // Redirect balik ke index dengan pesan sukses
         header("Location: index.php?msg=updated"); exit;
 
     } catch (PDOException $e) {
-        $pdo->rollBack(); // Batalkan jika error
+        $pdo->rollBack(); 
         $error = "Gagal menyimpan: " . $e->getMessage();
     }
 }
@@ -106,7 +139,7 @@ include __DIR__ . '/../../../views/layout/topbar.php';
                     <div>
                         <label class="block text-[10px] font-black uppercase text-slate-400 tracking-widest mb-2">Nomor UID</label>
                         <input type="text" name="uid" value="<?= htmlspecialchars($swimmer['uid']) ?>" 
-                               class="w-full px-4 py-3 rounded-xl bg-slate-100 border-slate-200 text-slate-500 font-bold text-sm cursor-not-allowed" readonly>
+                               class="w-full px-4 py-3 rounded-xl bg-slate-50 border-slate-200 text-slate-700 font-bold text-sm focus:border-blue-500 focus:bg-white transition">
                     </div>
 
                     <div>
@@ -131,15 +164,17 @@ include __DIR__ . '/../../../views/layout/topbar.php';
 
                     <div class="col-span-1 md:col-span-2 bg-blue-50 p-4 rounded-xl border border-blue-100">
                         <label class="block text-[10px] font-black uppercase text-blue-500 tracking-widest mb-2">Klub / Perkumpulan</label>
-                        <select name="club_id" class="w-full px-4 py-3 rounded-xl border border-blue-200 focus:border-blue-500 font-bold text-slate-800 text-sm select2">
+                        <select name="club_id" class="w-full px-4 py-3 rounded-xl border border-blue-200 focus:border-blue-500 font-bold text-slate-800 text-sm">
                             <option value="">-- Tanpa Klub (Unattached) --</option>
                             <?php foreach($clubs as $c): ?>
                                 <option value="<?= $c['id'] ?>" <?= $swimmer['club_id'] == $c['id'] ? 'selected' : '' ?>>
-                                    <?= htmlspecialchars($c['nama_klub']) ?> (<?= htmlspecialchars($c['city']) ?>)
+                                    <?= htmlspecialchars($c['nama_klub']) ?> (<?= htmlspecialchars($c['kota'] ?? '-') ?>)
                                 </option>
                             <?php endforeach; ?>
                         </select>
-                        <p class="text-[10px] text-blue-400 mt-2 italic">*Mengubah klub ini akan otomatis tercatat di Riwayat Mutasi.</p>
+                        <p class="text-[10px] text-blue-400 mt-2 italic">
+                            ℹ️ Perubahan klub akan dicatat otomatis di Riwayat Mutasi & System Log.
+                        </p>
                     </div>
 
                     <div class="col-span-1 md:col-span-2">

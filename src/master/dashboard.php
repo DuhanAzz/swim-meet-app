@@ -3,10 +3,12 @@
 session_start();
 
 // --- 1. KONEKSI DATABASE ---
+// PERBAIKAN: Menggunakan ../config karena folder config ada di dalam src
 require_once __DIR__ . '/../config/database.php';
 
 // --- 2. CEK AKSES MASTER ---
 if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'master') {
+    // Sesuaikan path redirect login jika perlu
     header("Location: ../../public/login.php"); exit;
 }
 
@@ -20,46 +22,59 @@ $stats = [
 ];
 $liveEvents = [];
 $recentUsers = [];
-$systemStatus = 0; // 0: Online, 1: Maintenance
+$systemStatus = 0; 
+$heroTitle = 'SwimMeet App'; 
 
 try {
-    // A. Statistik Dasar
+    // A. Statistik Dasar User
     $stats['eo']       = $pdo->query("SELECT COUNT(*) FROM users WHERE role = 'admin'")->fetchColumn();
     $stats['clubs']    = $pdo->query("SELECT COUNT(*) FROM users WHERE role = 'user'")->fetchColumn();
-    $stats['athletes'] = $pdo->query("SELECT COUNT(*) FROM swimmers")->fetchColumn();
     
-    // Hitung Entries (Gabungan Aktif + Arsip jika ada)
-    $countActive  = $pdo->query("SELECT COUNT(*) FROM event_entries")->fetchColumn();
+    // Cek tabel swimmers
+    try {
+        $stats['athletes'] = $pdo->query("SELECT COUNT(*) FROM swimmers")->fetchColumn();
+    } catch (Exception $e) { $stats['athletes'] = 0; }
+    
+    // B. Hitung Entries
+    $countActive = 0;
+    try {
+        $countActive = $pdo->query("SELECT COUNT(*) FROM event_entries")->fetchColumn();
+    } catch (Exception $e) { /* Abaikan */ }
+
     $countArchive = 0;
     try {
         $countArchive = $pdo->query("SELECT COUNT(*) FROM event_entries_archive")->fetchColumn();
-    } catch (Exception $e) { /* Tabel arsip mungkin belum dibuat, abaikan */ }
+    } catch (Exception $e) { /* Abaikan */ }
+    
     $stats['entries'] = $countActive + $countArchive;
 
-    // B. Statistik Keuangan (NEW FEATURE)
-    // Ambil total uang yang statusnya 'Paid'
+    // C. Statistik Keuangan
     try {
         $stats['revenue'] = $pdo->query("SELECT SUM(amount) FROM payments WHERE status = 'Paid'")->fetchColumn() ?: 0;
-    } catch (Exception $e) { /* Abaikan jika tabel payments belum ada */ }
+    } catch (Exception $e) { $stats['revenue'] = 0; }
 
-    // C. Cek Status Maintenance & Web Settings
-    $settings = $pdo->query("SELECT * FROM site_settings WHERE id=1")->fetch();
-    $systemStatus = $settings['maintenance_mode'] ?? 0;
-    $heroTitle    = $settings['app_name'] ?? 'SwimMeet App';
+    // D. Cek Status Maintenance & Web Settings
+    try {
+        $settings = $pdo->query("SELECT * FROM site_settings WHERE id=1")->fetch();
+        if ($settings) {
+            $systemStatus = $settings['maintenance_mode'] ?? 0;
+            $heroTitle    = $settings['app_name'] ?? 'SwimMeet App';
+        }
+    } catch (Exception $e) { /* Abaikan */ }
 
-    // D. Event Live / Mendatang (Hanya yang BUKAN Draft)
+    // E. Event Live / Mendatang
     $sqlLive = "
         SELECT e.*, u.nama_lengkap as eo_name 
         FROM events e 
-        LEFT JOIN users u ON e.created_by = u.id 
-        WHERE e.event_status != 'Draft' 
+        LEFT JOIN users u ON e.user_id = u.id 
+        WHERE e.event_status != 'Done' 
         AND e.event_date_start >= CURDATE()
         ORDER BY e.event_date_start ASC 
-        LIMIT 3
+        LIMIT 5
     ";
     $liveEvents = $pdo->query($sqlLive)->fetchAll();
 
-    // E. User Terbaru (Gabung Admin EO & Klub)
+    // F. User Terbaru
     $sqlRecent = "
         SELECT id, username, role, created_at, nama_lengkap, email
         FROM users 
@@ -73,6 +88,7 @@ try {
 }
 
 // --- 4. TAMPILAN ---
+// Pastikan folder views ada di root (swim-meet/views), jadi mundur 2 langkah benar
 include __DIR__ . '/../../views/layout/topbar.php'; 
 include __DIR__ . '/../../views/layout/sidebar.php'; 
 ?>
@@ -92,9 +108,6 @@ include __DIR__ . '/../../views/layout/sidebar.php';
         <div class="flex gap-3">
             <a href="maintenance/system_health.php" class="bg-white border border-slate-200 text-slate-600 px-4 py-2 rounded-xl font-bold text-xs uppercase hover:bg-slate-100 transition shadow-sm flex items-center gap-2">
                 <span>🛡️</span> System Health
-            </a>
-            <a href="settings/global_config.php" class="bg-slate-800 text-white px-4 py-2 rounded-xl font-bold text-xs uppercase hover:bg-slate-900 transition shadow-lg flex items-center gap-2">
-                <span>⚙️</span> Config
             </a>
         </div>
     </div>
@@ -117,6 +130,7 @@ include __DIR__ . '/../../views/layout/sidebar.php';
                 <div>
                     <p class="text-slate-400 text-[10px] font-black uppercase tracking-widest mb-1">Database Atlet</p>
                     <h2 class="text-3xl font-black text-slate-800"><?= number_format($stats['athletes']) ?></h2>
+                    <p class="text-[10px] text-slate-400 mt-1">Total terdaftar</p>
                 </div>
                 <div class="w-10 h-10 bg-blue-50 text-blue-600 rounded-lg flex items-center justify-center text-xl">🏊</div>
             </div>
@@ -146,7 +160,7 @@ include __DIR__ . '/../../views/layout/sidebar.php';
                         <h2 class="text-xl font-black text-red-600 flex items-center gap-2">
                             <span class="w-3 h-3 bg-red-500 rounded-full animate-pulse"></span> MAINTENANCE
                         </h2>
-                        <p class="text-[10px] text-slate-400 mt-1">Hanya Master yang bisa akses.</p>
+                        <p class="text-[10px] text-slate-400 mt-1">Hanya Master akses.</p>
                     <?php endif; ?>
                 </div>
                 <div class="w-10 h-10 bg-slate-100 text-slate-600 rounded-lg flex items-center justify-center text-xl">🖥️</div>
@@ -168,7 +182,7 @@ include __DIR__ . '/../../views/layout/sidebar.php';
                 <div class="space-y-4">
                     <?php if(empty($liveEvents)): ?>
                         <div class="text-center py-8 text-slate-400 text-xs italic bg-slate-50 rounded-xl border border-dashed border-slate-200">
-                            Tidak ada event aktif dalam waktu dekat.
+                            Tidak ada event aktif/mendatang.
                         </div>
                     <?php else: ?>
                         <?php foreach($liveEvents as $ev): ?>
@@ -180,10 +194,19 @@ include __DIR__ . '/../../views/layout/sidebar.php';
                                 </div>
                                 <div>
                                     <h4 class="font-black text-slate-800 text-sm uppercase group-hover:text-blue-600 transition"><?= htmlspecialchars($ev['event_name']) ?></h4>
-                                    <p class="text-[10px] text-slate-500 font-bold uppercase">📍 <?= htmlspecialchars($ev['event_location']) ?></p>
+                                    <p class="text-[10px] text-slate-500 font-bold uppercase">
+                                        📍 <?= htmlspecialchars(substr($ev['event_location'], 0, 30)) ?>... 
+                                        <span class="text-slate-300 mx-1">|</span> 
+                                        EO: <?= htmlspecialchars($ev['eo_name'] ?? 'Unknown') ?>
+                                    </p>
                                 </div>
                             </div>
-                            <span class="hidden sm:block px-3 py-1 bg-emerald-100 text-emerald-700 rounded-full text-[9px] font-black uppercase tracking-wide">
+                            <?php 
+                                $statusClass = 'bg-slate-100 text-slate-600';
+                                if($ev['event_status'] == 'Registration') $statusClass = 'bg-emerald-100 text-emerald-700';
+                                if($ev['event_status'] == 'Draft') $statusClass = 'bg-yellow-100 text-yellow-700';
+                            ?>
+                            <span class="hidden sm:block px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-wide <?= $statusClass ?>">
                                 <?= $ev['event_status'] ?>
                             </span>
                         </div>
@@ -194,7 +217,7 @@ include __DIR__ . '/../../views/layout/sidebar.php';
 
             <div class="bg-white rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden">
                 <div class="bg-slate-50 px-8 py-4 border-b border-slate-100">
-                    <h3 class="font-black text-slate-800 uppercase italic text-sm tracking-widest">👤 Registrasi Terbaru</h3>
+                    <h3 class="font-black text-slate-800 uppercase italic text-sm tracking-widest">👤 Registrasi User Terbaru</h3>
                 </div>
                 <div class="overflow-x-auto">
                     <table class="w-full text-left text-sm">
@@ -236,13 +259,13 @@ include __DIR__ . '/../../views/layout/sidebar.php';
                         <div class="text-2xl mb-2 group-hover:scale-110 transition">💰</div>
                         <span class="text-[9px] font-bold uppercase tracking-wider">Keuangan</span>
                     </a>
+                    <a href="settings/public_page.php" class="bg-slate-700 hover:bg-indigo-600 p-4 rounded-xl text-center transition group">
+                        <div class="text-2xl mb-2 group-hover:scale-110 transition">🎨</div>
+                        <span class="text-[9px] font-bold uppercase tracking-wider">Editor Web</span>
+                    </a>
                     <a href="maintenance/data_cleanup.php" class="bg-slate-700 hover:bg-red-600 p-4 rounded-xl text-center transition group">
                         <div class="text-2xl mb-2 group-hover:scale-110 transition">🧹</div>
                         <span class="text-[9px] font-bold uppercase tracking-wider">Bersihkan Data</span>
-                    </a>
-                    <a href="settings/public_page.php" class="bg-slate-700 hover:bg-indigo-600 p-4 rounded-xl text-center transition group">
-                        <div class="text-2xl mb-2 group-hover:scale-110 transition">🎨</div>
-                        <span class="text-[9px] font-bold uppercase tracking-wider">Tampilan Web</span>
                     </a>
                 </div>
             </div>

@@ -2,36 +2,35 @@
 // FILE: src/master/settings/public_page.php
 session_start();
 
-// --- PERBAIKAN PATH DATABASE (Mundur 2 folder ke src/config) ---
+// 1. KONEKSI KE DATABASE
 require_once __DIR__ . '/../../config/database.php';
 
-// Cek Akses
+// 2. CEK AKSES (Hanya Master)
 if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'master') {
     header("Location: ../../../public/login.php");
     exit;
 }
 
-// --- 1. HANDLE UPDATE TEKS, KONTAK, & FOOTER ---
+// --- LOGIC A: UPDATE TEKS & KONTAK ---
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_text'])) {
     try {
-        // Data Teks
+        // Ambil Data dari Form
         $heroTitle = $_POST['hero_title'];
         $running   = $_POST['running_text'];
         $infoTitle = $_POST['info_title'];
         $infoText  = $_POST['info_text'];
-        $siteDesc  = $_POST['site_description']; // <-- Deskripsi Footer
+        $siteDesc  = $_POST['site_description'];
         
-        // Data Kontak
         $email = $_POST['contact_email'];
         $wa    = $_POST['contact_wa'];
         $ig    = $_POST['link_instagram'];
         $fb    = $_POST['link_facebook'];
         
-        // Pastikan row ada
+        // Pastikan row ID=1 ada
         $check = $pdo->query("SELECT id FROM site_settings WHERE id=1")->fetch();
         if (!$check) $pdo->query("INSERT INTO site_settings (id) VALUES (1)");
 
-        // Update Query
+        // Update Database
         $sql = "UPDATE site_settings SET 
                 hero_title = ?, 
                 running_text = ?, 
@@ -44,13 +43,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_text'])) {
                 link_facebook = ?
                 WHERE id = 1";
         
-        $pdo->prepare($sql)->execute([
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute([
             $heroTitle, $running, $infoTitle, $infoText, $siteDesc, 
             $email, $wa, $ig, $fb
         ]);
             
         $_SESSION['swal_type'] = 'success'; 
-        $_SESSION['swal_msg']  = 'Pengaturan halaman depan & footer berhasil diperbarui!';
+        $_SESSION['swal_msg']  = 'Pengaturan halaman depan berhasil diperbarui!';
         
     } catch (Exception $e) {
         $_SESSION['swal_type'] = 'error'; 
@@ -59,19 +59,23 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_text'])) {
     header("Location: public_page.php"); exit;
 }
 
-// --- 2. HANDLE UPLOAD SLIDE ---
+// --- LOGIC B: UPLOAD SLIDE BARU ---
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['slide_image'])) {
     try {
+        // Folder tujuan (public/img/hero/)
         $targetDir = __DIR__ . "/../../../public/img/hero/";
         if (!is_dir($targetDir)) mkdir($targetDir, 0777, true);
         
         if (!empty($_FILES['slide_image']['name'])) {
             $ext = pathinfo($_FILES['slide_image']['name'], PATHINFO_EXTENSION);
+            // Validasi ekstensi
             if(in_array(strtolower($ext), ['jpg', 'jpeg', 'png', 'webp'])) {
                 $fileName = "slide_" . time() . "_" . rand(100,999) . "." . $ext;
+                // Pindahkan file
                 if(move_uploaded_file($_FILES['slide_image']['tmp_name'], $targetDir . $fileName)) {
+                    // Simpan path relatif ke DB
                     $pdo->prepare("INSERT INTO hero_slides (image_path) VALUES (?)")->execute(["img/hero/" . $fileName]);
-                    $_SESSION['swal_type'] = 'success'; $_SESSION['swal_msg'] = 'Slide baru ditambahkan!';
+                    $_SESSION['swal_type'] = 'success'; $_SESSION['swal_msg'] = 'Slide baru berhasil ditambahkan!';
                 }
             } else { throw new Exception("Format gambar harus JPG, PNG, atau WEBP."); }
         }
@@ -81,9 +85,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['slide_image'])) {
     header("Location: public_page.php"); exit;
 }
 
-// --- 3. HANDLE HAPUS SLIDE ---
+// --- LOGIC C: HAPUS SLIDE ---
 if (isset($_POST['delete_id'])) {
     $id = $_POST['delete_id'];
+    // Ambil path file dulu untuk dihapus dari folder
     $stmt = $pdo->prepare("SELECT image_path FROM hero_slides WHERE id = ?");
     $stmt->execute([$id]);
     $row = $stmt->fetch();
@@ -92,12 +97,13 @@ if (isset($_POST['delete_id'])) {
         $fullPath = __DIR__ . "/../../../public/" . $row['image_path'];
         if (file_exists($fullPath)) unlink($fullPath);
     }
+    // Hapus dari DB
     $pdo->prepare("DELETE FROM hero_slides WHERE id = ?")->execute([$id]);
-    $_SESSION['swal_type'] = 'success'; $_SESSION['swal_msg'] = 'Slide dihapus.';
+    $_SESSION['swal_type'] = 'success'; $_SESSION['swal_msg'] = 'Slide berhasil dihapus.';
     header("Location: public_page.php"); exit;
 }
 
-// AMBIL DATA EXISTING
+// --- AMBIL DATA UNTUK DITAMPILKAN ---
 $settings = $pdo->query("SELECT * FROM site_settings WHERE id=1")->fetch();
 $slides = $pdo->query("SELECT * FROM hero_slides ORDER BY id DESC")->fetchAll();
 
@@ -131,12 +137,12 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                         <input type="hidden" name="update_text" value="1">
                         
                         <div class="mb-5">
-                            <label class="block text-[10px] font-black text-slate-500 uppercase mb-1 tracking-wider">Judul Utama</label>
+                            <label class="block text-[10px] font-black text-slate-500 uppercase mb-1 tracking-wider">Judul Utama (Hero)</label>
                             <input type="text" name="hero_title" value="<?= htmlspecialchars($settings['hero_title'] ?? '') ?>" class="w-full px-4 py-3 border border-slate-200 rounded-xl font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none">
                         </div>
 
                         <div class="mb-5">
-                            <label class="block text-[10px] font-black text-slate-500 uppercase mb-1 tracking-wider">Running Text</label>
+                            <label class="block text-[10px] font-black text-slate-500 uppercase mb-1 tracking-wider">Running Text (Berita)</label>
                             <textarea name="running_text" rows="2" class="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-blue-500 outline-none"><?= htmlspecialchars($settings['running_text'] ?? '') ?></textarea>
                         </div>
 
@@ -148,13 +154,13 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                         </div>
 
                         <div class="mb-5">
-                            <label class="block text-[10px] font-black text-blue-600 uppercase mb-1 tracking-wider">Deskripsi Info (Langkah-langkah)</label>
+                            <label class="block text-[10px] font-black text-blue-600 uppercase mb-1 tracking-wider">Deskripsi Info</label>
                             <textarea name="info_text" rows="3" class="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-blue-500 outline-none"><?= htmlspecialchars($settings['info_text'] ?? '') ?></textarea>
                         </div>
 
                         <div class="mb-5">
-                            <label class="block text-[10px] font-black text-emerald-600 uppercase mb-1 tracking-wider">Deskripsi Website (Footer)</label>
-                            <textarea name="site_description" rows="3" class="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-emerald-500 outline-none" placeholder="Teks yang muncul di pojok kiri bawah..."><?= htmlspecialchars($settings['site_description'] ?? '') ?></textarea>
+                            <label class="block text-[10px] font-black text-emerald-600 uppercase mb-1 tracking-wider">Deskripsi Footer</label>
+                            <textarea name="site_description" rows="3" class="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-emerald-500 outline-none" placeholder="Teks ringkas tentang website..."><?= htmlspecialchars($settings['site_description'] ?? '') ?></textarea>
                         </div>
 
                         <hr class="my-6 border-slate-100">
@@ -167,7 +173,7 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                                 <input type="email" name="contact_email" value="<?= htmlspecialchars($settings['contact_email'] ?? '') ?>" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs font-bold focus:ring-2 focus:ring-blue-500 outline-none">
                             </div>
                             <div>
-                                <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">WhatsApp</label>
+                                <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">WhatsApp (628...)</label>
                                 <input type="text" name="contact_wa" value="<?= htmlspecialchars($settings['contact_wa'] ?? '') ?>" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs font-bold focus:ring-2 focus:ring-blue-500 outline-none">
                             </div>
                         </div>
@@ -262,7 +268,7 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
         Swal.fire({
             icon: '<?= $_SESSION['swal_type'] ?>',
             title: '<?= $_SESSION['swal_type'] == 'success' ? 'Berhasil!' : 'Gagal!' ?>',
-            text: '<?= $_SESSION['swal_msg'] ?>', // Typo fixed here
+            text: '<?= $_SESSION['swal_msg'] ?>', 
             confirmButtonColor: '#0F172A',
             confirmButtonText: 'OK'
         });
@@ -276,7 +282,7 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
             const form = this.closest('form');
             Swal.fire({
                 title: 'Hapus Slide?',
-                text: "Gambar akan dihapus permanen.",
+                text: "Gambar akan dihapus permanen dari halaman depan.",
                 icon: 'warning',
                 showCancelButton: true,
                 confirmButtonColor: '#d33',
