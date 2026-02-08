@@ -1,35 +1,24 @@
 <?php
-// src/admin/seeding/generate_all.php
+// FILE: src/admin/seeding/generate_all.php
 session_start();
 require_once __DIR__ . '/../../../src/config/database.php';
 
-// Cek Admin
 if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
     header("Location: ../../../public/login.php"); exit;
 }
 
-$admin_id = $_SESSION['user_id'];
-
-// 1. AMBIL DATA DARI TABEL YANG BENAR (event_numbers)
-// Kita hanya butuh ID dan Nama Eventnya
+// 1. AMBIL NOMOR LOMBA (Gunakan nama kolom 'jenis_kelamin')
 try {
-    $sql = "SELECT id, event_number, event_name, distance, stroke, age_group 
+    $sql = "SELECT id, distance, stroke, age_group, jenis_kelamin 
             FROM event_numbers 
-            WHERE organizer_id = ? 
-            ORDER BY CAST(event_number AS UNSIGNED) ASC";
+            ORDER BY id ASC"; 
             
     $stmt = $pdo->prepare($sql);
-    $stmt->execute([$admin_id]);
+    $stmt->execute();
     $events = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 } catch (PDOException $e) {
     die("Database Error: " . $e->getMessage());
-}
-
-// Jika tidak ada event
-if (empty($events)) {
-    echo "<script>alert('Belum ada nomor lomba untuk digenerate!'); window.location='index.php';</script>";
-    exit;
 }
 ?>
 
@@ -37,11 +26,9 @@ if (empty($events)) {
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Processing Seeding...</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap" rel="stylesheet">
-    <style>body { font-family: 'Inter', sans-serif; }</style>
+    <style>body { font-family: sans-serif; }</style>
 </head>
 <body class="bg-slate-50 min-h-screen flex items-center justify-center">
 
@@ -53,22 +40,18 @@ if (empty($events)) {
         </div>
 
         <h1 class="text-2xl font-black uppercase italic text-slate-800 mb-2">Auto Seeding</h1>
-        <p class="text-slate-500 text-sm font-bold mb-6">Sedang menyusun lintasan...</p>
+        <p class="text-slate-500 text-sm font-bold mb-6">Sedang menyusun lintasan & menghitung waktu...</p>
 
-        <div class="bg-slate-900 text-left p-4 rounded-xl h-32 overflow-hidden relative mb-6">
+        <div class="bg-slate-900 text-left p-4 rounded-xl h-48 overflow-y-auto relative mb-6">
             <div id="logContainer" class="text-[10px] font-mono text-emerald-400 space-y-1">
-                <p>> Initializing system...</p>
+                <p>> System Ready.</p>
             </div>
-            <div class="absolute inset-0 bg-gradient-to-t from-slate-900 to-transparent pointer-events-none"></div>
         </div>
 
         <iframe id="processorFrame" style="display:none;"></iframe>
-
-        <p class="text-xs text-slate-400 font-bold uppercase tracking-widest">JANGAN TUTUP HALAMAN INI</p>
     </div>
 
 <script>
-    // Data Event dari PHP dikirim ke JS
     const events = <?= json_encode($events) ?>;
     let currentIndex = 0;
     const total = events.length;
@@ -84,36 +67,38 @@ if (empty($events)) {
 
     function processNext() {
         if (currentIndex >= total) {
-            addLog("SELESAI! Mengalihkan...");
+            addLog("SELESAI! Semua nomor telah di-seeding.");
             setTimeout(() => {
-                window.location.href = 'index.php';
-            }, 1000);
+                window.location.href = 'index.php'; 
+            }, 1500);
             return;
         }
 
         const ev = events[currentIndex];
-        const percent = Math.round(((currentIndex) / total) * 100);
-        
+        const percent = Math.round(((currentIndex + 1) / total) * 100);
         progressText.innerText = percent + "%";
-        addLog("Processing: #" + ev.event_number + " " + ev.event_name + "...");
+        
+        // PERBAIKAN: Gunakan ev.jenis_kelamin
+        let eventName = ev.distance + "M " + ev.stroke + " " + ev.jenis_kelamin + " (" + ev.age_group + ")";
+        addLog("Processing: " + eventName + "...");
 
-        // Panggil file logic.php untuk event ini via IFRAME
-        // Kita tambahkan parameter 'redirect=0' (opsional, jaga-jaga kalau logic.php support)
-        processorFrame.src = "logic.php?category_id=" + ev.id + "&auto_mode=1";
+        processorFrame.src = "logic.php?category_id=" + ev.id;
 
-        // Beri waktu jeda atau tunggu load (disini kita pakai timer sederhana agar aman)
-        // Jika logic.php anda melakukan redirect otomatis, iframe akan menangkapnya jadi halaman utama aman.
         processorFrame.onload = function() {
             setTimeout(() => {
                 currentIndex++;
                 processNext();
-            }, 500); // Jeda 0.5 detik per event agar database tidak choke
+            }, 300);
         };
     }
 
-    // Mulai Proses
-    window.onload = processNext;
+    window.onload = function() {
+        if(total > 0) {
+            processNext();
+        } else {
+            addLog("Tidak ada data lomba.");
+        }
+    };
 </script>
-
 </body>
 </html>

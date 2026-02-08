@@ -110,7 +110,7 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                 </div>
             </a>
 
-            <a href="<?= $globalLink ?>" target="_blank" class="bg-blue-600 text-white pl-6 pr-8 py-4 rounded-[2rem] transition flex items-center gap-4 group <?= $globalDisabled ?> h-[72px]">
+            <a href="<?= $globalLink ?>" class="bg-blue-600 text-white pl-6 pr-8 py-4 rounded-[2rem] transition flex items-center gap-4 group <?= $globalDisabled ?> h-[72px]">
                 <div class="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center group-hover:bg-white group-hover:text-blue-600 transition">📄</div>
                 <div class="text-left">
                     <span class="block text-[9px] font-bold text-blue-200 uppercase tracking-widest">Download Full</span>
