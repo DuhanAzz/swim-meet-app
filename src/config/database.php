@@ -5,10 +5,19 @@ error_reporting(E_ALL);
 ob_start(); // Tahan output agar tidak bocor
 if (session_status() === PHP_SESSION_NONE) { session_start(); }
 
-$host = 'localhost';
-$dbname = 'swim_meet';
-$username = 'root';
-$password = ''; 
+if ($_SERVER['SERVER_NAME'] == 'localhost') {
+    // LOCAL
+    $host = 'localhost';
+    $dbname = 'swim_meet';
+    $username = 'root';
+    $password = '';
+} else {
+    // HOSTING
+    $host = 'sql210.infinityfree.com';
+    $dbname = 'if0_41110235_swim_meet';
+    $username = 'if0_41110235';
+    $password = 'ZfcaOLgWnxySyH';
+}
 
 try {
     $pdo = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8", $username, $password);
