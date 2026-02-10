@@ -123,7 +123,7 @@ foreach($rawData as $row) {
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     
     <style>
-        /* --- STYLE DARI FILE view_startinglist ANDA --- */
+        /* --- STYLE DASAR --- */
         * { box-sizing: border-box; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
         body { margin: 0; padding: 0; background: #525659; font-family: 'Arial Narrow', sans-serif; font-size: 10pt; }
 
@@ -131,14 +131,14 @@ foreach($rawData as $row) {
             width: 210mm; height: 297mm; background: white; margin: 30px auto;
             position: relative; box-shadow: 0 0 15px rgba(0,0,0,0.5); overflow: hidden;
             display: flex; flex-direction: column;
-            padding: 5mm 10mm 0 10mm; /* Margin atas dikurangi agar muat */
+            padding: 5mm 10mm 0 10mm; 
         }
 
-        /* HEADER BESAR SESUAI PERMINTAAN */
+        /* HEADER BESAR */
         .page-header {
             width: 100%; border-bottom: 2px double #000; margin-bottom: 2px; padding-bottom: 2px;
             display: flex; justify-content: space-between; align-items: center; flex-shrink: 0;
-            height: 25mm; /* 3cm Header */
+            height: 25mm; 
         }
         .logo-box { width: 80px; height: 80px; display: flex; align-items: center; justify-content: center; }
         .logo-box img { max-height: 100%; max-width: 100%; object-fit: contain; }
@@ -146,13 +146,10 @@ foreach($rawData as $row) {
         .header-content h1 { margin: 0; font-size: 16pt; font-weight: 900; text-transform: uppercase; line-height: 1.1; }
         .header-content p { margin: 2px 0; font-size: 10pt; font-weight: bold; color: #444; text-transform: uppercase; }
 
-        /* BODY AREA */
         .page-body { width: 100%; flex-grow: 1; display: flex; flex-direction: column; justify-content: flex-start; }
-
-        /* JS Helper */
         .print-item { break-inside: avoid; }
 
-        /* JUDUL EVENT (Style mirip asli tapi lebih ramping vertikal) */
+        /* JUDUL EVENT */
         .event-info-bar {
             display: grid; grid-template-columns: 60px 1fr 60px; align-items: center;
             border-top: 1px solid #000;
@@ -164,43 +161,51 @@ foreach($rawData as $row) {
         .evt-title { font-size: 10pt; font-weight: 800; text-transform: uppercase; text-align: center; }
         .evt-badge { font-size: 8pt; background: #eee; border: 1px solid #ccc; padding: 2px 6px; border-radius: 4px; font-weight: bold; text-align: center; }
 
-        /* BLOK SERI */
+        /* BLOK SERI (EDITED: NO BORDER BOTTOM) */
         .heat-block { margin-bottom: 4px; break-inside: avoid; }
-        .heat-title { text-align: right; font-weight: bold; font-size: 8pt; border-bottom: 1px solid #000; margin-bottom: 1px; background: #fff; }
         
-        /* TABEL UTAMA (Style Asli tapi Compact) */
-        .ht-table { width: 100%; border-collapse: collapse; margin-bottom: 15px; }
+        .heat-title { 
+            text-align: right; 
+            font-weight: bold; 
+            font-size: 9pt; 
+            /* HAPUS BORDER BOTTOM DI SINI */
+            margin-bottom: 2px; 
+            padding-right: 2px; 
+            text-transform: uppercase; 
+        }
+        
+        /* TABEL LEBIH LONGGAR */
+        .ht-table { width: 100%; border-collapse: collapse; margin-bottom: 10px; table-layout: fixed; }
         
         .ht-table th { 
-            background: #f0f0f0; /* WARNA ASLI */
-            border-bottom: 2px solid #000; padding: 5px 2px; 
-            padding: 2px 3px; 
+            background: #e0e0e0; 
+            border-bottom: 2px solid #000; 
+            padding: 4px 3px; /* Padding Header */
             text-transform: uppercase; 
-            font-size: 8pt; text-transform: uppercase; text-align: center;
-            height: 14px;
+            font-size: 8pt; text-align: center;
+            height: 20px;
         }
         
         .ht-table td { 
-            padding: 6px 3px; vertical-align: middle; 
-            border-bottom: 1px solid #eee; /* Garis pemisah tipis horizontal */
-            border-right: 1px dotted #ccc;
-            padding: 1px 3px; 
+            /* EDIT: PADDING LEBIH BESAR AGAR LONGGAR */
+            padding: 6px 4px; 
             vertical-align: middle; 
-            line-height: 1;
-            height: 16px; /* FIX HEIGHT AGAR MUAT 6 SERI */
+            border-bottom: 1px solid #ccc; 
+            line-height: 1.2;
+            height: 26px; /* Tinggi baris minimal */
             white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-            font-size: 8pt;
+            font-size: 9pt; 
             font-weight: bold;
         }
         
-        .ht-table tr:nth-child(even) { background-color: #fafafa; } /* ZEBRA ASLI */
+        .ht-table tr:nth-child(even) { background-color: #f5f5f5; } 
 
         .tc { text-align: center; } .tr { text-align: right; } .tl { text-align: left; }
         .font-mono { font-family: 'Courier New', monospace; font-weight: bold; }
 
-        /* FOOTER BESAR */
+        /* FOOTER */
         .sheet-footer {
-            position: absolute; bottom: 0; left: 0; right: 0; height: 20mm; /* 2cm Footer */
+            position: absolute; bottom: 0; left: 0; right: 0; height: 20mm; 
             background: white; border-top: 3px double #000;
             display: flex; justify-content: center; align-items: center; gap: 20px;
             z-index: 50; padding: 5px 0;
@@ -291,33 +296,42 @@ foreach($rawData as $row) {
     ?>
         <table class="ht-table">
             <colgroup>
-                <col style="width: 5%">  <col style="width: 10%"> <col style="width: 28%"> <col style="width: 8%">  <col style="width: 24%"> <col style="width: 10%"> <col style="width: 15%"> </colgroup>
+                <col style="width: 5%">  <col style="width: 10%"> <col style="width: 25%"> <col style="width: 10%"> <col style="width: 8%">  <col style="width: 22%"> <col style="width: 10%"> <col style="width: 10%"> </colgroup>
             <thead>
                 <tr>
                     <th class="tc">LN</th> 
                     <th class="tc">UID</th> 
                     <th class="tl" style="padding-left:5px;">NAMA ATLET</th> 
+                    <th class="tc">LAHIR</th>
                     <th class="tc">KU</th> 
                     <th class="tl" style="padding-left:5px;">TIM</th> 
-                    <th class="tr" style="padding-right:5px;">PRESTASI</th> 
+                    <th class="tr" style="padding-right:5px;">WAKTU</th> 
                     <th class="tc">HASIL</th>
                 </tr>
             </thead>
             <tbody>
                 <?php for($ln=1; $ln<=$totalLane; $ln++): $s = $lanes[$ln] ?? null; ?>
                 <tr>
-                    <td class="tc font-mono bg-slate-50" style="border-right:1px solid #999;"><b><?= $ln ?></b></td>
+                    <td class="tc font-mono bg-slate-50" style="border-right:1px solid #ccc;"><b><?= $ln ?></b></td>
                     <?php if($s): ?>
-                        <td class="tc font-mono" style="font-size:7pt;"><?= htmlspecialchars($s['uid'] ?? '-') ?></td>
+                        <td class="tc font-mono" style="font-size:7.5pt;"><?= htmlspecialchars($s['uid'] ?? '-') ?></td>
                         <td class="tl font-bold text-black" style="padding-left:5px;"><?= shorten($s['nama_atlet']) ?></td>
+                        
+                        <?php 
+                            $thn = ($s['tanggal_lahir'] && $s['tanggal_lahir']!='0000-00-00') ? date('Y', strtotime($s['tanggal_lahir'])) : '-';
+                            $umr = ($thn != '-') ? ($eventYear - $thn) : 0;
+                            $lahirInfo = ($thn != '-') ? $thn." (".$umr.")" : "-";
+                        ?>
+                        <td class="tc"><?= $lahirInfo ?></td>
+                        
                         <td class="tc font-bold"><?= getKUName($s['tanggal_lahir'], $eventYear, $ageGroups) ?></td>
-                        <td class="tl" style="font-size:7pt; padding-left:5px;"><?= shorten(getTeamName($s, $partType)) ?></td>
+                        <td class="tl" style="font-size:7.5pt; padding-left:5px;"><?= shorten(getTeamName($s, $partType)) ?></td>
                         <td class="tr font-mono font-bold" style="padding-right:5px;">
                             <?php $t = $s['entry_time']; echo (!$t || $t=='99.99.99' || strpos($t,'99:99')!==false) ? 'NT' : $t; ?>
                         </td>
-                        <td class="tr text-gray-300" style="font-size:6pt; letter-spacing:1px;">[...................]</td>
+                        <td class="tr" style="color:#aaa; font-size:7pt; padding-right:5px; letter-spacing:1px;">[...............]</td>
                     <?php else: ?>
-                    <td colspan="7" class="tl" style="color:#bbb; font-style:italic;">&lt;Kosong&gt;</td>
+                        <td colspan="7" class="tl" style="color:#888; font-style:italic; padding-left:5px;">&lt;Kosong&gt;</td>
                     <?php endif; ?>
                 </tr>
                 <?php endfor; ?>
@@ -335,12 +349,8 @@ foreach($rawData as $row) {
             const printItems = Array.from(document.querySelectorAll('#tpl-content .print-item'));
             
             // PAGE LIMIT LOGIC
-            // A4 = 297mm. Header (30mm) + Footer (20mm) + TopMargin (5mm) = 55mm Terpakai.
-            // Sisa 242mm.
-            // Konversi px (estimasi): 1mm ~ 3.78px. 297mm ~ 1123px.
-            // Header+Footer+Margin ~ 210px.
-            // Usable Space ~ 900px - 950px.
-            // Kita pasang limit aman di 1000px.
+            // Karena tabel sekarang lebih tinggi (spasi longgar), limit per halaman
+            // harus disesuaikan sedikit agar tidak terpotong jelek.
             const PAGE_LIMIT = 1000; 
             
             let currentBody = null;
@@ -356,7 +366,7 @@ foreach($rawData as $row) {
                 
                 outputArea.appendChild(sheet);
                 currentBody = body;
-                currentHeight = 135; // Estimasi tinggi header + margin
+                currentHeight = 135; 
             }
             createNewPage();
 
