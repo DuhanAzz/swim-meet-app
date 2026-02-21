@@ -11,15 +11,11 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
 $adminId = $_SESSION['user_id'];
 
 // --- 0. AMBIL DATA EVENT TERAKHIR (AKTIF) ---
-// Kita ambil event terakhir yang dibuat oleh admin ini
 $stmtEvent = $pdo->prepare("SELECT * FROM events WHERE user_id = ? ORDER BY id DESC LIMIT 1");
 $stmtEvent->execute([$adminId]);
 $activeEvent = $stmtEvent->fetch();
 
-// Jika belum ada event sama sekali, set eventId = 0
 $eventId = $activeEvent['id'] ?? 0;
-
-// Config Pool (Label)
 $poolLabel = ($activeEvent['pool_type'] ?? 'LCM') === 'SCM' ? 'SCM' : 'LCM';
 
 // ==========================================
@@ -28,7 +24,6 @@ $poolLabel = ($activeEvent['pool_type'] ?? 'LCM') === 'SCM' ? 'SCM' : 'LCM';
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     
-    // Pastikan ada event yang aktif sebelum menyimpan data
     if ($eventId == 0) {
         $_SESSION['toast'] = ['type' => 'error', 'msg' => 'Buat Event Dulu di Menu Settings!'];
         header("Location: index.php"); exit;
@@ -42,13 +37,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $pkgLimit = !empty($_POST['package_limit']) ? $_POST['package_limit'] : 0;
             $pkgExtra = !empty($_POST['extra_price']) ? $_POST['extra_price'] : 0;
 
-            $sql = "UPDATE events SET 
-                    pricing_mode = ?, 
-                    package_price = ?, 
-                    package_limit = ?, 
-                    extra_price = ? 
-                    WHERE id = ? AND user_id = ?";
-            
+            $sql = "UPDATE events SET pricing_mode=?, package_price=?, package_limit=?, extra_price=? WHERE id=? AND user_id=?";
             $pdo->prepare($sql)->execute([$mode, $pkgPrice, $pkgLimit, $pkgExtra, $eventId, $adminId]);
             $_SESSION['toast'] = ['type' => 'success', 'msg' => 'Aturan Harga Berhasil Disimpan!'];
         } catch (Exception $e) {
@@ -60,7 +49,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     // --- B. TAMBAH KELOMPOK UMUR ---
     if (isset($_POST['action']) && $_POST['action'] === 'add_ku') {
         try {
-            // [FIX] Menggunakan $eventId agar KU terikat ke Event spesifik, bukan cuma ke User
             $stmt = $pdo->prepare("INSERT INTO event_age_groups (event_id, group_name, min_age, max_age) VALUES (?, ?, ?, ?)");
             $stmt->execute([$eventId, strtoupper($_POST['group_name']), $_POST['min_age'], $_POST['max_age']]);
             $_SESSION['toast'] = ['type' => 'success', 'msg' => 'Kelompok Umur Berhasil Ditambahkan!'];
@@ -72,7 +60,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
     // --- C. HAPUS KELOMPOK UMUR ---
     if (isset($_POST['action']) && $_POST['action'] === 'delete_ku') {
-        // [FIX] Hapus berdasarkan ID dan Event ID agar aman
         $pdo->prepare("DELETE FROM event_age_groups WHERE id = ? AND event_id = ?")->execute([$_POST['id'], $eventId]);
         $_SESSION['toast'] = ['type' => 'success', 'msg' => 'Kelompok Umur Dihapus'];
         header("Location: index.php"); exit;
@@ -81,18 +68,21 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     // --- D. TAMBAH NOMOR LOMBA ---
     if (isset($_POST['action']) && $_POST['action'] === 'add_event') {
         try {
-            // 1. Ambil Data Form
             $nomor  = $_POST['nomor_acara'];
             $jarak  = $_POST['jarak'];
             $gaya   = $_POST['gaya'];
             $jk     = $_POST['jenis_kelamin'];
             $harga  = (float)($_POST['biaya_pendaftaran'] ?? 0);
             
-            // 2. Validasi KU
+            // [BARU] Tangkap Tanggal & Jam
+            $tgl    = !empty($_POST['schedule_date']) ? $_POST['schedule_date'] : NULL;
+            $jam    = !empty($_POST['schedule_time']) ? $_POST['schedule_time'] : NULL;
+            
+            // Validasi KU
             $selected_kus = $_POST['selected_kus'] ?? []; 
             if(empty($selected_kus)) throw new Exception("Pilih minimal satu Kelompok Umur!");
 
-            // 3. Ambil detail KU untuk digabung namanya
+            // Gabung Nama KU
             $placeholders = str_repeat('?,', count($selected_kus) - 1) . '?';
             $stmtKU = $pdo->prepare("SELECT * FROM event_age_groups WHERE id IN ($placeholders)");
             $stmtKU->execute($selected_kus);
@@ -108,21 +98,20 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $ageGroupString = implode(", ", $kuNames);
             $selectedIdsString = implode(",", $selected_kus);
 
-            // 4. Buat Nama Event Otomatis
+            // Nama Event
             $labelJK = ($jk == 'L') ? 'PUTRA' : (($jk == 'P') ? 'PUTRI' : 'MIXED');
             $eventName = "$jarak M " . strtoupper($gaya) . " $labelJK - $poolLabel";
 
-            // 5. Insert Database
-            // [FIX] Kita isi kolom 'event_id' supaya data tidak NULL lagi
+            // Insert Database (Termasuk schedule_date & schedule_time)
             $sql = "INSERT INTO event_numbers 
                     (organizer_id, event_id, event_number, event_name, distance, stroke, jenis_kelamin, 
-                    age_group, age_min, age_max, selected_ku_ids, price, created_at) 
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())";
+                    age_group, age_min, age_max, selected_ku_ids, price, schedule_date, schedule_time, created_at) 
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())";
             
             $stmt = $pdo->prepare($sql);
             $stmt->execute([
                 $adminId, $eventId, $nomor, $eventName, $jarak, $gaya, $jk, 
-                $ageGroupString, $globalMin, $globalMax, $selectedIdsString, $harga
+                $ageGroupString, $globalMin, $globalMax, $selectedIdsString, $harga, $tgl, $jam
             ]);
 
             $_SESSION['toast'] = ['type' => 'success', 'msg' => "Nomor $nomor Berhasil Dibuat!"];
@@ -133,9 +122,23 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         header("Location: index.php"); exit;
     }
 
+    // --- [BARU] UPDATE JADWAL CEPAT (QUICK EDIT) ---
+    if (isset($_POST['action']) && $_POST['action'] === 'quick_update_schedule') {
+        try {
+            $id  = $_POST['id'];
+            $tgl = !empty($_POST['schedule_date']) ? $_POST['schedule_date'] : NULL;
+            $jam = !empty($_POST['schedule_time']) ? $_POST['schedule_time'] : NULL;
+
+            $pdo->prepare("UPDATE event_numbers SET schedule_date = ?, schedule_time = ? WHERE id = ?")->execute([$tgl, $jam, $id]);
+            $_SESSION['toast'] = ['type' => 'success', 'msg' => 'Jadwal Diperbarui!'];
+        } catch (Exception $e) {
+            $_SESSION['toast'] = ['type' => 'error', 'msg' => 'Gagal Update Jadwal'];
+        }
+        header("Location: index.php"); exit;
+    }
+
     // --- E. HAPUS NOMOR LOMBA ---
     if (isset($_POST['action']) && $_POST['action'] === 'delete_event') {
-        // [FIX] Hapus juga memastikan event_id cocok (opsional tapi lebih aman)
         $pdo->prepare("DELETE FROM event_numbers WHERE id = ? AND organizer_id = ?")->execute([$_POST['id'], $adminId]);
         $_SESSION['toast'] = ['type' => 'success', 'msg' => 'Nomor Lomba Dihapus'];
         header("Location: index.php"); exit;
@@ -143,17 +146,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 }
 
 // ==========================================
-// GET DATA FOR VIEW (READ)
+// GET DATA
 // ==========================================
-
-// 1. Ambil KU khusus untuk Event ID ini saja
 $kus = $pdo->prepare("SELECT * FROM event_age_groups WHERE event_id = ? ORDER BY min_age ASC");
 $kus->execute([$eventId]);
 $listKU = $kus->fetchAll();
 
-// 2. Ambil Nomor Lomba (Prioritas filter by event_id, backup organizer_id untuk data lama)
-// Logika: Tampilkan jika event_id nya cocok.
-// CAST(event_number AS UNSIGNED) agar sorting angka benar (1, 2, 10 bukan 1, 10, 2)
 $events = $pdo->prepare("SELECT * FROM event_numbers WHERE (event_id = ? OR (event_id IS NULL AND organizer_id = ?)) ORDER BY CAST(event_number AS UNSIGNED) ASC");
 $events->execute([$eventId, $adminId]);
 $listEvents = $events->fetchAll();
@@ -195,77 +193,43 @@ function togglePricingMode(mode) {
 
     <?php if($eventId == 0): ?>
         <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-8">
-            <div class="flex">
-                <div class="ml-3">
-                    <p class="text-sm text-yellow-700 font-bold">
-                        Anda belum membuat Event Profile. Silakan ke menu <a href="../admin/settings/event_profile.php" class="underline">Event Profile</a> terlebih dahulu.
-                    </p>
-                </div>
-            </div>
+            <p class="text-sm text-yellow-700 font-bold">
+                Anda belum membuat Event Profile. Silakan ke menu <a href="../admin/settings/event_profile.php" class="underline">Event Profile</a> terlebih dahulu.
+            </p>
         </div>
     <?php else: ?>
 
     <div class="max-w-7xl mx-auto space-y-8">
         
-        <div class="bg-indigo-900 text-white p-8 rounded-[2rem] shadow-xl relative overflow-hidden">
-            <div class="absolute top-0 right-0 p-6 opacity-10 text-9xl">💰</div>
-            <h3 class="font-black uppercase text-sm text-indigo-300 mb-6 tracking-widest relative z-10">
-                ⚙️ Aturan Biaya Pendaftaran
-            </h3>
-            
-            <form method="POST" class="relative z-10">
+        <div class="bg-indigo-900 text-white p-6 rounded-[2rem] shadow-xl relative overflow-hidden">
+            <h3 class="font-black uppercase text-sm text-indigo-300 mb-4 tracking-widest relative z-10">⚙️ Aturan Biaya</h3>
+            <form method="POST" class="relative z-10 grid md:grid-cols-2 gap-6">
                 <input type="hidden" name="action" value="update_pricing">
-                
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mb-6">
-                    <div>
-                        <label class="block text-[10px] font-bold text-indigo-300 uppercase mb-3">Metode Perhitungan</label>
-                        <div class="flex gap-4">
-                            <label class="cursor-pointer">
-                                <input type="radio" name="pricing_mode" value="per_item" class="peer sr-only" 
-                                    <?= ($activeEvent['pricing_mode'] ?? 'per_item') == 'per_item' ? 'checked' : '' ?> 
-                                    onchange="togglePricingMode('per_item')">
-                                <div class="px-5 py-3 rounded-xl bg-indigo-800 border-2 border-transparent peer-checked:bg-white peer-checked:text-indigo-900 peer-checked:border-indigo-400 transition font-bold text-sm">
-                                    Satuan (Per Nomor)
-                                </div>
-                            </label>
-                            <label class="cursor-pointer">
-                                <input type="radio" name="pricing_mode" value="package" class="peer sr-only" 
-                                    <?= ($activeEvent['pricing_mode'] ?? '') == 'package' ? 'checked' : '' ?>
-                                    onchange="togglePricingMode('package')">
-                                <div class="px-5 py-3 rounded-xl bg-indigo-800 border-2 border-transparent peer-checked:bg-emerald-400 peer-checked:text-emerald-900 peer-checked:border-emerald-200 transition font-bold text-sm flex items-center gap-2">
-                                    <span>📦</span> Sistem Paket
-                                </div>
-                            </label>
-                        </div>
-                    </div>
-
-                    <div id="packageConfig" class="<?= ($activeEvent['pricing_mode'] ?? 'per_item') == 'package' ? '' : 'hidden' ?> bg-indigo-800/50 p-4 rounded-xl border border-indigo-700">
-                        <label class="block text-[10px] font-bold text-emerald-300 uppercase mb-3">Konfigurasi Paket</label>
-                        <div class="space-y-3">
-                            <div class="flex items-center gap-3">
-                                <span class="text-xs font-bold w-24">Biaya Paket:</span>
-                                <input type="number" name="package_price" value="<?= $activeEvent['package_price'] ?? 0 ?>" placeholder="Rp 130.000" class="flex-1 bg-indigo-900/50 border border-indigo-600 rounded px-3 py-1 text-sm font-bold focus:border-emerald-400 outline-none">
-                            </div>
-                            <div class="flex items-center gap-3">
-                                <span class="text-xs font-bold w-24">Dapat Jumlah:</span>
-                                <input type="number" name="package_limit" value="<?= $activeEvent['package_limit'] ?? 0 ?>" placeholder="3" class="w-20 bg-indigo-900/50 border border-indigo-600 rounded px-3 py-1 text-sm font-bold focus:border-emerald-400 outline-none">
-                                <span class="text-[10px]">Nomor Lomba</span>
-                            </div>
-                            <div class="flex items-center gap-3">
-                                <span class="text-xs font-bold w-24">Biaya Tambahan:</span>
-                                <input type="number" name="extra_price" value="<?= $activeEvent['extra_price'] ?? 0 ?>" placeholder="Rp 35.000" class="flex-1 bg-indigo-900/50 border border-indigo-600 rounded px-3 py-1 text-sm font-bold focus:border-emerald-400 outline-none">
-                                <span class="text-[10px]">/ Nomor</span>
-                            </div>
-                        </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-indigo-300 uppercase mb-2">Metode</label>
+                    <div class="flex gap-4">
+                        <label class="cursor-pointer">
+                            <input type="radio" name="pricing_mode" value="per_item" class="peer sr-only" <?= ($activeEvent['pricing_mode'] ?? 'per_item') == 'per_item' ? 'checked' : '' ?> onchange="togglePricingMode('per_item')">
+                            <div class="px-4 py-2 rounded-lg bg-indigo-800 border border-transparent peer-checked:bg-white peer-checked:text-indigo-900 font-bold text-xs">Satuan</div>
+                        </label>
+                        <label class="cursor-pointer">
+                            <input type="radio" name="pricing_mode" value="package" class="peer sr-only" <?= ($activeEvent['pricing_mode'] ?? '') == 'package' ? 'checked' : '' ?> onchange="togglePricingMode('package')">
+                            <div class="px-4 py-2 rounded-lg bg-indigo-800 border border-transparent peer-checked:bg-emerald-400 peer-checked:text-emerald-900 font-bold text-xs">📦 Paket</div>
+                        </label>
                     </div>
                 </div>
-
-                <button type="submit" class="bg-emerald-500 hover:bg-emerald-400 text-emerald-900 font-black px-6 py-3 rounded-xl text-xs uppercase tracking-widest shadow-lg transition">
-                    Simpan Aturan Harga
-                </button>
+                <div id="packageConfig" class="<?= ($activeEvent['pricing_mode'] ?? 'per_item') == 'package' ? '' : 'hidden' ?> bg-indigo-800/50 p-3 rounded-lg border border-indigo-700">
+                    <div class="flex gap-2 mb-2">
+                        <input type="number" name="package_price" value="<?= $activeEvent['package_price'] ?? 0 ?>" class="w-1/2 bg-indigo-900/50 border border-indigo-600 rounded px-2 py-1 text-xs font-bold" placeholder="Harga Paket">
+                        <input type="number" name="package_limit" value="<?= $activeEvent['package_limit'] ?? 0 ?>" class="w-1/2 bg-indigo-900/50 border border-indigo-600 rounded px-2 py-1 text-xs font-bold" placeholder="Jml Nomor">
+                    </div>
+                    <input type="number" name="extra_price" value="<?= $activeEvent['extra_price'] ?? 0 ?>" class="w-full bg-indigo-900/50 border border-indigo-600 rounded px-2 py-1 text-xs font-bold" placeholder="Harga Extra">
+                </div>
+                <div class="md:col-span-2 text-right">
+                    <button type="submit" class="bg-emerald-500 hover:bg-emerald-400 text-emerald-900 font-bold px-4 py-2 rounded-lg text-xs uppercase shadow-lg">Simpan</button>
+                </div>
             </form>
         </div>
-
 
         <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
             
@@ -274,30 +238,26 @@ function togglePricingMode(mode) {
                     <h3 class="font-black uppercase text-xs text-slate-400 mb-4 tracking-widest">1. Buat Kelompok Umur</h3>
                     <form method="POST" class="space-y-4">
                         <input type="hidden" name="action" value="add_ku">
-                        <div>
-                            <input type="text" name="group_name" placeholder="Nama Group (e.g., KU 1)" class="w-full font-bold text-sm border-b-2 border-slate-200 focus:border-blue-600 outline-none py-2 uppercase" required>
-                        </div>
+                        <div><input type="text" name="group_name" placeholder="Nama Group (e.g., KU 1)" class="w-full font-bold text-sm border-b-2 border-slate-200 focus:border-blue-600 outline-none py-2 uppercase" required></div>
                         <div class="flex gap-2">
                             <input type="number" name="min_age" placeholder="Min" class="w-full font-bold text-sm border-b-2 border-slate-200 focus:border-blue-600 outline-none py-2" required>
                             <input type="number" name="max_age" placeholder="Max" class="w-full font-bold text-sm border-b-2 border-slate-200 focus:border-blue-600 outline-none py-2" required>
                         </div>
-                        <button type="submit" class="w-full py-3 bg-slate-800 text-white text-xs font-bold uppercase rounded-xl hover:bg-slate-900 transition">
-                            + Simpan KU
-                        </button>
+                        <button type="submit" class="w-full py-3 bg-slate-800 text-white text-xs font-bold uppercase rounded-xl hover:bg-slate-900 transition">+ Simpan KU</button>
                     </form>
                 </div>
 
                 <div class="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-200 max-h-[500px] overflow-y-auto">
-                    <h3 class="font-black uppercase text-xs text-slate-400 mb-4 tracking-widest">Daftar KU (Event #<?= $eventId ?>)</h3>
+                    <h3 class="font-black uppercase text-xs text-slate-400 mb-4 tracking-widest">Daftar KU</h3>
                     <?php if(empty($listKU)): ?>
-                        <p class="text-xs text-slate-300 italic text-center py-4">Belum ada KU untuk event ini</p>
+                        <p class="text-xs text-slate-300 italic text-center py-4">Belum ada KU</p>
                     <?php else: ?>
                         <div class="space-y-2">
                             <?php foreach($listKU as $ku): ?>
                             <div class="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100 group hover:border-blue-200 transition">
                                 <div>
                                     <h4 class="font-black text-sm text-slate-700"><?= htmlspecialchars($ku['group_name']) ?></h4>
-                                    <p class="text-[10px] font-bold text-slate-400">Umur: <?= $ku['min_age'] ?> - <?= $ku['max_age'] ?> Th</p>
+                                    <p class="text-[10px] font-bold text-slate-400"><?= $ku['min_age'] ?> - <?= $ku['max_age'] ?> Th</p>
                                 </div>
                                 <form method="POST" onsubmit="return confirm('Hapus KU ini?');">
                                     <input type="hidden" name="action" value="delete_ku">
@@ -369,23 +329,26 @@ function togglePricingMode(mode) {
                                 </div>
                             </div>
                             <div>
-                                <label class="block text-[9px] font-bold text-slate-400 uppercase mb-1">Biaya (Khusus nomor ini)</label>
-                                <input type="number" name="biaya_pendaftaran" value="50000" class="w-full bg-slate-50 border-2 border-slate-100 rounded-xl px-4 py-2 font-bold text-sm outline-none placeholder:text-slate-300">
-                                <p class="text-[9px] text-slate-400 mt-1 italic">
-                                    <?php if(($activeEvent['pricing_mode'] ?? '') == 'package'): ?>
-                                        ⚠ Mode Paket Aktif. Biaya ini mungkin diabaikan sistem.
-                                    <?php endif; ?>
-                                </p>
+                                <label class="block text-[9px] font-bold text-slate-400 uppercase mb-1">Biaya</label>
+                                <input type="number" name="biaya_pendaftaran" value="50000" class="w-full bg-slate-50 border-2 border-slate-100 rounded-xl px-4 py-2 font-bold text-sm outline-none">
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-4 mb-6 bg-slate-50 p-4 rounded-xl border border-slate-100">
+                            <div>
+                                <label class="block text-[9px] font-bold text-slate-400 uppercase mb-1">📅 Tgl Lomba</label>
+                                <input type="date" name="schedule_date" class="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs font-bold outline-none focus:border-blue-500">
+                            </div>
+                            <div>
+                                <label class="block text-[9px] font-bold text-slate-400 uppercase mb-1">⏰ Jam Mulai</label>
+                                <input type="time" name="schedule_time" class="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs font-bold outline-none focus:border-blue-500">
                             </div>
                         </div>
 
                         <div class="mb-6">
-                            <label class="block text-[9px] font-bold text-slate-400 uppercase mb-2">Pilih Kelompok Umur Yang Berlomba</label>
-                            
+                            <label class="block text-[9px] font-bold text-slate-400 uppercase mb-2">Pilih Kelompok Umur</label>
                             <?php if(empty($listKU)): ?>
-                                <div class="p-4 bg-red-50 text-red-600 text-xs font-bold rounded-xl border border-red-100 flex items-center gap-2">
-                                    ⚠️ Buat Kelompok Umur (KU) di kolom kiri dulu!
-                                </div>
+                                <div class="p-4 bg-red-50 text-red-600 text-xs font-bold rounded-xl border border-red-100 flex items-center gap-2">⚠️ Buat KU dulu!</div>
                             <?php else: ?>
                                 <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
                                     <?php foreach($listKU as $ku): ?>
@@ -402,55 +365,61 @@ function togglePricingMode(mode) {
                             <?php endif; ?>
                         </div>
 
-                        <button type="submit" class="w-full py-4 bg-blue-600 text-white font-black uppercase tracking-widest rounded-2xl shadow-lg shadow-blue-200 hover:bg-blue-700 hover:-translate-y-1 transition transform text-sm">
-                            Simpan Nomor Lomba
-                        </button>
+                        <button type="submit" class="w-full py-4 bg-blue-600 text-white font-black uppercase tracking-widest rounded-2xl shadow-lg shadow-blue-200 hover:bg-blue-700 transition transform text-sm">Simpan Nomor Lomba</button>
                     </form>
                 </div>
 
                 <div class="bg-white rounded-[2.5rem] shadow-sm border border-slate-200 overflow-hidden">
-                    <div class="p-6 border-b border-slate-100 bg-slate-50/50">
+                    <div class="p-6 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
                         <h3 class="font-black uppercase text-xs text-slate-500 tracking-widest">Database Nomor Lomba</h3>
+                        <span class="text-[10px] font-bold text-slate-400 bg-slate-200 px-2 py-1 rounded">Total: <?= count($listEvents) ?></span>
                     </div>
                     
                     <?php if(empty($listEvents)): ?>
-                        <div class="p-10 text-center">
-                            <p class="text-slate-300 font-bold text-sm italic">Belum ada nomor lomba untuk event ini.</p>
-                        </div>
+                        <div class="p-10 text-center"><p class="text-slate-300 font-bold text-sm italic">Belum ada nomor lomba.</p></div>
                     <?php else: ?>
                         <div class="divide-y divide-slate-100">
                             <?php foreach($listEvents as $ev): 
                                  $bgBadge = ($ev['jenis_kelamin'] == 'L') ? 'bg-blue-100 text-blue-700' : 
                                            (($ev['jenis_kelamin'] == 'P') ? 'bg-pink-100 text-pink-700' : 'bg-purple-100 text-purple-700');
+                                 
+                                 // Format Tanggal untuk Tampilan
+                                 $tglShow = $ev['schedule_date'] ? date('d/m/Y', strtotime($ev['schedule_date'])) : '-';
+                                 $jamShow = $ev['schedule_time'] ? date('H:i', strtotime($ev['schedule_time'])) : '-';
                             ?>
-                            <div class="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-slate-50 transition">
-                                <div class="flex items-center gap-4">
+                            <div class="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-slate-50 transition group">
+                                <div class="flex items-center gap-4 flex-1">
                                     <div class="w-14 h-14 bg-slate-100 rounded-2xl flex items-center justify-center font-black text-xl text-slate-700 italic border border-slate-200 shadow-sm">
                                         <?= $ev['event_number'] ?>
                                     </div>
-                                    <div>
+                                    <div class="flex-1">
                                         <h4 class="font-black text-sm text-slate-800 uppercase tracking-tight">
                                             <?= htmlspecialchars($ev['event_name']) ?>
                                         </h4>
-                                        <div class="flex flex-wrap gap-2 mt-1">
+                                        <div class="flex flex-wrap gap-2 mt-1 items-center">
                                             <span class="text-[10px] font-bold px-2 py-0.5 rounded <?= $bgBadge ?>">
                                                 <?= $ev['jenis_kelamin'] == 'L' ? 'PUTRA' : ($ev['jenis_kelamin'] == 'P' ? 'PUTRI' : 'MIXED') ?>
                                             </span>
                                             <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-200 text-slate-600">
                                                 <?= $ev['age_group'] ?>
                                             </span>
+                                            
+                                            <form method="POST" class="flex gap-1 ml-2 opacity-50 group-hover:opacity-100 transition">
+                                                <input type="hidden" name="action" value="quick_update_schedule">
+                                                <input type="hidden" name="id" value="<?= $ev['id'] ?>">
+                                                <input type="date" name="schedule_date" value="<?= $ev['schedule_date'] ?>" class="w-24 text-[10px] bg-white border border-slate-200 rounded px-1 py-0.5">
+                                                <input type="time" name="schedule_time" value="<?= $ev['schedule_time'] ?>" class="w-16 text-[10px] bg-white border border-slate-200 rounded px-1 py-0.5">
+                                                <button type="submit" title="Simpan Jadwal" class="bg-blue-500 text-white text-[10px] px-2 rounded hover:bg-blue-600">💾</button>
+                                            </form>
                                         </div>
                                     </div>
                                 </div>
 
                                 <div class="flex items-center gap-3">
-                                    <span class="text-xs font-bold text-slate-400">Rp <?= number_format($ev['price']) ?></span>
                                     <form method="POST" onsubmit="return confirm('Hapus Nomor <?= $ev['event_number'] ?>?');">
                                         <input type="hidden" name="action" value="delete_event">
                                         <input type="hidden" name="id" value="<?= $ev['id'] ?>">
-                                        <button type="submit" class="text-slate-300 hover:text-red-500 font-bold text-sm bg-white border border-slate-200 hover:bg-red-50 hover:border-red-200 px-3 py-2 rounded-xl transition">
-                                            Hapus
-                                        </button>
+                                        <button type="submit" class="text-slate-300 hover:text-red-500 font-bold text-sm bg-white border border-slate-200 hover:bg-red-50 hover:border-red-200 px-3 py-2 rounded-xl transition">Hapus</button>
                                     </form>
                                 </div>
                             </div>
