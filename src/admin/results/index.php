@@ -21,17 +21,18 @@ try {
     // LOGIKA DATABASE DENGAN FILTER PENCARIAN & URUTAN ANGKA
     // ============================================================
     
-    // Base Query
+    // Base Query: Menghitung dari tabel event_seeding (KOREKSI DISINI)
     $sql = "SELECT en.*, 
             (SELECT COUNT(*) FROM event_entries ee 
-                WHERE ee.category_id = en.id AND ee.heat IS NOT NULL) as count_seeded,
+             JOIN event_seeding es ON ee.id = es.entry_id 
+             WHERE ee.category_id = en.id AND es.heat_prelim IS NOT NULL) as count_seeded,
+             
             (SELECT COUNT(*) FROM event_entries ee 
-                WHERE ee.category_id = en.id AND (ee.final_time IS NOT NULL OR ee.is_dq = 1)) as total_finished
+             JOIN event_seeding es ON ee.id = es.entry_id 
+             WHERE ee.category_id = en.id AND (es.time_final IS NOT NULL OR es.is_dq_final = 1)) as total_finished
                 
             FROM event_numbers en
-            JOIN event_entries ee_filter ON en.id = ee_filter.category_id
-            
-            WHERE ee_filter.event_id = ?";
+            WHERE en.organizer_id = ?";
 
     $params = [$uid];
 
@@ -42,8 +43,7 @@ try {
         $params[] = "%$search%";
     }
     
-    // PERBAIKAN: CAST(en.event_number AS UNSIGNED)
-    // Ini memaksa database mengurutkan berdasarkan Nilai Angka, bukan Abjad.
+    // Group & Order
     $sql .= " GROUP BY en.id 
               HAVING count_seeded > 0 
               ORDER BY CAST(en.event_number AS UNSIGNED) ASC";

@@ -51,28 +51,29 @@ $stmtRace->execute([$cat_id]);
 $raceInfo = $stmtRace->fetch(PDO::FETCH_ASSOC);
 if (!$raceInfo) die("Nomor lomba tidak ditemukan.");
 
-// AMBIL PROFIL EVENT (UNTUK TAHUN EVENT & DATA KU)
-$eventId = $raceInfo['event_id'] ?? 0; // Pastikan event_id ada di tabel event_numbers
-// Jika event_id kosong, fallback ke organizer_id (meski kurang akurat jika 1 organizer punya banyak event)
+// AMBIL PROFIL EVENT
+$eventId = $raceInfo['event_id'] ?? 0; 
 if (empty($eventId)) {
     $stmtEvent = $pdo->prepare("SELECT * FROM events WHERE user_id = ? ORDER BY id DESC LIMIT 1");
     $stmtEvent->execute([$raceInfo['organizer_id']]);
     $eventProfile = $stmtEvent->fetch(PDO::FETCH_ASSOC);
-    $eventId = $eventProfile['id'];
+    $eventId = $eventProfile['id'] ?? 0;
 } else {
     $stmtEvent = $pdo->prepare("SELECT * FROM events WHERE id = ?");
     $stmtEvent->execute([$eventId]);
     $eventProfile = $stmtEvent->fetch(PDO::FETCH_ASSOC);
 }
 
-$event_year = date('Y', strtotime($eventProfile['event_start_date']));
+// ANTI-ERROR UNTUK TANGGAL YANG KOSONG
+$eventStartDate = !empty($eventProfile['event_start_date']) ? $eventProfile['event_start_date'] : date('Y-m-d');
+$eventEndDate   = !empty($eventProfile['event_end_date']) ? $eventProfile['event_end_date'] : $eventStartDate;
+$event_year     = date('Y', strtotime($eventStartDate));
 
 // AMBIL DEFINISI AGE GROUP DARI DATABASE
 $stmtAgeGroups = $pdo->prepare("SELECT * FROM event_age_groups WHERE event_id = ? ORDER BY min_age ASC");
 $stmtAgeGroups->execute([$eventId]);
 $ageGroups = $stmtAgeGroups->fetchAll(PDO::FETCH_ASSOC);
 
-// Helper function untuk menentukan Nama KU berdasarkan Tanggal Lahir
 function getAgeGroupLabel($dob, $eventYear, $ageGroups) {
     if (empty($dob) || $dob == '0000-00-00') return 'UMUR TIDAK DIKETAHUI';
     
@@ -81,15 +82,14 @@ function getAgeGroupLabel($dob, $eventYear, $ageGroups) {
     
     foreach ($ageGroups as $group) {
         if ($age >= $group['min_age'] && $age <= $group['max_age']) {
-            return $group['group_name']; // Misal: "KU 3" atau "KU 2019"
+            return $group['group_name']; 
         }
     }
     
-    return "DILUAR KATEGORI ($age TH)"; // Fallback jika tidak masuk range manapun
+    return "DILUAR KATEGORI ($age TH)"; 
 }
 
-
-// --- PROSES SIMPAN DATA (DATABASE) ---
+// --- PROSES SIMPAN DATA (DATABASE UPDATE KE event_seeding) ---
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
         $pdo->beginTransaction();
@@ -100,7 +100,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $_SESSION['ranking_mode_' . $cat_id] = $rankModePost;
         $currentMode = $rankModePost;
 
-        $stmtUpd = $pdo->prepare("UPDATE event_entries SET final_time = ?, is_dq = ?, dq_reason = ? WHERE id = ?");
+        // 1. Simpan Waktu Tempuh & Status DQ ke tabel event_seeding
+        $stmtUpd = $pdo->prepare("UPDATE event_seeding SET time_final = ?, is_dq_final = ?, dq_reason_final = ? WHERE entry_id = ?");
 
         foreach ($entries as $id => $data) {
             $time = trim($data['time'] ?? '');
@@ -112,17 +113,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmtUpd->execute([$time, $is_dq, $reason, $id]);
         }
 
-        // LOGIKA RANKING
+        // 2. Logika Ranking: Tarik data dari event_seeding
         $stmtAll = $pdo->prepare("
-            SELECT ee.id, ee.final_time, ee.is_dq, s.tanggal_lahir 
+            SELECT ee.id, es.time_final as final_time, es.is_dq_final as is_dq, s.tanggal_lahir 
             FROM event_entries ee 
+            JOIN event_seeding es ON ee.id = es.entry_id
             JOIN swimmers s ON ee.swimmer_id = s.id 
             WHERE ee.category_id = ?
         ");
         $stmtAll->execute([$cat_id]);
         $allSwimmers = $stmtAll->fetchAll(PDO::FETCH_ASSOC);
 
-        $stmtRank = $pdo->prepare("UPDATE event_entries SET final_rank = ? WHERE id = ?");
+        // 3. Simpan Rank ke tabel event_seeding
+        $stmtRank = $pdo->prepare("UPDATE event_seeding SET rank_final = ? WHERE entry_id = ?");
 
         if ($rankModePost === 'overall') {
             // MODE GABUNGAN (OVERALL)
@@ -148,12 +151,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // MODE PER KELOMPOK UMUR (SPLIT BY AGE GROUP)
             $groupedSwimmers = [];
             foreach ($allSwimmers as $s) {
-                // Tentukan Grup berdasarkan tabel event_age_groups
                 $groupName = getAgeGroupLabel($s['tanggal_lahir'], $event_year, $ageGroups);
                 $groupedSwimmers[$groupName][] = $s;
             }
             
-            // Loop per Grup KU
             foreach ($groupedSwimmers as $groupName => $swimmersInGroup) {
                 $valid = []; $invalid = [];
                 foreach ($swimmersInGroup as $s) {
@@ -198,11 +199,15 @@ $nextClass = $rowNext ? "bg-slate-700 hover:bg-slate-800 text-white" : "bg-slate
 // VARIABLES HEADER
 $header_title = strtoupper($eventProfile['nama_event'] ?? 'KEJUARAAN RENANG');
 $venue_name   = strtoupper($eventProfile['venue_name'] ?? ($eventProfile['lokasi'] ?? ''));
-$display_date = strtoupper(date('d F Y', strtotime($eventProfile['event_start_date'])));
 
-if(!empty($eventProfile['event_end_date']) && strtotime($eventProfile['event_start_date']) != strtotime($eventProfile['event_end_date'])) {
-    $header_date_range = date('d', strtotime($eventProfile['event_start_date'])) . ' - ' . date('d F Y', strtotime($eventProfile['event_end_date']));
-} else { $header_date_range = $display_date; }
+// ANTI ERROR TANGGAL HEADER
+$display_date = strtoupper(date('d F Y', strtotime($eventStartDate)));
+
+if(strtotime($eventStartDate) != strtotime($eventEndDate)) {
+    $header_date_range = date('d', strtotime($eventStartDate)) . ' - ' . date('d F Y', strtotime($eventEndDate));
+} else { 
+    $header_date_range = $display_date; 
+}
 
 $total_lintasan = (int)($eventProfile['lane_count'] ?? 8);
 $pool_type    = strtoupper($eventProfile['pool_type'] ?? 'LCM');
@@ -217,21 +222,28 @@ $gender_label = (in_array($raceInfo['jenis_kelamin'], ['L','Male','Man'])) ? 'PU
 $judul_tengah = $raceInfo['distance'] . " M GAYA " . strtoupper($cleanStroke) . " - " . ($raceInfo['age_group']??'') . " " . $gender_label . $poolSuffix;
 $nomor_acara = "#" . $raceInfo['event_number'];
 
-// SPONSOR (Dipakai di Footer)
+// SPONSOR
 $stmtSpon = $pdo->prepare("SELECT image_path FROM event_sponsors WHERE event_id = ?");
 $stmtSpon->execute([$eventId]);
 $sponsors = $stmtSpon->fetchAll(PDO::FETCH_COLUMN);
 
-// DATA PESERTA
+// DATA PESERTA (JOIN DENGAN event_seeding)
 try {
-    $sql = "SELECT ee.*, 
+    $sql = "SELECT ee.id, 
+            es.heat_prelim as heat, 
+            es.lane_prelim as lane, 
+            es.time_final as final_time, 
+            es.is_dq_final as is_dq, 
+            es.dq_reason_final as dq_reason,
+            es.time_prelim as entry_time,
             s.nama_atlet, s.tanggal_lahir, s.asal_sekolah,
             u.nama_lengkap as club_name
             FROM event_entries ee
+            JOIN event_seeding es ON ee.id = es.entry_id
             JOIN swimmers s ON ee.swimmer_id = s.id
             LEFT JOIN users u ON ee.club_id = u.id 
-            WHERE ee.category_id = ? AND ee.heat IS NOT NULL 
-            ORDER BY ee.heat ASC, ee.lane ASC";
+            WHERE ee.category_id = ? AND es.heat_prelim IS NOT NULL 
+            ORDER BY es.heat_prelim ASC, es.lane_prelim ASC";
     $stmt = $pdo->prepare($sql);
     $stmt->execute([$cat_id]);
     $raw_data = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -249,7 +261,7 @@ if ($currentMode === 'overall') {
     $groupTitle = "KELOMPOK UMUR (" . $kelompokUmurLabel . ")";
 
     foreach ($raw_data as $row) {
-        if (!empty($row['swimmer_id'])) {
+        if (!empty($row['id'])) {
             $row['ms_sort'] = 9999999999;
             if (($row['is_dq']??0) == 1) { $row['ms_sort'] = 9999999999 + 100; } 
             elseif (!empty($row['final_time']) && $row['final_time'] != 'NT') {
@@ -259,10 +271,9 @@ if ($currentMode === 'overall') {
         }
     }
 } else {
-    // MODE SPLIT BY AGE GROUP (DATABASE)
+    // MODE SPLIT BY AGE GROUP
     foreach ($raw_data as $row) {
-        if (!empty($row['swimmer_id'])) {
-            // Gunakan fungsi helper yang sama untuk konsistensi tampilan
+        if (!empty($row['id'])) {
             $groupName = getAgeGroupLabel($row['tanggal_lahir'], $event_year, $ageGroups);
             
             $row['ms_sort'] = 9999999999; 
@@ -273,8 +284,6 @@ if ($currentMode === 'overall') {
             $groupedResults[$groupName][] = $row;
         }
     }
-    // Urutkan Nama Grup secara Ascending (Misal: KU 2019, KU 2018...)
-    // Jika nama grup mengandung angka, ksort() biasanya sudah cukup rapi
     ksort($groupedResults);
 }
 
@@ -337,11 +346,8 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
     .input-time { width: 100%; border: 1px solid #ccc; background: #f9f9f9; padding: 2px; font-family: 'Courier Prime', monospace; font-weight: bold; text-align: right; font-size: 10pt; color: blue; outline: none; border-radius: 4px; }
     .input-status { width: 100%; border: none; background: transparent; font-size: 8pt; font-weight: bold; text-align: center; cursor: pointer; }
     
-    /* FOOTER STYLES (SCREEN & PRINT) */
-    .footer-sponsor { 
-        display: none; /* Hidden on input screen to save space */
-    }
-
+    /* FOOTER STYLES */
+    .footer-sponsor { display: none; }
     .print-only { display: none; } .screen-only { display: block; }
 
     @media print {
@@ -352,12 +358,9 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
         .paper-sheet { width: 100% !important; margin: 0 !important; padding: 0 !important; box-shadow: none !important; padding-bottom: 30mm !important; }
         .screen-only { display: none !important; } .print-only { display: block !important; }
         
-        /* FOOTER TETAP DI BAWAH SETIAP HALAMAN */
         .footer-sponsor { 
-            display: flex !important;
-            position: fixed; bottom: 0; left: 0; right: 0; 
-            padding-bottom: 2mm; background: white; z-index: 9999; 
-            flex-direction: column; align-items: center;
+            display: flex !important; position: fixed; bottom: 0; left: 0; right: 0; 
+            padding-bottom: 2mm; background: white; z-index: 9999; flex-direction: column; align-items: center;
         }
         .sponsor-line-separator { width: 95%; border-top: 2px double #000; margin-bottom: 5px; }
         .sponsor-logo-container { display: flex; justify-content: center; align-items: center; gap: 15px; width: 100%; padding: 0 10px; }
@@ -604,6 +607,19 @@ document.addEventListener("DOMContentLoaded", function() {
     inputLink.addEventListener("input", function() {
         localStorage.setItem(storageKey, this.value); 
         updateQR(this.value);
+    });
+
+    // --- AUTO FORMAT INPUT WAKTU (MM:SS.MS) ---
+    document.querySelectorAll('.input-time').forEach(function(input) {
+        input.addEventListener('input', function(e) {
+            let val = this.value.replace(/\D/g, '');
+            if (val.length > 6) { val = val.substring(0, 6); }
+            let formatted = '';
+            if (val.length > 0) { formatted += val.substring(0, 2); }
+            if (val.length > 2) { formatted += ':' + val.substring(2, 4); }
+            if (val.length > 4) { formatted += '.' + val.substring(4, 6); }
+            this.value = formatted;
+        });
     });
 });
 </script>
