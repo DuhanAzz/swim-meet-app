@@ -1,488 +1,294 @@
 <?php
-// src/admin/results/export_all_results.php
+// FILE: src/admin/results/export_all_results.php
 session_start();
 require_once __DIR__ . '/../../../src/config/database.php';
 
-// 1. CEK KEAMANAN
-if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
-    header("Location: ../../../public/login.php"); exit;
-}
-$uid = $_SESSION['user_id']; 
+if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') { die("Akses Ditolak"); }
 
-// 2. TANGKAP EVENT ID
+$protocol = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? "https" : "http");
+$host = $_SERVER['HTTP_HOST'];
+
+// === AMBIL DATA (SAMA PERSIS DENGAN PRINT_FULL_BOOK) ===
 $eventId = $_GET['event_id'] ?? 0;
-
 if ($eventId == 0) {
+    $uid = $_SESSION['user_id'];
     $stmtLast = $pdo->prepare("SELECT id FROM events WHERE user_id = ? ORDER BY id DESC LIMIT 1");
     $stmtLast->execute([$uid]);
     $lastEvent = $stmtLast->fetch();
     $eventId = $lastEvent['id'] ?? 0;
 }
-if ($eventId == 0) { die("Event belum dibuat."); }
 
-// 3. AMBIL PROFIL EVENT
 $stmtProfile = $pdo->prepare("SELECT * FROM events WHERE id = ?");
 $stmtProfile->execute([$eventId]);
-$eventProfile = $stmtProfile->fetch(PDO::FETCH_ASSOC);
+$raceInfo = $stmtProfile->fetch(PDO::FETCH_ASSOC);
 
-if (!$eventProfile) die("Data Event tidak ditemukan.");
+if (!$raceInfo) { die("Data Event tidak ditemukan."); }
 
-// AMBIL SPONSOR
-$stmtFooter = $pdo->prepare("SELECT image_path FROM event_sponsors WHERE event_id = ?");
-$stmtFooter->execute([$eventId]);
-$footerSponsors = $stmtFooter->fetchAll(PDO::FETCH_COLUMN);
+$eventName  = strtoupper($raceInfo['event_name'] ?? 'EVENT NAME');
+$venueName  = strtoupper($raceInfo['event_location'] ?? '-');
+$eventDate  = $raceInfo['event_date_start'] ?? date('Y-m-d');
+$logoLeft   = !empty($raceInfo['logo_left']) ? '../../../public/' . $raceInfo['logo_left'] : null;
+$logoRight  = !empty($raceInfo['logo_right']) ? '../../../public/' . $raceInfo['logo_right'] : null;
+$partType   = $raceInfo['participation_type'] ?? 'club';
+$rawPool    = $raceInfo['pool_type'] ?? '50m'; 
+$poolLabel  = ($rawPool === '25m' || $rawPool === 'SCM') ? 'SCM' : 'LCM';
 
-// 4. SETUP VARIABEL TAMPILAN
-$header_title    = strtoupper($eventProfile['nama_event']);
-$venue_name      = strtoupper($eventProfile['venue_name'] ?? $eventProfile['lokasi']);
-$participationType = $eventProfile['participation_type'] ?? 'club';
-
-$event_date      = $eventProfile['event_start_date'];
-$display_date    = strtoupper(date('d F Y', strtotime($event_date)));
-$event_year      = date('Y', strtotime($event_date));
-
-if(!empty($eventProfile['event_end_date']) && strtotime($eventProfile['event_start_date']) != strtotime($eventProfile['event_end_date'])) {
-    $header_date_range = date('d', strtotime($eventProfile['event_start_date'])) . ' - ' . date('d F Y', strtotime($eventProfile['event_end_date']));
+$eventYear   = date('Y', strtotime($eventDate)); 
+$displayDate = strtoupper(date('d F Y', strtotime($eventDate)));
+if(!empty($raceInfo['event_date_end']) && $raceInfo['event_date_end'] != '0000-00-00' && $raceInfo['event_date_end'] != $eventDate) {
+    $dateRange = date('d', strtotime($eventDate)) . ' - ' . date('d F Y', strtotime($raceInfo['event_date_end']));
 } else {
-    $header_date_range = $display_date;
+    $dateRange = $displayDate;
 }
+$dateRange = strtoupper($dateRange);
 
-$logo_left  = !empty($eventProfile['logo_left']) ? '../../../public/' . $eventProfile['logo_left'] : null;
-$logo_right = !empty($eventProfile['logo_right']) ? '../../../public/' . $eventProfile['logo_right'] : null;
-$poolSuffix = ($eventProfile['pool_type'] == 'SCM') ? ' - SCM' : ' - LCM';
+$stmtSpon = $pdo->prepare("SELECT image_path FROM event_sponsors WHERE event_id = ?");
+$stmtSpon->execute([$eventId]); 
+$sponsors = $stmtSpon->fetchAll(PDO::FETCH_COLUMN);
 
-// AMBIL DEFINISI AGE GROUP
-$stmtAgeGroups = $pdo->prepare("SELECT * FROM event_age_groups WHERE event_id = ? ORDER BY min_age ASC");
-$stmtAgeGroups->execute([$eventId]);
-$ageGroups = $stmtAgeGroups->fetchAll(PDO::FETCH_ASSOC);
+$stmtAge = $pdo->prepare("SELECT group_name, min_age, max_age FROM event_age_groups WHERE event_id = ?");
+$stmtAge->execute([$eventId]);
+$ageGroups = $stmtAge->fetchAll(PDO::FETCH_ASSOC);
 
-// 5. AMBIL SEMUA NOMOR LOMBA
-$stmtEvents = $pdo->prepare("SELECT * FROM event_numbers WHERE organizer_id = ? ORDER BY CAST(event_number AS UNSIGNED) ASC");
-$stmtEvents->execute([$uid]);
-$all_events = $stmtEvents->fetchAll(PDO::FETCH_ASSOC);
-
-// --- HELPER FUNCTIONS ---
-function timeToMs($time) {
-    $time = trim($time);
-    if (empty($time) || $time == 'NT' || $time == '99:99.99' || $time == '-') return 9999999999; 
-    $parts = preg_split('/[:.]/', $time);
-    $menit = 0; $detik = 0; $ms = 0;
-    if (count($parts) == 3) { $menit = (int)$parts[0]; $detik = (int)$parts[1]; $ms = (int)$parts[2]; } 
-    elseif (count($parts) == 2) { $detik = (int)$parts[0]; $ms = (int)$parts[1]; } 
-    elseif (count($parts) == 1) { $detik = (int)$parts[0]; }
-    return ($menit * 60000) + ($detik * 1000) + ($ms * 10);
-}
-
-function shortenName($name) {
-    return trim(preg_replace('/\s+/', ' ', $name ?? ''));
-}
-
-function getTeamName($row, $type) {
-    $club = trim($row['club_name'] ?? ''); 
-    $school = trim($row['asal_sekolah'] ?? '');
-    if (stripos($type, 'sekolah') !== false || stripos($type, 'school') !== false) {
-        return !empty($school) ? $school : (!empty($club) ? $club : '-');
-    } else {
-        return !empty($club) ? $club : (!empty($school) ? $school : '-');
-    }
-}
-
-function getAgeGroupLabel($dob, $eventYear, $ageGroups) {
-    if (empty($dob) || $dob == '0000-00-00') return 'UMUR TIDAK DIKETAHUI';
-    $birthYear = date('Y', strtotime($dob));
-    $age = $eventYear - $birthYear;
-    foreach ($ageGroups as $group) {
-        if ($age >= $group['min_age'] && $age <= $group['max_age']) {
-            return $group['group_name']; 
+if (!function_exists('getKUName')) {
+    function getKUName($dob, $evtYear, $groups) {
+        if(!$dob || $dob == '0000-00-00') return '-';
+        $age = $evtYear - (int)date('Y', strtotime($dob));
+        foreach($groups as $g) {
+            if ($age >= $g['min_age'] && $age <= $g['max_age']) return $g['group_name'];
         }
+        return $age . " TH";
     }
-    return "DILUAR KATEGORI ($age TH)"; 
+}
+if (!function_exists('getTeamName')) {
+    function getTeamName($row, $type) {
+        $club = trim($row['club_name'] ?? ''); $school = trim($row['asal_sekolah'] ?? '');
+        if (stripos($type, 'sekolah') !== false || stripos($type, 'school') !== false) return $school ?: ($club ?: '-');
+        return $club ?: ($school ?: '-');
+    }
 }
 
-include __DIR__ . '/../../../views/layout/topbar.php'; 
-include __DIR__ . '/../../../views/layout/sidebar.php'; 
+// === AMBIL DATA HASIL LOMBA KESELURUHAN ===
+$sqlAll = "SELECT 
+            en.id as cat_id, en.event_number, en.distance, en.stroke, en.age_group, en.jenis_kelamin, 
+            es.rank_final, es.time_prelim as entry_time, es.time_final, es.is_dq_final, es.dq_reason_final,
+            s.uid, s.nama_atlet, s.tanggal_lahir, u.nama_lengkap as club_name, s.asal_sekolah
+           FROM event_numbers en
+           JOIN event_entries ee ON ee.category_id = en.id
+           JOIN event_seeding es ON ee.id = es.entry_id
+           JOIN swimmers s ON ee.swimmer_id = s.id
+           LEFT JOIN users u ON ee.club_id = u.id
+           WHERE (es.time_final IS NOT NULL OR es.is_dq_final = 1) 
+           AND en.organizer_id = ?
+           ORDER BY CAST(en.event_number AS UNSIGNED) ASC, 
+                    CASE WHEN es.rank_final IS NULL THEN 9999 ELSE es.rank_final END ASC";
+
+$stmtAll = $pdo->prepare($sqlAll);
+$stmtAll->execute([$raceInfo['user_id']]);
+$rawData = $stmtAll->fetchAll(PDO::FETCH_ASSOC);
+
+$fullResults = [];
+foreach($rawData as $row) {
+    $cid = $row['cat_id'];
+    if(!isset($fullResults[$cid])) {
+        $cleanStroke = trim(str_ireplace(['Gaya', 'GAYA'], '', $row['stroke']));
+        $genderLabel = (in_array($row['jenis_kelamin'], ['L','Male','Man'])) ? 'PUTRA' : 'PUTRI';
+        
+        $judulParts = [];
+        $judulParts[] = $row['distance']."M ".strtoupper($cleanStroke); 
+        $judulParts[] = $row['age_group']; 
+        $judulParts[] = strtoupper($genderLabel); 
+        $judulParts[] = $poolLabel; 
+        
+        $fullResults[$cid] = [
+            'meta' => [
+                'nomor'  => $row['event_number'],
+                'judul'  => implode(" - ", $judulParts),
+                'jadwal' => $dateRange
+            ],
+            'data' => []
+        ];
+    }
+    $fullResults[$cid]['data'][] = $row;
+}
 ?>
 
-<style>
-    @import url('https://fonts.googleapis.com/css2?family=Roboto+Condensed:wght@400;700;900&family=Courier+Prime:wght@400;700&display=swap');
-    
-    .font-condensed { font-family: 'Roboto Condensed', sans-serif; }
-    .font-mono { font-family: 'Courier Prime', monospace; }
-
-    /* LAYOUT SCREEN */
-    .paper-sheet {
-        width: 210mm; 
-        min-height: 297mm; 
-        background: white; 
-        margin: 0 auto 30px auto; 
-        padding: 5mm 10mm 10mm 10mm; 
-        color: #000; 
-        position: relative; 
-        font-family: 'Roboto Condensed', sans-serif;
-        box-shadow: 0 4px 10px rgba(0,0,0,0.1);
-    }
-
-    /* HEADER HALAMAN (KOP) */
-    .page-header {
-        padding: 5px 0 10px 0; border-bottom: 2px double #000; margin-bottom: 10px;
-        display: flex; justify-content: space-between; align-items: center; width: 100%;
-    }
-    .logo-box { width: 70px; height: 70px; display: flex; align-items: center; justify-content: center; }
-    .logo-box img { max-height: 100%; max-width: 100%; object-fit: contain; }
-    .header-content h1 { font-size: 14pt; margin-bottom: 2px; }
-    .header-content p { font-size: 9pt; margin: 0; }
-    .buku-acara-badge { font-size: 12pt; padding: 2px 10px; margin-top: 5px; border-width: 2px; }
-
-    /* ITEM CONTAINER PER NOMOR LOMBA */
-    .event-item-container {
-        margin-bottom: 20px;
-        padding-bottom: 15px;
-        border-bottom: 2px dashed #ccc; 
-        page-break-inside: auto; 
-    }
-    .event-item-container:last-child { border-bottom: none; }
-
-    /* HEADER PER NOMOR LOMBA */
-    .event-header-grid {
-        display: grid; 
-        grid-template-columns: 80px 1fr 50px 90px; 
-        gap: 5px; align-items: center;
-        border-bottom: 1px solid #000; margin-bottom: 5px; padding-bottom: 5px;
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <title>Meet Results Print</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        /* RESET */
+        * { box-sizing: border-box; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+        body { margin: 0; padding: 0; font-family: 'Arial', sans-serif; background: #ccc; }
         
-        page-break-after: avoid; 
-        page-break-inside: avoid;
-    }
-    .event-number { font-size: 14pt; font-weight: 900; line-height: 1; }
-    .event-title { font-size: 11pt; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; }
-    .babak-badge { font-size: 9pt; padding: 2px 5px; }
-    .qr-box { display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        /* CONTAINER HALAMAN BIASA */
+        .page-wrapper { background: white; width: 210mm; margin: 20px auto; padding: 0 10mm; min-height: 297mm; position: relative; }
+        
+        /* HEADER FIXED - IDENTIK PRINT FULL BOOK */
+        .header-fixed { position: fixed; top: 0; left: 0; right: 0; height: 35mm; background: white; border-bottom: 3px double #000; display: grid; grid-template-columns: 110px 1fr 110px; align-items: flex-end; padding: 5px 10mm 3px 10mm; z-index: 999; }
+        .header-center { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; text-align: center; line-height: 1.2; color: #000; }
+        .header-line-1 { font-size: 14pt; font-weight: 900; text-transform: uppercase; margin-bottom: 2px; }
+        .header-line-2 { font-size: 9pt; font-weight: bold; text-transform: uppercase; }
+        .header-line-3 { font-size: 9pt; font-weight: bold; text-transform: uppercase; }
+        .header-line-4 { height: 3px; } 
+        .header-line-5 { font-size: 18pt; font-weight: 900; text-transform: uppercase; letter-spacing: 2px; color: #000; margin-top: 2px; margin-bottom: 0px; line-height: 1; }
+        .logo-img { max-height: 100px; max-width: 100%; object-fit: contain; margin-bottom: 2px; }
+        
+        /* FOOTER FIXED - IDENTIK PRINT FULL BOOK + WARNA SPONSOR */
+        .footer-fixed { position: fixed; bottom: 0; left: 0; right: 0; height: 20mm; background: white; border-top: 2px double #000; display: flex; justify-content: space-between; align-items: center; padding: 0 10mm; z-index: 999; }
+        .footer-sponsors { display: flex; gap: 10px; align-items: center; justify-content: center; flex: 1; }
+        .footer-sponsors img { height: 45px; object-fit: contain; } 
+        .footer-time { font-family: monospace; font-size: 8pt; color: #666; width: 120px; }
 
-    /* TABEL HASIL */
-    .rank-table { width: 100%; border-collapse: collapse; font-size: 9pt; table-layout: fixed; margin-bottom: 10px; }
-    
-    .rank-table thead { display: table-header-group; } 
-    
-    .rank-table th { 
-        background: #f0f0f0; border-bottom: 1px solid #000; border-top: 1px solid #000; 
-        padding: 2px 4px; font-weight: bold; text-transform: uppercase; 
-    }
-    .rank-table td { 
-        border-bottom: 1px solid #ccc; padding: 3px 4px; 
-        vertical-align: middle; white-space: normal; line-height: 1.1;
-    }
-    
-    .rank-table tr { page-break-inside: avoid; page-break-after: auto; }
+        /* SPACER */
+        .layout-table { width: 100%; border-collapse: collapse; border: none; }
+        .layout-header-space { height: 40mm; } 
+        .layout-footer-space { height: 22mm; }
+        
+        /* EVENT HEADER - IDENTIK PRINT FULL BOOK */
+        .event-header { position: relative; display: flex; justify-content: space-between; align-items: flex-end; border-top: none; border-bottom: 2px solid #000; padding: 2px 0; margin-top: 5px; margin-bottom: 2px; background: #fff; font-family: 'Arial', sans-serif; min-height: 35px; }
+        .eh-left-group { display: flex; flex-direction: column; justify-content: center; width: 150px; line-height: 1.1; z-index: 2; position: relative; background: white; }
+        .eh-number { font-size: 14pt; font-weight: 900; margin-bottom: 2px; }
+        .eh-date { font-size: 8pt; font-weight: bold; font-style: normal; }
+        .eh-center { position: absolute; left: 50%; bottom: 3px; transform: translateX(-50%); text-align: center; width: 60%; z-index: 1; }
+        .eh-title  { font-size: 11pt; font-weight: 800; text-transform: uppercase; }
+        .eh-right  { width: 150px; text-align: right; z-index: 2; position: relative; background: white; display: flex; justify-content: flex-end; }
+        .qr-header { width: 45px; height: 45px; object-fit: contain; margin-bottom: 2px; }
 
-    .col-center { text-align: center; } .col-left { text-align: left; } .col-right { text-align: right; }
+        /* TABEL STYLE SINKRONISASI LEBAR */
+        .data-table { width: 100%; border-collapse: collapse; table-layout: fixed; margin-bottom: 2px; font-family: 'Courier New', Courier, monospace; font-size: 8pt; }
+        .data-table th { background-color: #e5e7eb; color: #000; font-family: 'Arial Narrow', sans-serif; font-weight: bold; font-size: 8pt; text-transform: uppercase; padding: 2px 4px; border-top: 1px solid #000; border-bottom: 2px solid #000; text-align: center; }
+        .data-table td { padding: 4px 4px; border-bottom: 1px solid #ccc; vertical-align: middle; }
+        
+        .col-rank { width: 4%; text-align: center; background: #f8f9fa; border-right: 1px solid #eee; font-weight: bold; white-space: nowrap; }
+        .col-uid { width: 11%; text-align: center; white-space: nowrap; }
+        .col-nama { width: 35%; text-align: left; padding-left: 5px; white-space: normal; line-height: 1.1; font-weight: bold;}
+        .col-ku { width: 10%; text-align: center; white-space: nowrap; }
+        .col-tim { width: 20%; text-align: left; padding-left: 5px; white-space: normal; line-height: 1.1; }
+        .col-waktu-awal { width: 9%; text-align: right; padding-right: 5px; white-space: nowrap; color: #666; font-size: 7.5pt; }
+        .col-hasil { width: 11%; text-align: right; font-weight: bold; font-size: 9pt; white-space: nowrap; }
 
-    /* YEAR HEADER (Pemisah KU) */
-    .year-wrapper { 
-        page-break-inside: auto; 
-    }
-    .year-header {
-        background: #333; color: #fff; font-weight: 900; padding: 3px 5px;
-        font-size: 9pt; text-transform: uppercase; margin-bottom: 0; margin-top: 10px;
-        display: inline-block; border-radius: 3px 3px 0 0;
-        page-break-after: avoid; 
-    }
+        .group-row td { background-color: #f3f4f6; font-family: 'Arial', sans-serif; font-weight: bold; text-transform: uppercase; color: #6b7280; border-top: 1px solid #9ca3af; border-bottom: 1px solid #9ca3af; padding: 6px 8px; text-align: left; font-size: 9pt; }
 
-    /* FOOTER SPONSOR (Tampil di setiap halaman print) */
-    .footer-sponsor { display: none; }
+        .btn-print { position: fixed; top: 20px; right: 20px; z-index: 9999; background: #000; color: #fff; border: none; padding: 12px 20px; font-weight: bold; border-radius: 6px; cursor: pointer; }
 
-    /* === KHUSUS PRINT === */
-   /* === KHUSUS PRINT (VERSI FINAL MEPET BAWAH) === */
-    @media print {
-    /* 1. SETUP HALAMAN GLOBAL */
-    @page { 
-        size: A4; 
-        margin: 0; /* Margin 0 agar kita bisa atur manual per elemen */
-    }
-    
-    /* Sembunyikan elemen navigasi admin */
-    nav, aside, header, .sidebar, .no-print, .fixed, .navbar, .topbar, .btn { 
-        display: none !important; 
-    }
+        @media print {
+            @page { size: A4; margin: 0; }
+            body { background: white; margin: 0; }
+            .btn-print { display: none; }
+            .page-wrapper { margin: 0; width: 100%; box-shadow: none; padding: 0 10mm; min-height: auto; position: relative; }
+            .layout-table > thead { display: table-header-group !important; }
+            .data-table > thead { display: table-row-group !important; }
+            tfoot { display: table-footer-group; }
+            .data-table th { background-color: #e5e7eb !important; }
+            .col-rank { background: #f8f9fa !important; }
+            .group-row td { background-color: #f3f4f6 !important; }
+        }
+    </style>
+</head>
+<body>
+    <button onclick="window.print()" class="btn-print"><i class="fas fa-print"></i> CETAK KESELURUHAN HASIL</button>
 
-    body, html { 
-        margin: 0 !important; 
-        padding: 0 !important; 
-        background: white !important; 
-        width: 100%; 
-        /* Jangan force height 100% di body agar konten bisa scroll ke halaman berikutnya */
-    }
-
-    #print-wrapper { 
-        margin: 0 !important; 
-        padding: 0 !important; 
-        width: 100%; 
-    }
-
-    /* 2. PENGATURAN COVER (Halaman Pertama) */
-    .cover-sheet {
-        display: flex !important;      /* Gunakan flex untuk tengah-tengah vertikal/horizontal */
-        flex-direction: column;
-        justify-content: center;
-        align-items: center;
-        width: 210mm !important;       /* Lebar A4 Pas */
-        height: 296mm !important;      /* Tinggi A4 dikurangi sedikit toleransi */
-        margin: 0 auto !important;
-        padding: 0 !important;
-        page-break-after: always;      /* Paksa halaman baru setelah cover */
-        position: relative;
-        z-index: 9999;
-    }
-
-    /* 3. PENGATURAN HALAMAN ISI */
-    .paper-sheet { 
-        width: 100% !important; 
-        margin: 0 !important;
-        /* Padding Bawah 25mm memberi ruang agar teks tidak tertutup Footer (20mm) */
-        padding: 10mm 10mm 25mm 10mm !important; 
-        box-shadow: none !important; 
-    }
-
-    /* 4. FOOTER SPONSOR (Fixed di tiap halaman) */
-    .footer-sponsor { 
-        position: fixed; 
-        bottom: 0; 
-        left: 0; 
-        right: 0;
-        height: 20mm;           /* Tinggi area footer */
-        background: white; 
-        z-index: 1000;
-        display: flex !important;
-        justify-content: center; /* Logo sponsor di tengah */
-        align-items: flex-end;
-        padding-bottom: 5mm;
-        border-top: 1px solid #ddd; /* Opsional: garis pembatas */
-    }
-    
-    /* 5. PENGATURAN TABEL (Agar tidak terpotong jelek) */
-    .heat-table {
-        width: 100%;
-        border-collapse: collapse;
-        margin-bottom: 10mm;
-    }
-
-    .heat-table th { 
-        -webkit-print-color-adjust: exact; 
-        background-color: #eee !important; 
-        color: #000 !important;
-        font-weight: bold;
-    }
-
-    /* KUNCI: Agar header tabel muncul lagi jika tabel lanjut ke halaman 2 */
-    .heat-table thead { display: table-header-group; } 
-    
-    /* KUNCI: Mencegah baris perenang terpotong di tengah (setengah di hal 1, setengah di hal 2) */
-    .heat-table tr { 
-        page-break-inside: avoid; 
-        page-break-after: auto; 
-    }
-    
-    .heat-table td, .heat-table th {
-        padding: 4px;
-        border: 1px solid #ccc;
-    }
-}
-</style>
-
-<div class="p-4 sm:ml-64 pt-24 min-h-screen bg-slate-100 text-slate-900 font-sans">
-    
-    <div class="max-w-[210mm] mx-auto mb-6 flex flex-col sm:flex-row justify-between items-center bg-white p-4 rounded-xl border border-slate-200 shadow-sm sticky top-20 z-40 gap-4 no-print">
-        <div>
-            <h2 class="text-lg font-black text-slate-800 italic">CETAK HASIL LENGKAP</h2>
-            <p class="text-xs text-slate-500 font-bold uppercase">Mode: Sesuai Pengaturan (Database KU / Overall).</p>
+    <div class="header-fixed">
+        <div style="text-align: left;"><?php if($logoLeft): ?><img src="<?= $logoLeft ?>" class="logo-img"><?php endif; ?></div>
+        <div class="header-center">
+            <div class="header-line-1"><?= htmlspecialchars($eventName) ?></div>
+            <div class="header-line-2"><?= htmlspecialchars($venueName) ?></div>
+            <div class="header-line-3"><?= htmlspecialchars($dateRange) ?></div>
+            <div class="header-line-4"></div>
+            <div class="header-line-5">BUKU HASIL LOMBA</div>
         </div>
-        <div class="flex gap-3">
-            <a href="index.php" class="px-4 py-2 bg-slate-100 text-slate-600 rounded-lg font-bold text-xs uppercase hover:bg-slate-200 transition">Kembali</a>
-            <button onclick="window.print()" class="px-4 py-2 bg-green-600 text-white rounded-lg font-bold text-xs uppercase hover:bg-green-700 transition flex items-center gap-2 shadow-md">
-                🖨️ Cetak
-            </button>
+        <div style="text-align: right;"><?php if($logoRight): ?><img src="<?= $logoRight ?>" class="logo-img"><?php endif; ?></div>
+    </div>
+
+<div class="footer-fixed" style="justify-content: center;">
+        <div class="footer-sponsors">
+            <?php if(!empty($sponsors)): ?>
+                <?php foreach($sponsors as $img): ?>
+                    <img src="../../../public/<?= $img ?>">
+                <?php endforeach; ?>
+            <?php endif; ?>
         </div>
     </div>
 
-    <div class="paper-sheet">
+    <div class="page-wrapper">
+        <table class="layout-table">
+            <thead><tr><td><div class="layout-header-space"></div></td></tr></thead>
+            <tfoot><tr><td><div class="layout-footer-space"></div></td></tr></tfoot>
+            <tbody>
+                <tr>
+                    <td>
+                        <?php if(empty($fullResults)): ?>
+                            <div style="text-align:center; padding: 50px; font-weight: bold; color:#888;">BELUM ADA DATA HASIL LOMBA</div>
+                        <?php else: ?>
+                            <?php foreach($fullResults as $catId => $data): 
+                                $qrApi = "https://api.qrserver.com/v1/create-qr-code/?size=100x100&margin=0&data=" . urlencode($protocol . "://" . $host . "/public/result.php?category_id=" . $catId);
+                            ?>
+                                <div class="event-header">
+                                    <div class="eh-left-group">
+                                        <div class="eh-number">ACARA #<?= $data['meta']['nomor'] ?></div>
+                                        <div class="eh-date"><?= $data['meta']['jadwal'] ?></div>
+                                    </div>
+                                    <div class="eh-center"><div class="eh-title"><?= $data['meta']['judul'] ?></div></div>
+                                    <div class="eh-right">
+                                        <img src="<?= $qrApi ?>" class="qr-header" alt="QR">
+                                    </div>
+                                </div>
 
-        <div class="page-header">
-            <div class="logo-box"><?php if($logo_left): ?><img src="<?= $logo_left ?>"><?php endif; ?></div>
-            <div class="text-center flex-1 px-4 header-content">
-                <h1 class="font-black uppercase leading-tight"><?= htmlspecialchars($header_title) ?></h1>
-                <?php if($venue_name): ?><p class="font-bold uppercase text-gray-800"><?= htmlspecialchars($venue_name) ?></p><?php endif; ?>
-                <p class="font-bold uppercase text-gray-500"><?= htmlspecialchars($header_date_range) ?></p>
-                <div class="inline-block border-2 border-black buku-acara-badge">
-                    <p class="font-black uppercase tracking-[0.2em] leading-none">HASIL LENGKAP</p>
-                </div>
-            </div>
-            <div class="logo-box"><?php if($logo_right): ?><img src="<?= $logo_right ?>"><?php endif; ?></div>
-        </div>
+                                <table class="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th class="col-rank">RANK</th> 
+                                            <th class="col-uid">UID</th> 
+                                            <th class="col-nama">NAMA ATLET</th> 
+                                            <th class="col-ku">KU</th> 
+                                            <th class="col-tim">TIM / SEKOLAH</th> 
+                                            <th class="col-waktu-awal">ENTRY</th> 
+                                            <th class="col-hasil">HASIL</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <?php 
+                                        // Grouping by KU
+                                        $groupedData = [];
+                                        foreach($data['data'] as $s) {
+                                            $kuLabel = getKUName($s['tanggal_lahir'], $eventYear, $ageGroups);
+                                            $groupedData[$kuLabel][] = $s;
+                                        }
 
-        <?php 
-        $countData = 0;
-        foreach ($all_events as $raceInfo): 
-            $cat_id = $raceInfo['id'];
-            $currentMode = $_SESSION['ranking_mode_' . $cat_id] ?? 'split'; 
-
-            $cleanStroke = trim(str_ireplace(['Gaya', 'GAYA'], '', $raceInfo['stroke'] ?? ''));
-            $gender_label = (in_array($raceInfo['jenis_kelamin'], ['L','Male','Man'])) ? 'PUTRA' : 'PUTRI';
-            $judul_tengah = $raceInfo['distance'] . " M GAYA " . strtoupper($cleanStroke) . " - " . ($raceInfo['age_group']??'') . " " . $gender_label . $poolSuffix;
-            $nomor_acara = "#" . $raceInfo['event_number'];
-
-            $protocol = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? "https" : "http");
-            $host = $_SERVER['HTTP_HOST'];
-            $default_target_link = $protocol . "://" . $host . "/public/result.php?category_id=" . $cat_id;
-            $qr_api = "https://api.qrserver.com/v1/create-qr-code/?size=150x150&margin=0&data=" . urlencode($default_target_link);
-
-            try {
-                $sql = "SELECT ee.*, 
-                        s.nama_atlet, s.tanggal_lahir, s.asal_sekolah,
-                        u.nama_lengkap as club_name
-                        FROM event_entries ee
-                        JOIN swimmers s ON ee.swimmer_id = s.id
-                        LEFT JOIN users u ON ee.club_id = u.id 
-                        WHERE ee.category_id = ? AND ee.heat IS NOT NULL 
-                        ORDER BY ee.heat ASC, ee.lane ASC"; 
-                $stmt = $pdo->prepare($sql);
-                $stmt->execute([$cat_id]);
-                $raw_data = $stmt->fetchAll(PDO::FETCH_ASSOC);
-            } catch (PDOException $e) { continue; }
-
-            if (empty($raw_data)) continue; 
-            $countData++;
-
-            // GROUPING LOGIC
-            $groupedResults = [];
-            
-            if ($currentMode === 'overall') {
-                $kelompokUmurLabel = $raceInfo['age_group'] ?? 'SEMUA UMUR';
-                $groupTitle = "KELOMPOK UMUR (" . $kelompokUmurLabel . ")";
-                foreach ($raw_data as $row) {
-                    if (!empty($row['swimmer_id'])) {
-                        $row['ms_sort'] = 9999999999;
-                        if (($row['is_dq']??0) == 1) { $row['ms_sort'] = 9999999999 + 100; } 
-                        elseif (!empty($row['final_time']) && $row['final_time'] != 'NT' && $row['final_time'] != '99:99.99') {
-                            $row['ms_sort'] = timeToMs($row['final_time']);
-                        }
-                        $groupedResults[$groupTitle][] = $row;
-                    }
-                }
-            } else {
-                foreach ($raw_data as $row) {
-                    if (!empty($row['swimmer_id'])) {
-                        // PAKAI LOGIKA KU DATABASE
-                        $groupName = getAgeGroupLabel($row['tanggal_lahir'], $event_year, $ageGroups);
-                        
-                        $row['ms_sort'] = 9999999999; 
-                        if (($row['is_dq']??0) == 1) { $row['ms_sort'] = 9999999999 + 100; } 
-                        elseif (!empty($row['final_time']) && $row['final_time'] != 'NT' && $row['final_time'] != '99:99.99') {
-                            $row['ms_sort'] = timeToMs($row['final_time']);
-                        }
-                        $groupedResults[$groupName][] = $row;
-                    }
-                }
-                ksort($groupedResults); 
-            }
-
-            foreach ($groupedResults as $y => &$rows) {
-                usort($rows, function($a, $b) {
-                    if ($a['ms_sort'] == $b['ms_sort']) return 0;
-                    return ($a['ms_sort'] < $b['ms_sort']) ? -1 : 1;
-                });
-            }
-            unset($rows);
-        ?>
-
-        <div class="event-item-container">
-            
-            <div class="event-header-grid">
-                <div class="event-num-box">
-                    <div class="event-number"><?= $nomor_acara ?></div>
-                    <div class="text-[8pt] font-bold"><?= strtoupper($display_date) ?></div>
-                </div>
-                <div class="event-title-box text-center">
-                    <div class="event-title"><?= $judul_tengah ?></div>
-                </div>
-                <div class="qr-box">
-                    <img src="<?= $qr_api ?>" alt="QR" style="width: 50px; height: 50px; border: 1px solid #ddd; padding: 2px;">
-                </div>
-                <div class="text-right">
-                    <span class="font-bold bg-gray-100 border border-gray-300 babak-badge rounded">FINAL</span>
-                </div>
-            </div>
-
-            <?php foreach($groupedResults as $groupTitle => $swimmersInYear): 
-                $headerText = (is_numeric($groupTitle)) ? "KELOMPOK UMUR " . $groupTitle : $groupTitle;
-            ?>
-            <div class="year-wrapper">
-                <div class="year-header"><?= $headerText ?></div>
-                <table class="rank-table">
-                    <colgroup>
-                        <col style="width: 8%;"> <col style="width: 30%;"> <col style="width: 25%;"> <col style="width: 17%;"> <col style="width: 20%;"> 
-                    </colgroup>
-                    <thead>
-                        <tr>
-                            <th class="col-center">RANK</th>
-                            <th class="col-left">NAMA ATLET</th>
-                            <th class="col-left">TIM / SEKOLAH</th>
-                            <th class="col-right">PRESTASI</th>
-                            <th class="col-right">HASIL</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php 
-                        $rank = 1; $real_rank = 1; $prev_time = null;
-                        foreach($swimmersInYear as $p): 
-                            $is_valid = (($p['is_dq']??0) == 0 && !empty($p['final_time']) && $p['final_time'] != 'NT');
-                            $rank_display = '';
-                            if ($is_valid) {
-                                if ($p['ms_sort'] !== $prev_time) { $real_rank = $rank; }
-                                $rank_display = $real_rank;
-                                $prev_time = $p['ms_sort'];
-                                $rank++;
-                            }
-                            $seedTime = (!empty($p['entry_time']) && $p['entry_time'] != '99:99.99') ? $p['entry_time'] : 'NT';
-                        ?>
-                        <tr>
-                            <td class="col-center font-bold text-[10pt]"><?= $rank_display ?></td>
-                            <td class="col-left font-bold">
-                                <?= shortenName($p['nama_atlet']) ?>
-                                <?php if($currentMode === 'overall'): ?>
-                                    <span class="text-[8pt] font-normal text-gray-500 block"><?= date('Y', strtotime($p['tanggal_lahir'])) ?></span>
-                                <?php endif; ?>
-                            </td>
-                            <td class="col-left"><?= shortenName(getTeamName($p, $participationType)) ?></td>
-                            <td class="col-right font-mono text-[9pt]"><?= $seedTime ?></td>
-                            <td class="col-right font-mono font-bold text-[10pt]">
-                                <?php 
-                                if (($p['is_dq']??0) == 1) { echo '<span style="color:red;">'.($p['dq_reason'] ?? 'DQ').'</span>'; } 
-                                elseif ($is_valid) { echo $p['final_time']; } 
-                                else { echo 'NT'; } 
-                                ?>
-                            </td>
-                        </tr>
-                        <?php endforeach; ?>
-                    </tbody>
-                </table>
-            </div>
-            <?php endforeach; ?>
-
-        </div>
-        <?php endforeach; ?>
-
-        <?php if($countData == 0): ?>
-            <div class="text-center py-20 border-2 border-dashed border-gray-300 rounded-xl mt-10">
-                <p class="text-gray-400 font-bold">Belum ada hasil.</p>
-            </div>
-        <?php endif; ?>
-
-        <?php if(!empty($footerSponsors)): ?>
-        <div class="footer-sponsor">
-            <div class="sponsor-line-separator"></div>
-            <div class="sponsor-logo-container">
-                <?php foreach($footerSponsors as $img): ?><img src="../../../public/<?= $img ?>"><?php endforeach; ?>
-            </div>
-        </div>
-        <?php endif; ?>
-
-    </div> <div class="h-24 no-print"></div> 
-</div>
+                                        foreach($groupedData as $groupName => $swimmers): 
+                                        ?>
+                                            <tr class="group-row"><td colspan="7"><?= htmlspecialchars($groupName) ?></td></tr>
+                                            <?php foreach($swimmers as $s): ?>
+                                            <tr>
+                                                <td class="col-rank"><?= $s['rank_final'] ?? '-' ?></td>
+                                                <td class="col-uid"><?= htmlspecialchars($s['uid'] ?? '-') ?></td>
+                                                <td class="col-nama"><?= $s['nama_atlet'] ?></td>
+                                                <td class="col-ku"><?= getKUName($s['tanggal_lahir'], $eventYear, $ageGroups) ?></td>
+                                                <td class="col-tim"><?= getTeamName($s, $partType) ?></td>
+                                                <td class="col-waktu-awal"><?= (!$s['entry_time'] || $s['entry_time']=='99.99.99') ? 'NT' : $s['entry_time'] ?></td>
+                                                <td class="col-hasil">
+                                                    <?php 
+                                                        if ($s['is_dq_final'] == 1) { echo '<span style="color:red;">' . ($s['dq_reason_final'] ?? 'DQ') . '</span>'; } 
+                                                        else { echo $s['time_final'] ?? '-'; }
+                                                    ?>
+                                                </td>
+                                            </tr>
+                                            <?php endforeach; ?>
+                                        <?php endforeach; ?>
+                                    </tbody>
+                                </table>
+                                <div style="height: 5px;"></div>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+    <script> window.onload = function() { setTimeout(function() { window.print(); }, 800); }; </script>
+</body>
+</html>
