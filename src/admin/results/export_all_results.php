@@ -71,17 +71,17 @@ if (!function_exists('getTeamName')) {
 // === AMBIL DATA HASIL LOMBA KESELURUHAN ===
 $sqlAll = "SELECT 
             en.id as cat_id, en.event_number, en.distance, en.stroke, en.age_group, en.jenis_kelamin, 
-            es.rank_final, es.time_prelim as entry_time, es.time_final, es.is_dq_final, es.dq_reason_final,
+            es.rank_prelim as rank_final, es.time_prelim as entry_time, es.time_prelim as time_final, es.is_dq_prelim as is_dq_final, es.dq_reason_prelim as dq_reason_final,
             s.uid, s.nama_atlet, s.tanggal_lahir, u.nama_lengkap as club_name, s.asal_sekolah
            FROM event_numbers en
            JOIN event_entries ee ON ee.category_id = en.id
            JOIN event_seeding es ON ee.id = es.entry_id
            JOIN swimmers s ON ee.swimmer_id = s.id
            LEFT JOIN users u ON ee.club_id = u.id
-           WHERE (es.time_final IS NOT NULL OR es.is_dq_final = 1) 
+        WHERE (es.time_prelim IS NOT NULL OR es.is_dq_prelim = 1)
            AND en.organizer_id = ?
            ORDER BY CAST(en.event_number AS UNSIGNED) ASC, 
-                    CASE WHEN es.rank_final IS NULL THEN 9999 ELSE es.rank_final END ASC";
+                    CASE WHEN es.rank_prelim IS NULL THEN 9999 ELSE es.rank_prelim END ASC";
 
 $stmtAll = $pdo->prepare($sqlAll);
 $stmtAll->execute([$raceInfo['user_id']]);

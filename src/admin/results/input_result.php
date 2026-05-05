@@ -93,7 +93,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $_SESSION['ranking_mode_' . $cat_id] = $rankModePost;
         $currentMode = $rankModePost;
 
-        $stmtUpd = $pdo->prepare("UPDATE event_seeding SET time_final = ?, is_dq_final = ?, dq_reason_final = ? WHERE entry_id = ?");
+        $stmtUpd = $pdo->prepare("UPDATE event_seeding SET time_prelim = ?, is_dq_prelim = ?, dq_reason_prelim = ? WHERE entry_id = ?");
         foreach ($entries as $id => $data) {
             $time = trim($data['time'] ?? '');
             $status = $data['status']; 
@@ -105,14 +105,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         $stmtAll = $pdo->prepare("
-            SELECT ee.id, es.time_final as final_time, es.is_dq_final as is_dq, s.tanggal_lahir 
+            SELECT ee.id, es.time_prelim as final_time, es.is_dq_prelim as is_dq, s.tanggal_lahir
             FROM event_entries ee JOIN event_seeding es ON ee.id = es.entry_id JOIN swimmers s ON ee.swimmer_id = s.id 
             WHERE ee.category_id = ?
         ");
         $stmtAll->execute([$cat_id]);
         $allSwimmers = $stmtAll->fetchAll(PDO::FETCH_ASSOC);
 
-        $stmtRank = $pdo->prepare("UPDATE event_seeding SET rank_final = ? WHERE entry_id = ?");
+        $stmtRank = $pdo->prepare("UPDATE event_seeding SET rank_prelim = ? WHERE entry_id = ?");
         if ($rankModePost === 'overall') {
             $valid = []; $invalid = [];
             foreach ($allSwimmers as $s) {

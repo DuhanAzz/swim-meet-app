@@ -1,165 +1,147 @@
 <?php
-// src/admin/results/medal_tally.php
+// FILE: src/admin/results/medal_tally.php
 session_start();
 require_once __DIR__ . '/../../../src/config/database.php';
 
-// 1. CEK KEAMANAN
-if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
-    header("Location: ../../../public/login.php"); exit;
-}
-$uid = $_SESSION['user_id'];
+if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') { die("Akses Ditolak"); }
 
-// 2. AMBIL EVENT TERAKHIR / AKTIF
-$stmtLast = $pdo->prepare("SELECT id FROM events WHERE user_id = ? ORDER BY id DESC LIMIT 1");
-$stmtLast->execute([$uid]);
-$lastEvent = $stmtLast->fetch();
-$eventId = $lastEvent['id'] ?? 0;
+$uid = $_SESSION['user_id'];
+$eventId = $_GET['event_id'] ?? 0;
+
+if ($eventId == 0) {
+    $stmtLast = $pdo->prepare("SELECT id FROM events WHERE user_id = ? ORDER BY id DESC LIMIT 1");
+    $stmtLast->execute([$uid]);
+    $eventId = $stmtLast->fetchColumn() ?: 0;
+}
 
 $stmtProfile = $pdo->prepare("SELECT * FROM events WHERE id = ?");
 $stmtProfile->execute([$eventId]);
-$eventProfile = $stmtProfile->fetch(PDO::FETCH_ASSOC);
+$raceInfo = $stmtProfile->fetch(PDO::FETCH_ASSOC);
 
-// Sponsor
-$stmtFooter = $pdo->prepare("SELECT image_path FROM event_sponsors WHERE event_id = ?");
-$stmtFooter->execute([$eventId]);
-$footerSponsors = $stmtFooter->fetchAll(PDO::FETCH_COLUMN);
+if (!$raceInfo) { die("Data Event tidak ditemukan."); }
 
-// Setup Variabel Event
-$header_title = strtoupper($eventProfile['nama_event'] ?? 'KEJUARAAN RENANG');
-$venue_name   = strtoupper($eventProfile['venue_name'] ?? $eventProfile['lokasi'] ?? '');
-$event_date   = $eventProfile['event_start_date'] ?? date('Y-m-d');
-$display_date = strtoupper(date('d F Y', strtotime($event_date)));
-$event_year   = date('Y', strtotime($event_date)); // TAHUN EVENT (PENTING UTK HITUNG UMUR)
+// Setup Variabel Header (Sesuai kolom database Buku Acara)
+$eventName  = strtoupper($raceInfo['event_name'] ?? 'EVENT NAME');
+$venueName  = strtoupper($raceInfo['event_location'] ?? '-');
+$eventDate  = $raceInfo['event_date_start'] ?? date('Y-m-d');
+$eventYear  = date('Y', strtotime($eventDate)); 
+$logoLeft   = !empty($raceInfo['logo_left']) ? '../../../public/' . $raceInfo['logo_left'] : null;
+$logoRight  = !empty($raceInfo['logo_right']) ? '../../../public/' . $raceInfo['logo_right'] : null;
 
-// Logo
-$logo_left  = !empty($eventProfile['logo_left']) ? '../../../public/' . $eventProfile['logo_left'] : null;
-$logo_right = !empty($eventProfile['logo_right']) ? '../../../public/' . $eventProfile['logo_right'] : null;
+$displayDate = strtoupper(date('d F Y', strtotime($eventDate)));
+if(!empty($raceInfo['event_date_end']) && $raceInfo['event_date_end'] != '0000-00-00' && $raceInfo['event_date_end'] != $eventDate) {
+    $dateRange = date('d', strtotime($eventDate)) . ' - ' . date('d F Y', strtotime($raceInfo['event_date_end']));
+} else { $dateRange = $displayDate; }
+$dateRange = strtoupper($dateRange);
 
-// 3. AMBIL DAFTAR KU DARI DATABASE (event_age_groups)
-// Sesuai request: mengambil data KU yang ada di event ini (misal event_id = 7)
+$stmtSpon = $pdo->prepare("SELECT image_path FROM event_sponsors WHERE event_id = ?");
+$stmtSpon->execute([$eventId]); 
+$sponsors = $stmtSpon->fetchAll(PDO::FETCH_COLUMN);
+
 $stmtKU = $pdo->prepare("SELECT * FROM event_age_groups WHERE event_id = ? ORDER BY min_age ASC");
 $stmtKU->execute([$eventId]);
 $available_kus = $stmtKU->fetchAll(PDO::FETCH_ASSOC);
 
-// 4. PROSES FILTER
+// --- PROSES FILTER ---
 $mode = $_GET['mode'] ?? 'team'; 
 $filter_gender = $_GET['gender'] ?? 'all';
-$selected_ku_ids = $_GET['ku'] ?? []; // Array ID dari checkbox yang dipilih
+$selected_ku_ids = $_GET['ku'] ?? []; 
 
-// HITUNG TAHUN LAHIR YANG VALID BERDASARKAN KU YANG DIPILIH
 $valid_birth_years = [];
 $selected_ku_names = [];
 
 if (!empty($selected_ku_ids)) {
-    // Jika ada KU yang dicentang
     foreach ($available_kus as $ku) {
         if (in_array($ku['id'], $selected_ku_ids)) {
             $selected_ku_names[] = $ku['group_name'];
-            
-            // Konversi Umur ke Tahun Lahir
-            // Rumus: Tahun Lahir = Tahun Event - Umur
-            // Min Age 9, Max Age 12 (Tahun 2025) -> Lahir 2016 s/d 2013
-            
-            $start_year = $event_year - $ku['max_age']; // 2025 - 12 = 2013
-            $end_year   = $event_year - $ku['min_age']; // 2025 - 9  = 2016
-            
-            // Masukkan range tahun ke array
-            for ($y = $start_year; $y <= $end_year; $y++) {
-                $valid_birth_years[] = $y;
-            }
+            $start_year = $eventYear - $ku['max_age']; 
+            $end_year   = $eventYear - $ku['min_age']; 
+            for ($y = $start_year; $y <= $end_year; $y++) { $valid_birth_years[] = $y; }
         }
     }
-    // Hapus duplikat tahun (misal KU irisan)
     $valid_birth_years = array_unique($valid_birth_years);
 }
 
-// 5. QUERY DATA MEDALI
+// --- QUERY DATA MEDALI ---
 $tally = [];
-$title_sub = "";
+$whereClauses = [
+    "en.organizer_id = ?", 
+    "es.rank_prelim IN (1, 2, 3)", 
+    "(es.is_dq_prelim = 0 OR es.is_dq_prelim IS NULL)"
+];
+$params = [$uid];
+
+// Filter Gender
+if ($mode == 'athlete' && $filter_gender !== 'all') {
+    $whereClauses[] = "s.jenis_kelamin = ?";
+    $params[] = $filter_gender;
+}
+
+// Filter Tahun Lahir (KU)
+if (!empty($valid_birth_years)) {
+    $placeholders = implode(',', array_fill(0, count($valid_birth_years), '?'));
+    $whereClauses[] = "YEAR(s.tanggal_lahir) IN ($placeholders)";
+    foreach ($valid_birth_years as $y) { $params[] = $y; }
+}
+
+$whereSql = implode(" AND ", $whereClauses);
 
 if ($mode == 'team') {
-    // --- MODE JUARA UMUM (TIM) ---
-    $title_main = "KLASEMEN JUARA UMUM";
-    $title_sub = "PEROLEHAN MEDALI TIM / KLUB";
-    
-    // Base Query
+    $titlePage = "KLASEMEN JUARA UMUM (KLUB/TIM)";
     $sql = "SELECT 
-                COALESCE(NULLIF(s.asal_sekolah, ''), u.nama_lengkap, 'Unattached') as name,
-                SUM(CASE WHEN ee.final_rank = 1 THEN 1 ELSE 0 END) as gold,
-                SUM(CASE WHEN ee.final_rank = 2 THEN 1 ELSE 0 END) as silver,
-                SUM(CASE WHEN ee.final_rank = 3 THEN 1 ELSE 0 END) as bronze,
-                COUNT(ee.id) as total_medals
+                COALESCE(NULLIF(u.nama_lengkap, ''), NULLIF(s.asal_sekolah, ''), 'Unattached') as entity_name,
+                SUM(CASE WHEN es.rank_prelim = 1 THEN 1 ELSE 0 END) as gold,
+                SUM(CASE WHEN es.rank_prelim = 2 THEN 1 ELSE 0 END) as silver,
+                SUM(CASE WHEN es.rank_prelim = 3 THEN 1 ELSE 0 END) as bronze,
+                COUNT(*) as total
             FROM event_entries ee
-            JOIN swimmers s ON ee.swimmer_id = s.id
-            JOIN event_numbers en ON ee.category_id = en.id 
-            LEFT JOIN users u ON ee.user_id = u.id
-            WHERE ee.final_rank IN (1, 2, 3) 
-            AND en.organizer_id = ?";
-            
-    $params = [$uid];
-    
-    // Filter KU (Tahun Lahir)
-    if (!empty($valid_birth_years)) {
-        $placeholders = implode(',', array_fill(0, count($valid_birth_years), '?'));
-        $sql .= " AND YEAR(s.tanggal_lahir) IN ($placeholders)";
-        foreach ($valid_birth_years as $y) $params[] = $y;
-    }
-
-    $sql .= " GROUP BY name ORDER BY gold DESC, silver DESC, bronze DESC";
-            
-    $stmt = $pdo->prepare($sql);
-    $stmt->execute($params);
-    $tally = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-} else {
-    // --- MODE PERENANG TERBAIK (ATHLETE) ---
-    $title_main = "PERENANG TERBAIK";
-    
-    $lbl_gender = ($filter_gender == 'all') ? 'PUTRA & PUTRI' : ($filter_gender == 'L' ? 'PUTRA' : 'PUTRI');
-    
-    if (empty($selected_ku_names)) {
-        $lbl_ku = 'SEMUA KELOMPOK UMUR';
-    } else {
-        $lbl_ku = implode(' & ', $selected_ku_names); // Contoh: KU 3 & KU 2019
-    }
-    
-    $title_sub  = "$lbl_ku - $lbl_gender";
-
-    $sql = "SELECT 
-                s.nama_atlet, 
-                s.jenis_kelamin, 
-                s.tanggal_lahir,
-                COALESCE(NULLIF(s.asal_sekolah, ''), u.nama_lengkap) as team,
-                SUM(CASE WHEN ee.final_rank = 1 THEN 1 ELSE 0 END) as gold,
-                SUM(CASE WHEN ee.final_rank = 2 THEN 1 ELSE 0 END) as silver,
-                SUM(CASE WHEN ee.final_rank = 3 THEN 1 ELSE 0 END) as bronze,
-                COUNT(ee.id) as total_medals
-            FROM event_entries ee
+            JOIN event_seeding es ON ee.id = es.entry_id
             JOIN swimmers s ON ee.swimmer_id = s.id
             JOIN event_numbers en ON ee.category_id = en.id
-            LEFT JOIN users u ON ee.user_id = u.id
-            WHERE ee.final_rank IN (1, 2, 3)
-            AND en.organizer_id = ?";
-    
-    $params = [$uid];
+            LEFT JOIN users u ON (ee.club_id = u.id OR ee.user_id = u.id)
+            WHERE $whereSql
+            GROUP BY entity_name
+            ORDER BY gold DESC, silver DESC, bronze DESC, total DESC";
+} else {
+    $titlePage = "PERENANG TERBAIK";
+    $sql = "SELECT 
+                s.nama_atlet as entity_name,
+                s.uid, s.jenis_kelamin, s.tanggal_lahir,
+                COALESCE(NULLIF(u.nama_lengkap, ''), NULLIF(s.asal_sekolah, ''), '-') as team_name,
+                SUM(CASE WHEN es.rank_prelim = 1 THEN 1 ELSE 0 END) as gold,
+                SUM(CASE WHEN es.rank_prelim = 2 THEN 1 ELSE 0 END) as silver,
+                SUM(CASE WHEN es.rank_prelim = 3 THEN 1 ELSE 0 END) as bronze,
+                COUNT(*) as total
+            FROM event_entries ee
+            JOIN event_seeding es ON ee.id = es.entry_id
+            JOIN swimmers s ON ee.swimmer_id = s.id
+            JOIN event_numbers en ON ee.category_id = en.id
+            LEFT JOIN users u ON (ee.club_id = u.id OR ee.user_id = u.id)
+            WHERE $whereSql
+            GROUP BY s.id
+            ORDER BY gold DESC, silver DESC, bronze DESC, total DESC";
+}
 
-    if ($filter_gender !== 'all') {
-        $sql .= " AND s.jenis_kelamin = ?";
-        $params[] = $filter_gender;
+$stmt = $pdo->prepare($sql);
+$stmt->execute($params);
+$tallyData = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+// --- PENGELOMPOKAN KHUSUS PERENANG TERBAIK (ATHLETE MODE) ---
+$groupedAthleteData = [];
+if ($mode == 'athlete') {
+    foreach ($tallyData as $row) {
+        $age = $eventYear - date('Y', strtotime($row['tanggal_lahir']));
+        $ku_name = 'UMUM';
+        foreach ($available_kus as $ku) {
+            if ($age >= $ku['min_age'] && $age <= $ku['max_age']) {
+                $ku_name = strtoupper($ku['group_name']);
+                break;
+            }
+        }
+        $row['ku_name'] = $ku_name;
+        $groupedAthleteData[$ku_name][$row['jenis_kelamin']][] = $row;
     }
-
-    // Filter KU (Tahun Lahir hasil konversi)
-    if (!empty($valid_birth_years)) {
-        $placeholders = implode(',', array_fill(0, count($valid_birth_years), '?'));
-        $sql .= " AND YEAR(s.tanggal_lahir) IN ($placeholders)";
-        foreach ($valid_birth_years as $y) $params[] = $y;
-    }
-
-    $sql .= " GROUP BY s.id ORDER BY gold DESC, silver DESC, bronze DESC";
-
-    $stmt = $pdo->prepare($sql);
-    $stmt->execute($params);
-    $tally = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    ksort($groupedAthleteData); 
 }
 
 include __DIR__ . '/../../../views/layout/topbar.php'; 
@@ -169,80 +151,76 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Roboto+Condensed:wght@400;700;900&family=Courier+Prime:wght@400;700&display=swap');
     
-    .font-condensed { font-family: 'Roboto Condensed', sans-serif; }
-    .font-mono { font-family: 'Courier Prime', monospace; }
-
-    /* LAYOUT SCREEN */
-    .paper-sheet {
-        width: 210mm; min-height: 297mm; background: white; margin: 0 auto;
-        padding: 5mm 10mm 35mm 10mm; color: #000; font-family: 'Roboto Condensed', sans-serif;
-        box-shadow: 0 4px 10px rgba(0,0,0,0.1); position: relative; 
-    }
-
-    /* HEADER */
-    .page-header {
-        padding: 5px 0 10px 0; border-bottom: 3px double #000; margin-bottom: 20px;
-        display: flex; justify-content: space-between; align-items: center; width: 100%;
-    }
-    .logo-box { width: 70px; height: 70px; display: flex; align-items: center; justify-content: center; }
-    .logo-box img { max-height: 100%; max-width: 100%; object-fit: contain; }
-
-    /* TABEL HASIL */
-    .result-table { width: 100%; border-collapse: collapse; font-size: 9pt; margin-top: 10px; }
-    .result-table th { background: #f0f0f0; border: 1px solid #000; padding: 6px; text-transform: uppercase; font-weight: bold; }
-    .result-table td { border: 1px solid #000; padding: 5px 8px; vertical-align: middle; }
+    * { box-sizing: border-box; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
     
-    /* Warna Medali */
-    .bg-gold { background-color: #fff9c4 !important; }
-    .bg-silver { background-color: #f5f5f5 !important; }
-    .bg-bronze { background-color: #ffccbc !important; }
-    .bg-total { background-color: #e0f2f1 !important; }
-
-    /* CHECKBOX GRID */
-    .ku-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
-        gap: 8px;
-        max-height: 150px;
-        overflow-y: auto;
-        padding: 5px;
-        border: 1px solid #e2e8f0;
-        border-radius: 6px;
-        background-color: #f8fafc;
-    }
-    .ku-item label {
-        display: flex; align-items: center; gap: 6px;
-        font-size: 11px; font-weight: bold; cursor: pointer;
-        padding: 4px; border-radius: 4px; transition: background 0.2s;
-    }
+    .ku-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 8px; max-height: 150px; overflow-y: auto; padding: 5px; border: 1px solid #e2e8f0; border-radius: 6px; background-color: #f8fafc; }
+    .ku-item label { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: bold; cursor: pointer; padding: 4px; border-radius: 4px; transition: background 0.2s; }
     .ku-item label:hover { background-color: #e0f2fe; }
-    .ku-item input[type="checkbox"] {
-        accent-color: #2563eb; width: 14px; height: 14px;
-    }
+    .ku-item input[type="checkbox"] { accent-color: #2563eb; width: 14px; height: 14px; }
 
-    /* FOOTER SPONSOR */
-    .footer-sponsor {
-        position: absolute; bottom: 0; left: 0; width: 100%; 
-        padding-bottom: 5mm; display: flex; flex-direction: column; align-items: center; justify-content: flex-end;
-        z-index: 10; pointer-events: none;
-    }
-    .sponsor-line-separator { width: 90%; border-top: 3px double #000; margin-bottom: 5px; margin-left: auto; margin-right: auto; }
-    .sponsor-logo-container { display: flex; justify-content: center; align-items: center; gap: 15px; width: 100%; padding: 0 10px; }
-    .sponsor-logo-container img { height: 40px; width: auto; object-fit: contain; filter: grayscale(100%); opacity: 0.9; }
+    .page-wrapper { background: white; width: 210mm; margin: 20px auto; padding: 0 10mm; min-height: 297mm; position: relative; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+    
+    /* KOP SURAT (Identik dgn Start List) */
+    .header-fixed { position: fixed; top: 0; left: 0; right: 0; height: 35mm; background: white; border-bottom: 3px double #000; display: grid; grid-template-columns: 110px 1fr 110px; align-items: flex-end; padding: 5px 10mm 3px 10mm; z-index: 999; display: none; }
+    .header-center { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; text-align: center; line-height: 1.2; color: #000; }
+    .header-line-1 { font-size: 14pt; font-weight: 900; text-transform: uppercase; margin-bottom: 2px; }
+    .header-line-2 { font-size: 9pt; font-weight: bold; text-transform: uppercase; }
+    .header-line-3 { font-size: 9pt; font-weight: bold; text-transform: uppercase; }
+    .header-line-4 { height: 3px; } 
+    .header-line-5 { font-size: 18pt; font-weight: 900; text-transform: uppercase; letter-spacing: 2px; color: #000; margin-top: 2px; margin-bottom: 0px; line-height: 1; }
+    .logo-img { max-height: 100px; max-width: 100%; object-fit: contain; margin-bottom: 2px; }
 
-    /* === KHUSUS PRINT === */
+    /* FOOTER SPONSOR TENGAH - PRINTED TEXT REMOVED */
+    .footer-fixed { position: fixed; bottom: 0; left: 0; right: 0; height: 20mm; background: white; border-top: 2px double #000; display: flex; justify-content: center; align-items: center; padding: 0 10mm; z-index: 999; display: none; }
+    .footer-sponsors { display: flex; gap: 10px; align-items: center; justify-content: center; flex: 1; }
+    .footer-sponsors img { height: 45px; object-fit: contain; } 
+
+    /* SPACER TABEL CETAK */
+    .layout-table { width: 100%; border-collapse: collapse; border: none; }
+    .layout-header-space { height: 42mm; } 
+    .layout-footer-space { height: 25mm; }
+
+    /* EVENT HEADER PADAT (Persis Buku Acara) */
+    .event-header { position: relative; display: flex; justify-content: space-between; align-items: flex-end; border-top: none; border-bottom: 2px solid #000; padding: 2px 0; margin-top: 10px; margin-bottom: 2px; background: #fff; font-family: 'Arial', sans-serif; min-height: 30px; }
+    .eh-left-group { display: flex; flex-direction: column; justify-content: center; width: 180px; line-height: 1.1; z-index: 2; position: relative; background: white; text-align: left; }
+    .eh-number { font-size: 12pt; font-weight: 900; margin-bottom: 2px; }
+    .eh-date { font-size: 8pt; font-weight: bold; font-style: normal; }
+    .eh-center { position: absolute; left: 50%; bottom: 3px; transform: translateX(-50%); text-align: center; width: 60%; z-index: 1; }
+    .eh-title  { font-size: 11pt; font-weight: 800; text-transform: uppercase; }
+    .eh-right  { width: 180px; text-align: right; z-index: 2; position: relative; background: white; display: flex; flex-direction: column; justify-content: flex-end; }
+
+    /* TABEL KLASEMEN PADAT (Courier New, 8pt) */
+    .data-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-family: 'Courier New', Courier, monospace; font-size: 8pt; margin-bottom: 8px; }
+    .data-table th { background-color: #e5e7eb; border-top: 1px solid #000; border-bottom: 2px solid #000; padding: 2px 4px; font-family: 'Arial Narrow', sans-serif; font-weight: bold; font-size: 8pt; text-align: center; }
+    .data-table td { padding: 4px; border-bottom: 1px solid #ccc; vertical-align: middle; }
+    
+    .col-rank { width: 5%; text-align: center; font-weight: bold; background: #f8f9fa; border-right: 1px solid #eee; }
+    .col-nama { width: 35%; text-align: left; padding-left: 5px; font-weight: bold; line-height: 1.1; text-transform: uppercase; white-space: normal; }
+    .col-tim { width: 30%; text-align: left; padding-left: 5px; white-space: normal; line-height: 1.1; }
+    .col-med { width: 7.5%; text-align: center; font-weight: 900; font-size: 10pt; }
+    
+    .bg-gold { background-color: #fef3c7 !important; color: #92400e; }
+    .bg-silver { background-color: #f3f4f6 !important; color: #374151; }
+    .bg-bronze { background-color: #ffedd5 !important; color: #9a3412; }
+    .bg-total { background-color: #e0f2fe !important; color: #075985; border-left: 1px solid #ccc; }
+
+    .block-tabel { page-break-inside: avoid; }
+
     @media print {
-        @page { size: A4; margin: 5mm 5mm 10mm 5mm; }
+        @page { size: A4; margin: 0; }
         nav, aside, header, .sidebar, .no-print, .fixed, .navbar, .topbar, .sticky, #sidebar { display: none !important; }
-        body, html { margin: 0 !important; padding: 0 !important; background: white !important; width: 100%; height: 100%; }
-        #print-wrapper { margin: 0 !important; padding: 0 !important; width: 100% !important; max-width: 100% !important; position: static !important; background: white !important; border: none !important; display: block !important; }
-        .paper-sheet { width: 100% !important; margin: 0 !important; padding: 0 0 25mm 0 !important; box-shadow: none !important; min-height: auto; }
-        .footer-sponsor { position: fixed; bottom: 0; left: 0; right: 0; padding-bottom: 2mm; background: white; }
-        .result-table th, .result-table td { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        .p-4, .sm\:ml-64, .pt-24, .min-h-screen, #main-content { padding: 0 !important; margin: 0 !important; min-height: auto !important; background: white !important; }
+        body, html { margin: 0 !important; padding: 0 !important; background: white !important; width: 100%; height: 100%; font-family: 'Arial', sans-serif; }
+        .page-wrapper { margin: 0; width: 100%; box-shadow: none; padding: 0 10mm; min-height: auto; position: relative; }
+        .header-fixed { display: grid !important; }
+        .footer-fixed { display: flex !important; justify-content: center !important; }
+        .layout-table > thead { display: table-header-group !important; }
+        .data-table > thead { display: table-row-group !important; }
+        tfoot { display: table-footer-group; }
     }
 </style>
 
-<div id="print-wrapper" class="p-4 sm:ml-64 pt-24 min-h-screen bg-slate-100 text-slate-900 font-sans">
+<div class="p-4 sm:ml-64 pt-24 min-h-screen bg-slate-100 text-slate-900 font-sans" id="main-content">
     
     <div class="max-w-[210mm] mx-auto mb-6 space-y-4 no-print">
         <div class="bg-white p-4 rounded-xl shadow border border-slate-200 flex flex-col md:flex-row justify-between items-center gap-4">
@@ -264,13 +242,9 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
         <div class="bg-white p-4 rounded-xl shadow border border-blue-100">
             <form method="GET" class="space-y-4">
                 <input type="hidden" name="mode" value="athlete">
-                
                 <div class="grid grid-cols-1 md:grid-cols-12 gap-4">
-                    
                     <div class="md:col-span-8 flex flex-col gap-1">
-                        <label class="text-[10px] font-bold text-slate-400 uppercase">
-                            Pilih Kelompok Umur (Gabungan)
-                        </label>
+                        <label class="text-[10px] font-bold text-slate-400 uppercase">Pilih Kelompok Umur (Gabungan)</label>
                         <?php if(empty($available_kus)): ?>
                             <p class="text-xs text-red-500 italic">Belum ada data KU di database.</p>
                         <?php else: ?>
@@ -279,17 +253,12 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                                     $isChecked = in_array($ku['id'], $selected_ku_ids) ? 'checked' : '';
                                 ?>
                                 <div class="ku-item">
-                                    <label>
-                                        <input type="checkbox" name="ku[]" value="<?= $ku['id'] ?>" <?= $isChecked ?>>
-                                        <?= htmlspecialchars($ku['group_name']) ?>
-                                    </label>
+                                    <label><input type="checkbox" name="ku[]" value="<?= $ku['id'] ?>" <?= $isChecked ?>> <?= htmlspecialchars($ku['group_name']) ?></label>
                                 </div>
                                 <?php endforeach; ?>
                             </div>
                         <?php endif; ?>
-                        <p class="text-[9px] text-gray-400 mt-1">*Jika tidak ada yang dipilih, semua umur akan ditampilkan.</p>
                     </div>
-
                     <div class="md:col-span-2 flex flex-col gap-1">
                         <label class="text-[10px] font-bold text-slate-400 uppercase">Gender</label>
                         <select name="gender" class="border border-slate-300 rounded px-3 py-2 text-xs font-bold bg-slate-50 h-10 w-full">
@@ -298,13 +267,9 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                             <option value="P" <?= $filter_gender=='P'?'selected':'' ?>>PUTRI</option>
                         </select>
                     </div>
-
                     <div class="md:col-span-2 flex flex-col justify-end">
-                        <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded text-xs font-bold uppercase shadow w-full">
-                            🔍 Terapkan
-                        </button>
+                        <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded text-xs font-bold uppercase shadow w-full">🔍 Terapkan</button>
                     </div>
-
                 </div>
             </form>
         </div>
@@ -312,93 +277,139 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
 
         <div class="flex justify-end">
             <button onclick="window.print()" class="bg-slate-900 hover:bg-slate-800 text-white px-6 py-2 rounded text-xs font-bold uppercase shadow flex items-center gap-2">
-                🖨️ Cetak Halaman Ini
+                🖨️ Cetak Laporan
             </button>
         </div>
     </div>
 
-    <div class="paper-sheet">
-        
-        <div class="page-header">
-            <div class="logo-box"><?php if($logo_left): ?><img src="<?= $logo_left ?>"><?php endif; ?></div>
-            <div class="text-center flex-1 px-4">
-                <h1 class="text-xl font-black uppercase leading-tight"><?= htmlspecialchars($header_title) ?></h1>
-                <?php if($venue_name): ?><p class="text-[9pt] font-bold uppercase text-gray-800 mt-1"><?= htmlspecialchars($venue_name) ?></p><?php endif; ?>
-                <p class="text-[8pt] font-bold uppercase text-gray-500 mt-1"><?= htmlspecialchars($display_date) ?></p>
-                
-                <div class="inline-block border-2 border-black px-6 py-1 mt-2">
-                    <p class="text-xl font-black uppercase tracking-[0.1em] leading-none"><?= $title_main ?></p>
-                </div>
-            </div>
-            <div class="logo-box"><?php if($logo_right): ?><img src="<?= $logo_right ?>"><?php endif; ?></div>
+    <div class="header-fixed">
+        <div style="text-align: left;"><?php if($logoLeft): ?><img src="<?= $logoLeft ?>" class="logo-img"><?php endif; ?></div>
+        <div class="header-center">
+            <div class="header-line-1"><?= htmlspecialchars($eventName) ?></div>
+            <div class="header-line-2"><?= htmlspecialchars($venueName) ?></div>
+            <div class="header-line-3"><?= htmlspecialchars($dateRange) ?></div>
+            <div class="header-line-4"></div>
+            <div class="header-line-5">KLASEMEN AKHIR</div>
         </div>
+        <div style="text-align: right;"><?php if($logoRight): ?><img src="<?= $logoRight ?>" class="logo-img"><?php endif; ?></div>
+    </div>
 
-        <div class="mb-4 text-center">
-             <span class="text-sm font-bold bg-black text-white px-4 py-1 rounded uppercase shadow-sm">
-                <?= $title_sub ?>
-             </span>
-        </div>
-
-        <?php if(empty($tally)): ?>
-            <div class="py-12 text-center border-2 border-dashed border-gray-300 rounded-lg mt-6">
-                <p class="text-gray-400 font-bold italic">Belum ada data perolehan medali untuk filter ini.</p>
-            </div>
-        <?php else: ?>
-            <table class="result-table">
-                <thead>
-                    <tr>
-                        <th class="w-12 text-center">RANK</th>
-                        <th class="text-center">NAMA / IDENTITAS</th>
-                        <?php if($mode=='athlete'): ?><th class="text-left">DETAIL</th><?php endif; ?>
-                        <th class="text-center">TIM / SEKOLAH</th>
-                        <th class="w-18 bg-gold text-center">EMAS</th>
-                        <th class="w-18 bg-silver text-center">PERAK</th>
-                        <th class="w-18 bg-bronze text-center">PRG</th>
-                        <th class="w-18 bg-total text-center">TOTAL</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php 
-                    $rank=1; 
-                    foreach($tally as $row): 
-                    ?>
-                    <tr>
-                        <td class="text-center font-bold text-lg"><?= $rank++ ?></td>
-                        
-                        <td class="font-bold">
-                            <?= strtoupper($row['name'] ?? $row['nama_atlet']) ?>
-                        </td>
-
-                        <?php if($mode=='athlete'): ?>
-                        <td class="text-xs text-gray-600 font-mono">
-                            <?= $row['jenis_kelamin'] ?> | <?= date('Y', strtotime($row['tanggal_lahir'])) ?>
-                        </td>
-                        <?php endif; ?>
-
-                        <td class="text-[9pt] font-bold text-gray-700">
-                            <?= strtoupper($row['team'] ?? '-') ?>
-                        </td>
-
-                        <td class="text-center font-mono font-bold text-lg bg-gold"><?= $row['gold'] ?></td>
-                        <td class="text-center font-mono font-bold text-lg bg-silver"><?= $row['silver'] ?></td>
-                        <td class="text-center font-mono font-bold text-lg bg-bronze"><?= $row['bronze'] ?></td>
-                        <td class="text-center font-mono font-black text-lg bg-total"><?= $row['total_medals'] ?></td>
-                    </tr>
-                    <?php endforeach; ?>
-                </tbody>
-            </table>
-        <?php endif; ?>
-
-        <?php if(!empty($footerSponsors)): ?>
-        <div class="footer-sponsor">
-            <div class="sponsor-line-separator"></div>
-            <div class="sponsor-logo-container">
-                <?php foreach($footerSponsors as $img): ?>
+    <div class="footer-fixed" style="justify-content: center;">
+        <div class="footer-sponsors">
+            <?php if(!empty($sponsors)): ?>
+                <?php foreach($sponsors as $img): ?>
                     <img src="../../../public/<?= $img ?>">
                 <?php endforeach; ?>
-            </div>
+            <?php endif; ?>
         </div>
-        <?php endif; ?>
+    </div>
 
+    <div class="page-wrapper">
+        <table class="layout-table">
+            <thead><tr><td><div class="layout-header-space"></div></td></tr></thead>
+            <tfoot><tr><td><div class="layout-footer-space"></div></td></tr></tfoot>
+            <tbody>
+                <tr>
+                    <td>
+                        <?php if(empty($tallyData)): ?>
+                            <div style="text-align:center; padding: 50px; font-weight: bold; color:#888; border: 2px dashed #ccc; margin-top: 15px;">
+                                Belum ada data perolehan medali untuk filter ini.
+                            </div>
+                        <?php else: ?>
+                            
+                            <?php if($mode == 'team'): ?>
+                                <div class="block-tabel">
+                                    <div class="event-header">
+                                        <div class="eh-left-group">
+                                            <div class="eh-number">REKAP TIM</div>
+                                            <div class="eh-date"><?= htmlspecialchars($dateRange) ?></div>
+                                        </div>
+                                        <div class="eh-center"><div class="eh-title"><?= $titlePage ?></div></div>
+                                        <div class="eh-right"></div>
+                                    </div>
+
+                                    <table class="data-table">
+                                        <thead>
+                                            <tr>
+                                                <th class="col-rank">RANK</th>
+                                                <th class="col-nama" style="width: 65%;">NAMA KLUB / TIM / SEKOLAH</th>
+                                                <th class="col-med bg-gold">E</th>
+                                                <th class="col-med bg-silver">P</th>
+                                                <th class="col-med bg-bronze">P</th>
+                                                <th class="col-med bg-total">TOT</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <?php $rank=1; foreach($tallyData as $row): ?>
+                                            <tr>
+                                                <td class="col-rank"><?= $rank++ ?></td>
+                                                <td class="col-nama"><?= htmlspecialchars($row['entity_name']) ?></td>
+                                                <td class="col-med bg-gold"><?= $row['gold'] ?></td>
+                                                <td class="col-med bg-silver"><?= $row['silver'] ?></td>
+                                                <td class="col-med bg-bronze"><?= $row['bronze'] ?></td>
+                                                <td class="col-med bg-total"><?= $row['total'] ?></td>
+                                            </tr>
+                                            <?php endforeach; ?>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            <?php else: ?>
+                                <?php foreach($groupedAthleteData as $ku_name => $genders): ?>
+                                    <?php foreach(['L', 'P'] as $gender): ?>
+                                        <?php if(!empty($genders[$gender])): ?>
+                                            <div class="block-tabel">
+                                                
+                                                <div class="event-header">
+                                                    <div class="eh-left-group">
+                                                        <div class="eh-number">KU: <?= htmlspecialchars($ku_name) ?></div>
+                                                    </div>
+                                                    <div class="eh-center"><div class="eh-title"><?= $titlePage ?></div></div>
+                                                    <div class="eh-right">
+                                                        <div class="eh-number"><?= $gender == 'L' ? 'PUTRA' : 'PUTRI' ?></div>
+                                                    </div>
+                                                </div>
+
+                                                <table class="data-table">
+                                                    <thead>
+                                                        <tr>
+                                                            <th class="col-rank">RANK</th>
+                                                            <th class="col-nama">NAMA PERENANG</th>
+                                                            <th class="col-tim">TIM / SEKOLAH</th>
+                                                            <th class="col-med bg-gold">E</th>
+                                                            <th class="col-med bg-silver">P</th>
+                                                            <th class="col-med bg-bronze">P</th>
+                                                            <th class="col-med bg-total">TOT</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        <?php $rank=1; foreach($genders[$gender] as $row): ?>
+                                                        <tr>
+                                                            <td class="col-rank"><?= $rank++ ?></td>
+                                                            <td class="col-nama">
+                                                                <?= htmlspecialchars($row['entity_name']) ?>
+                                                            </td>
+                                                            <td class="col-tim"><?= htmlspecialchars($row['team_name']) ?></td>
+                                                            <td class="col-med bg-gold"><?= $row['gold'] ?></td>
+                                                            <td class="col-med bg-silver"><?= $row['silver'] ?></td>
+                                                            <td class="col-med bg-bronze"><?= $row['bronze'] ?></td>
+                                                            <td class="col-med bg-total"><?= $row['total'] ?></td>
+                                                        </tr>
+                                                        <?php endforeach; ?>
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        <?php endif; ?>
+                                    <?php endforeach; ?>
+                                <?php endforeach; ?>
+                            <?php endif; ?>
+
+                            <div style="margin-top: 5px; font-size: 7.5pt; font-family: 'Arial', sans-serif; font-style: italic; color: #666; text-align: right;">
+                                * Klasemen diurutkan berdasarkan Emas terbanyak, disusul Perak, dan Perunggu (Olympic System).
+                            </div>
+                        <?php endif; ?>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
     </div>
 </div>
