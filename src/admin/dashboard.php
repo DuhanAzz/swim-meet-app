@@ -9,25 +9,25 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
 }
 $uid = $_SESSION['user_id'];
 
-// 2. AMBIL EVENT AKTIF (LOGIKA BARU: user_id)
+// 2. AMBIL EVENT AKTIF 
 $stmtEvent = $pdo->prepare("SELECT * FROM events WHERE user_id = ? ORDER BY id DESC LIMIT 1");
 $stmtEvent->execute([$uid]);
 $event = $stmtEvent->fetch(PDO::FETCH_ASSOC);
 
 // Variable Default
 $eventId   = $event['id'] ?? 0;
-$eventName = $event['event_name'] ?? 'Belum Ada Event';
-$eventDate = $event['event_date_start'] ?? date('Y-m-d'); // Sesuaikan nama kolom di DB Bapak
+$eventName = $event['event_name'] ?? 'Belum Ada Event Aktif';
+$eventDate = $event['event_date_start'] ?? date('Y-m-d'); 
 $eventLoc  = $event['event_location'] ?? '-';
 $eventStatus = $event['event_status'] ?? 'Draft';
 
-// 3. HITUNG STATISTIK (LOGIKA BARU: Pakai Tabel Hybrid)
+// 3. HITUNG STATISTIK 
 $stats = ['atlet' => 0, 'entries' => 0, 'clubs' => 0, 'revenue' => 0];
 
 if ($eventId > 0) {
     try {
-        // A. Total Entries (Nomor Lomba)
-        $stmtEntry = $pdo->prepare("SELECT COUNT(*) FROM event_entries WHERE event_id = ? AND status != 'Scratched'");
+        // A. Total Entries (Nomor Lomba yang diikuti)
+        $stmtEntry = $pdo->prepare("SELECT COUNT(*) FROM event_entries WHERE event_id = ?");
         $stmtEntry->execute([$eventId]);
         $stats['entries'] = $stmtEntry->fetchColumn();
 
@@ -36,24 +36,24 @@ if ($eventId > 0) {
         $stmtAtlet->execute([$eventId]);
         $stats['atlet'] = $stmtAtlet->fetchColumn();
 
-        // C. Total Klub (Unik - Langsung dari kolom club_id)
+        // C. Total Klub/Sekolah (Unik)
         $stmtClub = $pdo->prepare("SELECT COUNT(DISTINCT club_id) FROM event_entries WHERE event_id = ?");
         $stmtClub->execute([$eventId]);
         $stats['clubs'] = $stmtClub->fetchColumn();
 
-        // D. Revenue (Placeholder/Sementara)
-        $stats['revenue'] = 0; 
+        // D. PERBAIKAN: Total Pemasukan (Revenue) dari tabel payments yang sudah Lunas
+        $stmtRev = $pdo->prepare("SELECT SUM(amount) FROM payments WHERE event_id = ? AND status IN ('Paid', 'completed')");
+        $stmtRev->execute([$eventId]);
+        $stats['revenue'] = $stmtRev->fetchColumn() ?: 0;
 
     } catch (Exception $e) { /* Silent Error */ }
 }
 
-// 4. DATA CHART (Top 5 Klub)
+// 4. DATA CHART (Top 5 Klub / Sekolah)
 $chartLabels = [];
 $chartValues = [];
 
 if ($eventId > 0) {
-    // Sesuaikan join ini dengan nama tabel user/club Bapak
-    // Asumsi: club_id di entries merujuk ke tabel users.id
     $sqlChart = "
         SELECT u.nama_lengkap as nama_klub, COUNT(DISTINCT ee.swimmer_id) as jumlah_atlet
         FROM event_entries ee
@@ -77,7 +77,7 @@ if ($eventId > 0) {
 $jsLabels = json_encode($chartLabels);
 $jsValues = json_encode($chartValues);
 
-// INCLUDE LAYOUT (Gaya Bapak)
+// INCLUDE LAYOUT 
 include __DIR__ . '/../../views/layout/topbar.php'; 
 include __DIR__ . '/../../views/layout/sidebar.php'; 
 ?>
@@ -101,7 +101,7 @@ include __DIR__ . '/../../views/layout/sidebar.php';
         <?php else: ?>
             <div class="flex gap-2">
                 <span class="px-4 py-2 bg-emerald-100 text-emerald-700 rounded-lg text-xs font-black uppercase tracking-wide border border-emerald-200">
-                    Status: <?= $eventStatus ?>
+                    Status: <?= htmlspecialchars($eventStatus) ?>
                 </span>
                 <a href="settings/event_profile.php?event_id=<?= $eventId ?>" class="px-4 py-2 bg-slate-800 text-white rounded-lg text-xs font-bold uppercase hover:bg-slate-700 transition">
                     ⚙️ Edit Event
@@ -157,7 +157,7 @@ include __DIR__ . '/../../views/layout/sidebar.php';
         
         <div class="lg:col-span-2 bg-white rounded-[2rem] shadow-sm border border-slate-200 p-8">
             <div class="flex justify-between items-center mb-6">
-                <h3 class="font-black text-slate-800 uppercase italic text-sm tracking-widest">🏆 Top 5 Klub Teraktif</h3>
+                <h3 class="font-black text-slate-800 uppercase italic text-sm tracking-widest">🏆 Top 5 Tim/Klub Teraktif</h3>
             </div>
             <div class="relative h-64 w-full">
                 <?php if(empty($chartLabels)): ?>
@@ -179,7 +179,7 @@ include __DIR__ . '/../../views/layout/sidebar.php';
                         <span class="w-8 h-8 flex items-center justify-center bg-white rounded-full shadow-sm text-xs border border-slate-100 group-hover:scale-110 transition">✅</span>
                         <div>
                             <p class="text-xs font-black text-slate-700 uppercase">Verifikasi Atlet</p>
-                            <p class="text-[10px] text-slate-400">Cek kelayakan peserta</p>
+                            <p class="text-[10px] text-slate-400">Cek status pembayaran</p>
                         </div>
                     </a>
 

@@ -91,7 +91,8 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                             // LOGIC HITUNG JUMLAH RECORD (Best Time)
                             $recordCount = 0;
                             try {
-                                $stmtCount = $pdo->prepare("SELECT COUNT(*) FROM swimmer_records WHERE swimmer_id = ?");
+                                // PERBAIKAN: Menggunakan nama tabel yang benar yaitu 'athlete_records'
+                                $stmtCount = $pdo->prepare("SELECT COUNT(*) FROM athlete_records WHERE swimmer_id = ?");
                                 $stmtCount->execute([$a['id']]);
                                 $recordCount = $stmtCount->fetchColumn();
                             } catch (PDOException $e) {
