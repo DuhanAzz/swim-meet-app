@@ -1,5 +1,6 @@
 <?php
-// src/pages/registrant/checkout.php
+// FILE: src/pages/registrant/checkout.php
+// ATAU: src/user/kompetisi/checkout.php
 session_start();
 require_once __DIR__ . '/../../config/database.php';
 
@@ -9,209 +10,176 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'user') {
 }
 
 $uid = $_SESSION['user_id'];
-$adminId = $_GET['event_id'] ?? 0; // Ini adalah ID Admin dari tabel users
+$targetEventId = (int)($_GET['event_id'] ?? 0); 
 
-// 2. AMBIL DATA EVENT DARI TABEL 'events' BERDASARKAN user_id (ID Admin)
-$stmtEvt = $pdo->prepare("SELECT * FROM events WHERE user_id = ? LIMIT 1");
-$stmtEvt->execute([$adminId]);
-$eventData = $stmtEvt->fetch();
+// 2. AMBIL DATA EVENT BERDASARKAN ID EVENT
+$stmtEvt = $pdo->prepare("SELECT * FROM events WHERE id = ? LIMIT 1");
+$stmtEvt->execute([$targetEventId]);
+$eventData = $stmtEvt->fetch(PDO::FETCH_ASSOC);
 
 if (!$eventData) {
     echo "<script>alert('Event tidak ditemukan.'); window.history.back();</script>"; exit;
 }
 
-$namaEvent = $eventData['nama_event'] ?? "Event";
+$namaEvent = $eventData['event_name'] ?? "Event";
 
-// 3. AMBIL STATUS PEMBAYARAN SEBELUMNYA
+// 3. AMBIL STATUS PEMBAYARAN
 $paymentStatus = 'Unpaid';
 $adminFile = null; 
 $proofFile = null; 
 $paymentId = null;
 
-$stmtPay = $pdo->prepare("SELECT * FROM payments WHERE user_id = ? AND event_id = ? LIMIT 1");
-$stmtPay->execute([$uid, $adminId]);
-$pay = $stmtPay->fetch();
+$stmtPay = $pdo->prepare("SELECT * FROM payments WHERE user_id = ? AND event_id = ? ORDER BY created_at DESC LIMIT 1");
+$stmtPay->execute([$uid, $targetEventId]);
+$pay = $stmtPay->fetch(PDO::FETCH_ASSOC);
 
 if ($pay) {
     $paymentId = $pay['id'];
-    $paymentStatus = $pay['status'];
-    $adminFile = $pay['admin_file_path'];
-    $proofFile = $pay['file_path'];
+    $paymentStatus = $pay['status']; 
+    // PERBAIKAN: Menyesuaikan dengan nama kolom di database Anda
+    $adminFile = $pay['admin_file_path'] ?? null; 
+    $proofFile = $pay['file_path'] ?? null; 
 }
 
-// 4. HANDLE UPLOAD FORM (POST) - Mempertahankan Fitur Berkas Admin & Bukti Transfer
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $amount = $_POST['total_amount_hidden'] ?? 0;
-    
-    $dirAdm = __DIR__ . "/../../../public/uploads/admin_files/";
-    $dirPay = __DIR__ . "/../../../public/uploads/payments/";
-    if (!is_dir($dirAdm)) mkdir($dirAdm, 0777, true);
-    if (!is_dir($dirPay)) mkdir($dirPay, 0777, true);
-
-    // A. Upload Berkas Admin (Fitur yang sempat hilang)
-    $newAdminFile = $adminFile; 
-    if (!empty($_FILES['berkas_admin']['name'])) {
-        $ext = strtolower(pathinfo($_FILES['berkas_admin']['name'], PATHINFO_EXTENSION));
-        $fName = "ADM_" . $adminId . "_" . $uid . "_" . time() . "." . $ext;
-        if (move_uploaded_file($_FILES['berkas_admin']['tmp_name'], $dirAdm . $fName)) {
-            $newAdminFile = $fName;
-        }
-    }
-
-    // B. Upload Bukti Transfer
-    $newProofFile = $proofFile;
-    if (!empty($_FILES['bukti_transfer']['name'])) {
-        $ext = strtolower(pathinfo($_FILES['bukti_transfer']['name'], PATHINFO_EXTENSION));
-        $fName = "PAY_" . $adminId . "_" . $uid . "_" . time() . "." . $ext;
-        if (move_uploaded_file($_FILES['bukti_transfer']['tmp_name'], $dirPay . $fName)) {
-            $newProofFile = $fName;
-        }
-    }
-
-    if ($newProofFile) {
-        if ($pay) {
-            // Update / Revisi
-            $pdo->prepare("UPDATE payments SET amount=?, file_path=?, admin_file_path=?, status='Pending', updated_at=NOW() WHERE id=?")
-                ->execute([$amount, $newProofFile, $newAdminFile, $paymentId]);
-        } else {
-            // Insert Baru
-            $pdo->prepare("INSERT INTO payments (event_id, user_id, amount, file_path, admin_file_path, status, created_at) VALUES (?, ?, ?, ?, ?, 'Pending', NOW())")
-                ->execute([$adminId, $uid, $amount, $newProofFile, $newAdminFile]);
-        }
-        header("Location: checkout.php?event_id=" . $adminId); exit;
-    }
-}
-
-// 5. AMBIL ITEM BELANJA & HITUNG DENGAN LOGIKA PAKET (PRICING MODE)
-$stmtEnt = $pdo->prepare("
-    SELECT s.nama_atlet, s.jenis_kelamin, en.distance, en.stroke, en.age_group, ee.entry_time 
+// 4. HITUNG TOTAL TAGIHAN (BERDASARKAN ENTRIES)
+$stmtSum = $pdo->prepare("
+    SELECT SUM(en.price) 
     FROM event_entries ee 
-    JOIN swimmers s ON ee.swimmer_id = s.id 
     JOIN event_numbers en ON ee.category_id = en.id 
-    WHERE ee.user_id = ? AND ee.event_id = ? 
+    WHERE ee.user_id = ? AND ee.event_id = ?
+");
+$stmtSum->execute([$uid, $targetEventId]);
+$totalTagihan = $stmtSum->fetchColumn() ?: 0;
+
+// 5. AMBIL RINCIAN ATLET & NOMOR LOMBA
+$stmtDetail = $pdo->prepare("
+    SELECT s.nama_atlet, en.distance, en.stroke, en.price, ee.entry_time
+    FROM event_entries ee
+    JOIN swimmers s ON ee.swimmer_id = s.id
+    JOIN event_numbers en ON ee.category_id = en.id
+    WHERE ee.user_id = ? AND ee.event_id = ?
     ORDER BY s.nama_atlet ASC
 ");
-$stmtEnt->execute([$uid, $adminId]);
-$entries = $stmtEnt->fetchAll();
+$stmtDetail->execute([$uid, $targetEventId]);
+$details = $stmtDetail->fetchAll(PDO::FETCH_ASSOC);
 
-$grouped = []; 
-$totalTagihan = 0;
-foreach($entries as $r) {
-    if(!isset($grouped[$r['nama_atlet']])) {
-        $grouped[$r['nama_atlet']] = ['gender' => $r['jenis_kelamin'], 'items' => [], 'subtotal' => 0];
-    }
-    $grouped[$r['nama_atlet']]['items'][] = $r;
-}
+// 6. HANDLE UPLOAD BUKTI BAYAR
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['bukti_transfer'])) {
+    $uploadDir = __DIR__ . '/../../../public/uploads/payments/';
+    if (!is_dir($uploadDir)) mkdir($uploadDir, 0777, true);
 
-// Logika Perhitungan Harga Berdasarkan Mode
-foreach($grouped as $nama => &$data) {
-    $count = count($data['items']);
-    if ($eventData['pricing_mode'] === 'package') {
-        $limit = (int)$eventData['package_limit'];
-        $base = (float)$eventData['package_price'];
-        $extra = (float)$eventData['extra_price'];
-        
-        $data['subtotal'] = ($count <= $limit) ? $base : $base + (($count - $limit) * $extra);
-    } else {
-        $data['subtotal'] = $count * (float)$eventData['price'];
+    $fileExt = pathinfo($_FILES['bukti_transfer']['name'], PATHINFO_EXTENSION);
+    $fileName = 'PAY_' . $targetEventId . '_' . $uid . '_' . time() . '.' . $fileExt;
+    $targetFile = $uploadDir . $fileName;
+
+    if (move_uploaded_file($_FILES['bukti_transfer']['tmp_name'], $targetFile)) {
+        if ($paymentId) {
+            // PERBAIKAN: Gunakan file_path
+            $stmtUp = $pdo->prepare("UPDATE payments SET file_path = ?, status = 'Pending', created_at = NOW() WHERE id = ?");
+            $stmtUp->execute([$fileName, $paymentId]);
+        } else {
+            // PERBAIKAN: Gunakan amount dan file_path (Menghilangkan total_amount)
+            $stmtIns = $pdo->prepare("INSERT INTO payments (user_id, event_id, amount, file_path, status, created_at) VALUES (?, ?, ?, ?, 'Pending', NOW())");
+            $stmtIns->execute([$uid, $targetEventId, $totalTagihan, $fileName]);
+        }
+        echo "<script>alert('Bukti transfer berhasil diunggah! Menunggu verifikasi admin.'); window.location.href='checkout.php?event_id=$targetEventId';</script>";
+        exit;
     }
-    $totalTagihan += $data['subtotal'];
 }
 
 include __DIR__ . '/../../../views/layout/topbar.php';
 include __DIR__ . '/../../../views/layout/sidebar.php';
 ?>
 
-<div class="p-6 sm:ml-64 pt-24 bg-slate-50 min-h-screen font-sans text-slate-800">
-    <div class="max-w-6xl mx-auto pb-20">
-        
-        <div class="flex flex-col md:flex-row justify-between items-end mb-8 gap-4">
-            <div>
-                <a href="register_event.php?event_id=<?= $adminId ?>" class="text-xs font-bold text-slate-400 hover:text-blue-600 mb-1 block">← Kembali ke Pendaftaran</a>
-                <h1 class="text-3xl font-black text-slate-900 uppercase italic tracking-tight">Checkout & Pembayaran</h1>
-                <p class="text-sm text-slate-500 mt-1 font-bold">Event: <strong class="text-blue-600"><?= htmlspecialchars($namaEvent) ?></strong></p>
-            </div>
+<div class="p-4 sm:ml-64 pt-20 bg-slate-50 min-h-screen">
+    <div class="max-w-4xl mx-auto">
+        <div class="flex flex-col md:flex-row gap-6">
             
-            <div class="flex items-center gap-2">
-                <span class="px-5 py-2 rounded-xl text-xs font-black uppercase border tracking-wider shadow-sm
-                    <?= match($paymentStatus) { 
-                        'Pending' => 'bg-amber-100 text-amber-700 border-amber-200', 
-                        'Paid'    => 'bg-emerald-100 text-emerald-700 border-emerald-200', 
-                        'Rejected'=> 'bg-red-100 text-red-700 border-red-200', 
-                        default   => 'bg-slate-200 text-slate-600 border-slate-300' 
-                    } ?>">
-                    <?= match($paymentStatus) { 'Pending'=>'Verifikasi', 'Paid'=>'Lunas', 'Rejected'=>'Ditolak', default=>'Belum Bayar' } ?>
-                </span>
-            </div>
-        </div>
+            <div class="flex-1 space-y-4">
+                <div class="bg-white p-6 rounded-3xl shadow-sm border border-slate-200">
+                    <h2 class="text-xl font-black text-slate-800 uppercase italic mb-1">Ringkasan Pendaftaran</h2>
+                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-6"><?= htmlspecialchars($namaEvent) ?></p>
 
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            <div class="lg:col-span-2 space-y-6">
-                <?php foreach($grouped as $nama=>$d): ?>
-                <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-                    <div class="bg-slate-50 px-5 py-3 border-b border-slate-100 flex justify-between items-center">
-                        <div class="flex items-center gap-3">
-                            <span class="w-6 h-6 flex items-center justify-center rounded-full text-[10px] font-black text-white <?= ($d['gender'] == 'L') ? 'bg-blue-500' : 'bg-pink-500' ?>">
-                                <?= ($d['gender'] == 'L') ? 'P' : 'W' ?>
-                            </span>
-                            <h3 class="font-bold text-slate-700 text-sm uppercase italic"><?= htmlspecialchars($nama) ?></h3>
-                        </div>
-                        <span class="font-mono font-bold text-blue-600 text-xs">Rp <?= number_format($d['subtotal'],0,',','.') ?></span>
-                    </div>
-                    <div class="p-0">
-                        <table class="w-full text-xs text-left text-slate-600">
-                            <?php foreach($d['items'] as $i): ?>
-                                <tr class="border-b border-slate-50 last:border-0 hover:bg-slate-50 transition">
-                                    <td class="py-3 pl-5 font-medium"><?= $i['distance'] ?>M <?= $i['stroke'] ?> (KU <?= $i['age_group'] ?>)</td>
-                                    <td class="text-right pr-5 font-mono text-slate-500">Waktu: <?= $i['entry_time'] ?></td>
-                                </tr>
+                    <div class="space-y-3">
+                        <?php if(empty($details)): ?>
+                            <p class="text-center py-10 text-slate-400 text-xs italic font-bold">Belum ada atlet yang didaftarkan.</p>
+                        <?php else: ?>
+                            <?php foreach($details as $d): ?>
+                            <div class="flex justify-between items-center p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                                <div>
+                                    <p class="text-[10px] font-black text-blue-600 uppercase mb-0.5"><?= htmlspecialchars($d['nama_atlet'] ?? '') ?></p>
+                                    <p class="text-xs font-bold text-slate-700 uppercase italic"><?= $d['distance'] ?>m <?= $d['stroke'] ?></p>
+                                </div>
+                                <div class="text-right">
+                                    <p class="text-xs font-black text-slate-800">Rp <?= number_format($d['price'], 0, ',', '.') ?></p>
+                                    <p class="text-[9px] font-bold text-slate-400">Time: <?= $d['entry_time'] ?: '-' ?></p>
+                                </div>
+                            </div>
                             <?php endforeach; ?>
-                        </table>
+                        <?php endif; ?>
+                    </div>
+
+                    <div class="mt-6 pt-6 border-t-2 border-dashed border-slate-200 flex justify-between items-center">
+                        <p class="text-sm font-black text-slate-800 uppercase italic">Total Pembayaran</p>
+                        <p class="text-2xl font-black text-blue-600">Rp <?= number_format($totalTagihan, 0, ',', '.') ?></p>
                     </div>
                 </div>
-                <?php endforeach; ?>
             </div>
 
-            <div class="lg:col-span-1">
-                <div class="bg-white rounded-3xl shadow-xl border border-slate-200 p-6 sticky top-24">
-                    <div class="mb-6 pb-6 border-b border-dashed border-slate-200">
-                        <h2 class="font-bold text-slate-400 uppercase text-[10px] tracking-wider mb-2">Total Tagihan</h2>
-                        <div class="text-4xl font-black text-slate-800 tracking-tighter italic">Rp <?= number_format($totalTagihan,0,',','.') ?></div>
-                    </div>
+            <div class="w-full md:w-80 space-y-4">
+                <div class="bg-white p-6 rounded-3xl shadow-sm border border-slate-200">
+                    <h3 class="text-sm font-black text-slate-800 uppercase italic mb-4">Status Pembayaran</h3>
                     
-                    <div class="bg-gradient-to-br from-blue-600 to-blue-800 rounded-2xl p-5 mb-6 text-white relative overflow-hidden">
-                        <p class="text-[10px] font-black uppercase tracking-widest mb-3 opacity-70">Transfer Bank</p>
-                        <p class="font-black uppercase text-lg mb-1"><?= htmlspecialchars($eventData['bank_name']) ?></p>
-                        <p class="font-mono text-xl font-bold tracking-wider mb-2 bg-white/10 p-2 rounded-lg"><?= htmlspecialchars($eventData['bank_account_number']) ?></p>
-                        <p class="text-xs font-bold uppercase italic">a.n. <?= htmlspecialchars($eventData['bank_account_name']) ?></p>
+                    <?php 
+                        $statusColors = [
+                            'Unpaid'   => 'bg-slate-100 text-slate-600',
+                            'Pending'  => 'bg-amber-100 text-amber-700',
+                            'Paid'     => 'bg-emerald-100 text-emerald-700',
+                            'completed'=> 'bg-emerald-100 text-emerald-700',
+                            'Rejected' => 'bg-red-100 text-red-700'
+                        ];
+                        $c = $statusColors[$paymentStatus] ?? 'bg-slate-100 text-slate-600';
+                    ?>
+                    <div class="w-full <?= $c ?> py-3 rounded-xl text-center font-black text-xs uppercase tracking-widest mb-6">
+                        <?= $paymentStatus ?>
                     </div>
 
-                    <?php if($paymentStatus == 'Unpaid' || $paymentStatus == 'Rejected'): ?>
-                        <form method="POST" enctype="multipart/form-data" class="space-y-5">
-                            <input type="hidden" name="total_amount_hidden" value="<?= $totalTagihan ?>">
-                            
+                    <?php if ($paymentStatus === 'Unpaid' || $paymentStatus === 'Rejected'): ?>
+                        <form method="POST" enctype="multipart/form-data" class="space-y-4">
+                            <div class="bg-blue-50 p-4 rounded-2xl border border-blue-100">
+                                <p class="text-[10px] font-bold text-blue-800 uppercase mb-2">Instruksi Pembayaran</p>
+                                <p class="text-[10px] text-blue-600 leading-relaxed font-medium italic">Silakan transfer sesuai total tagihan ke rekening panitia yang tertera pada brosur event.</p>
+                            </div>
+
                             <div>
-                                <label class="block text-xs font-bold text-slate-700 mb-1.5">Berkas Admin (PDF/ZIP)</label>
-                                <input type="file" name="berkas_admin" accept=".pdf,.zip,.rar" class="w-full text-xs border border-slate-300 rounded-xl p-2">
-                                <?php if($adminFile): ?><p class="text-[9px] text-blue-500 mt-1 italic">File terupload: <?= $adminFile ?></p><?php endif; ?>
+                                <label class="block text-xs font-bold text-slate-700 mb-1.5 uppercase italic">Bukti Transfer <span class="text-red-500">*</span></label>
+                                <input type="file" name="bukti_transfer" required accept="image/*,.pdf" class="w-full text-xs border border-slate-200 rounded-xl p-3 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500">
                             </div>
 
-                            <div class="pt-4 border-t border-slate-100">
-                                <label class="block text-xs font-bold text-slate-700 mb-1.5">Bukti Transfer <span class="text-red-500">*</span></label>
-                                <input type="file" name="bukti_transfer" required accept="image/*,.pdf" class="w-full text-xs border border-slate-300 rounded-xl p-2">
-                            </div>
-
-                            <button type="submit" class="w-full bg-slate-900 hover:bg-blue-600 text-white font-black py-4 rounded-xl shadow-lg transition uppercase text-xs tracking-widest italic">
-                                <?= $paymentStatus=='Rejected' ? 'Upload Ulang Bukti' : 'Konfirmasi Bayar' ?> ➜
+                            <button type="submit" class="w-full bg-slate-900 hover:bg-blue-600 text-white font-black py-4 rounded-2xl shadow-lg transition-all uppercase text-xs tracking-widest italic active:scale-95">
+                                <?= $paymentStatus == 'Rejected' ? 'Upload Ulang Bukti' : 'Konfirmasi Bayar' ?> ➜
                             </button>
                         </form>
                     <?php else: ?>
-                        <div class="bg-slate-50 border border-slate-200 rounded-2xl p-6 text-center">
-                            <p class="text-xs font-black text-slate-500 uppercase italic italic">Status: <?= $paymentStatus ?></p>
+                        <div class="text-center space-y-3">
+                            <div class="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto text-2xl">
+                                <?= ($paymentStatus == 'Pending') ? '⏳' : '✅' ?>
+                            </div>
+                            <p class="text-xs font-bold text-slate-500 leading-relaxed px-4">
+                                <?= ($paymentStatus == 'Pending') ? 'Bukti transfer Anda sedang diverifikasi oleh panitia. Mohon tunggu.' : 'Pembayaran lunas! Anda sudah resmi terdaftar di event ini.' ?>
+                            </p>
+                            <?php if($proofFile): ?>
+                                <a href="../../../public/uploads/payments/<?= htmlspecialchars($proofFile) ?>" target="_blank" class="text-[10px] font-bold text-blue-500 underline uppercase italic">Lihat Bukti Saya</a>
+                            <?php endif; ?>
                         </div>
                     <?php endif; ?>
                 </div>
+                
+                <a href="register_event.php?event_id=<?= $targetEventId ?>" class="block w-full py-4 bg-white border border-slate-200 rounded-2xl text-center text-xs font-black text-slate-400 uppercase italic hover:bg-slate-50 transition-all">
+                    Kembali ke Matrix
+                </a>
             </div>
+
         </div>
     </div>
 </div>

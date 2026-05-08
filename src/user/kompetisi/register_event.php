@@ -16,13 +16,13 @@ if ($targetEventId == 0) { die("Error: ID Event tidak valid."); }
 // --- 2. AMBIL DATA EVENT & STATUS PEMBAYARAN ---
 $stmtEvt = $pdo->prepare("SELECT * FROM events WHERE id = ? LIMIT 1"); 
 $stmtEvt->execute([$targetEventId]);
-$eventData = $stmtEvt->fetch();
+$eventData = $stmtEvt->fetch(PDO::FETCH_ASSOC);
 
 if (!$eventData) { die("Data Event tidak ditemukan."); }
 
-$namaEventDisplay = $eventData['nama_event'];
+$namaEventDisplay = $eventData['event_name'] ?? 'Event Tidak Bernama';
 $calcType = $eventData['age_calculation_type'] ?? 'Dec 31'; 
-$startDate = $eventData['event_start_date'] ?? date('Y-m-d');
+$startDate = $eventData['event_date_start'] ?? date('Y-m-d');
 $compYear = (int)date('Y', strtotime($startDate));
 $compDateObj = new DateTime($startDate);
 
@@ -30,8 +30,8 @@ $stmtPay = $pdo->prepare("SELECT status FROM payments WHERE user_id = ? AND even
 $stmtPay->execute([$uid, $targetEventId]);
 $payStatus = $stmtPay->fetchColumn(); 
 
-$isLocked = ($payStatus === 'Pending' || $payStatus === 'Paid');
-$lockMessage = ($payStatus === 'Paid') ? 'Pendaftaran sudah DISETUJUI Admin. Data terkunci.' : 'Menunggu Verifikasi Admin. Data terkunci sementara.';
+$isLocked = ($payStatus === 'Pending' || $payStatus === 'Paid' || $payStatus === 'completed' || $payStatus === 'pending');
+$lockMessage = (strtolower($payStatus ?? '') === 'paid' || strtolower($payStatus ?? '') === 'completed') ? 'Pendaftaran sudah DISETUJUI Admin. Data terkunci.' : 'Menunggu Verifikasi Admin. Data terkunci sementara.';
 
 // --- 3. HELPER: HITUNG UMUR ---
 function hitungUmur($tglLahir, $calcType, $compYear, $compDateObj) {
@@ -55,10 +55,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
         $stmtC = $pdo->prepare("SELECT id FROM clubs WHERE user_id = ? LIMIT 1");
         $stmtC->execute([$uid]);
-        $clubRow = $stmtC->fetch();
+        $clubRow = $stmtC->fetch(PDO::FETCH_ASSOC);
         $clubId = $clubRow['id'] ?? $uid; 
 
-        $stmtValidCats = $pdo->prepare("SELECT id FROM event_numbers WHERE organizer_id = ?"); 
+        // PERBAIKAN: Gunakan event_id bukan organizer_id
+        $stmtValidCats = $pdo->prepare("SELECT id FROM event_numbers WHERE event_id = ?"); 
         $stmtValidCats->execute([$targetEventId]);
         $validCategoryIds = $stmtValidCats->fetchAll(PDO::FETCH_COLUMN);
 
@@ -70,7 +71,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             
             $stmtCek = $pdo->prepare("SELECT id FROM event_entries WHERE user_id=? AND event_id=? AND swimmer_id=? AND category_id=?");
             $stmtCek->execute([$uid, $targetEventId, $swimmerId, $catId]);
-            $exist = $stmtCek->fetch();
+            $exist = $stmtCek->fetch(PDO::FETCH_ASSOC);
 
             if ($time === '' || $time === '00.00.00' || $time === 'DELETE') {
                 if ($exist) { $pdo->prepare("DELETE FROM event_entries WHERE id=?")->execute([$exist['id']]); }
@@ -94,7 +95,8 @@ $stmtGroups = $pdo->prepare("SELECT id, min_age, max_age, group_name FROM event_
 $stmtGroups->execute([$targetEventId]);
 $ageRules = $stmtGroups->fetchAll(PDO::FETCH_UNIQUE|PDO::FETCH_ASSOC);
 
-$stmtEn = $pdo->prepare("SELECT * FROM event_numbers WHERE organizer_id = ? ORDER BY distance ASC, stroke ASC");
+// PERBAIKAN: Gunakan event_id bukan organizer_id
+$stmtEn = $pdo->prepare("SELECT * FROM event_numbers WHERE event_id = ? ORDER BY distance ASC, stroke ASC");
 $stmtEn->execute([$targetEventId]);
 $allEvents = $stmtEn->fetchAll(PDO::FETCH_ASSOC);
 
@@ -155,29 +157,22 @@ $strokeOrder = [
 // B. Bangun Struktur Tabel
 $tableStructure = []; 
 foreach ($allEvents as $ev) { 
-    $rawStroke = strtoupper($ev['stroke']);
+    $rawStroke = strtoupper($ev['stroke'] ?? '');
     $isKick = false;
 
     // DETEKSI KICK / PAPAN
-    // Jika mengandung kata "KICK", kita anggap ini Papan
     if (strpos($rawStroke, 'KICK') !== false) {
         $isKick = true;
-        // Hapus kata KICK untuk mendapatkan gaya induknya (Misal: KICK BEBAS -> BEBAS)
         $cleanStrokeName = trim(str_replace('KICK', '', $rawStroke));
     } else {
         $cleanStrokeName = trim(str_replace(['GAYA ', 'GAYA'], '', $rawStroke));
     }
 
-    // Normalisasi Nama Gaya Induk (Agar masuk ke kelompok yang benar)
     if ($cleanStrokeName !== '' && strpos($cleanStrokeName, 'GAYA') === false) {
         $cleanStrokeName = 'GAYA ' . $cleanStrokeName;
     }
 
-    // Tentukan Key Jarak untuk Sorting
-    // Jika ini Papan (Kick), kita set jarakKey = 0 agar muncul paling kiri (sebelum 25m)
     $jarakKey = $isKick ? 0 : (int)$ev['distance'];
-    
-    // Simpan event
     $tableStructure[$cleanStrokeName][$jarakKey][] = $ev; 
 }
 
@@ -211,7 +206,7 @@ foreach ($visibleSwimmers as $sw) {
         // Filter Safety
         if (($age <= 7 && $jarak >= 100) || ($age <= 9 && $jarak >= 200)) continue;
 
-        // Filter Umur (Regex Tahun + Fallback DB)
+        // Filter Umur
         $isAgeFit = false;
         $groupName = strtoupper($ev['age_group'] ?? '');
 
@@ -234,10 +229,9 @@ foreach ($visibleSwimmers as $sw) {
         if (!$isAgeFit) continue; 
 
         // Label Nama untuk Pop Up
-        $isKickPop = (strpos(strtoupper($ev['stroke']), 'KICK') !== false);
-        $normS = strtoupper(str_replace(['Gaya ', 'GAYA '], '', $ev['stroke']));
+        $isKickPop = (strpos(strtoupper($ev['stroke'] ?? ''), 'KICK') !== false);
+        $normS = strtoupper(str_replace(['Gaya ', 'GAYA '], '', $ev['stroke'] ?? ''));
         
-        // Jika Kick, nama di pop up jadi "PAPAN BEBAS", dll.
         $displayName = $isKickPop ? "PAPAN " . str_replace('KICK ', '', $normS) : "{$ev['distance']}M " . $normS;
 
         $myEvents[] = [
@@ -276,7 +270,7 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
     <div class="flex justify-between items-center mb-6 bg-white p-6 rounded-2xl shadow-sm border">
         <div>
             <h1 class="text-2xl font-black text-slate-800 uppercase italic leading-none">Matrix Pendaftaran</h1>
-            <p class="text-[10px] font-bold text-slate-400 uppercase tracking-[3px] mt-2"><?= htmlspecialchars($namaEventDisplay) ?></p>
+            <p class="text-[10px] font-bold text-slate-400 uppercase tracking-[3px] mt-2"><?= htmlspecialchars($namaEventDisplay ?? '') ?></p>
         </div>
         <div class="flex gap-3">
             <?php if ($isLocked): ?>
@@ -298,7 +292,7 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                     
                     <?php foreach ($tableStructure as $strokeName => $distances): ?>
                         <th scope="col" colspan="<?= count($distances) ?>" class="sticky-top-1 px-2 py-2 text-center border-l border-slate-200 bg-slate-100 text-slate-800 font-black italic tracking-wide">
-                            <?= $strokeName ?>
+                            <?= htmlspecialchars($strokeName) ?>
                         </th>
                     <?php endforeach; ?>
                 </tr>
@@ -306,7 +300,7 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                     <?php foreach ($tableStructure as $strokeName => $distances): ?>
                         <?php foreach ($distances as $distKey => $eventsInDist): ?>
                             <th scope="col" class="sticky-top-2 px-1 py-2 text-center border-l border-slate-200 min-w-[70px] bg-white font-bold text-slate-600">
-                                <?= ($distKey === 0) ? "PAPAN" : $distKey . " M" ?>
+                                <?= ($distKey === 0) ? "PAPAN" : htmlspecialchars($distKey) . " M" ?>
                             </th>
                         <?php endforeach; ?>
                     <?php endforeach; ?>
@@ -329,7 +323,7 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                         </button>
                     </td>
                     <td onclick="<?= $isLocked ? "alert('Terkunci')" : "openModal($sid)" ?>" class="sticky-col-2 bg-white border-r px-4 py-4 cursor-pointer group-hover:bg-slate-50">
-                        <div class="font-bold text-slate-800 uppercase truncate"><?= $sName ?></div>
+                        <div class="font-bold text-slate-800 uppercase truncate"><?= htmlspecialchars($sName) ?></div>
                         <div class="text-[9px] text-slate-400 font-bold mt-0.5"><?= $info ?></div>
                     </td>
 
@@ -373,7 +367,7 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                                 if ($foundEvent) {
                                     if (isset($savedData[$sid][$foundEvent['id']]) && $savedData[$sid][$foundEvent['id']] !== '') {
                                         $registeredTime = $savedData[$sid][$foundEvent['id']];
-                                        $cellContent = $registeredTime;
+                                        $cellContent = htmlspecialchars($registeredTime);
                                         $cellClass = 'cell-filled';
                                     } else {
                                         $cellClass = 'cell-empty';
@@ -417,7 +411,7 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
         <h3 class="font-black text-slate-800 mb-4 border-b pb-2 uppercase italic">Pilih Atlet</h3>
         <div class="max-h-60 overflow-y-auto space-y-1">
             <?php foreach($allSwimmers as $sw): if(in_array($sw['id'], $_SESSION['matrix_list'][$targetEventId] ?? [])) continue; ?>
-                <a href="?event_id=<?= $targetEventId ?>&add_swimmer=<?= $sw['id'] ?>" class="block p-3 hover:bg-blue-50 rounded-xl font-bold text-slate-600 text-sm uppercase"><?= $sw['nama_atlet'] ?></a>
+                <a href="?event_id=<?= $targetEventId ?>&add_swimmer=<?= $sw['id'] ?>" class="block p-3 hover:bg-blue-50 rounded-xl font-bold text-slate-600 text-sm uppercase"><?= htmlspecialchars($sw['nama_atlet'] ?? '') ?></a>
             <?php endforeach; ?>
         </div>
         <button onclick="document.getElementById('modalAdd').classList.add('hidden')" class="mt-4 text-slate-400 font-bold text-[10px] uppercase">Tutup</button>
@@ -440,7 +434,7 @@ function openModal(sid) {
     body.innerHTML = ''; 
 
     if (s.events.length === 0) {
-        body.innerHTML = '<div class="text-center py-10 text-slate-400 text-xs font-bold">Tidak ada nomor lomba.</div>';
+        body.innerHTML = '<div class="text-center py-10 text-slate-400 text-xs font-bold">Tidak ada nomor lomba yang sesuai dengan kategori atlet ini.</div>';
         document.getElementById('modalEntry').classList.remove('hidden'); return;
     }
 

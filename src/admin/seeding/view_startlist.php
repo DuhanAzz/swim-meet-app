@@ -6,7 +6,7 @@ require_once __DIR__ . '/../../../src/config/database.php';
 if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') { die("Akses Ditolak"); }
 
 $target_id = $_GET['event_id'] ?? ($_GET['category_id'] ?? null);
-if (!$target_id) die("Error: Parameter ID tidak ditemukan.");
+if (!$target_id) die("Error: Parameter ID Nomor Lomba tidak ditemukan.");
 
 $pc = $_SESSION['print_config'] ?? [
     'show_event_no' => true, 'show_date' => true, 'show_event_name' => true,
@@ -14,8 +14,12 @@ $pc = $_SESSION['print_config'] ?? [
 ];
 
 // 1. INFO EVENT
-$sqlInfo = "SELECT en.*, e.* FROM event_numbers en
-            JOIN events e ON en.organizer_id = e.id 
+// PERBAIKAN: Join menggunakan event_id dan memilah kolom agar ID tidak saling tindih
+$sqlInfo = "SELECT en.*, 
+            e.event_name, e.event_location, e.event_date_start, e.event_date_end, 
+            e.lane_count, e.logo_left, e.logo_right, e.participation_type
+            FROM event_numbers en
+            JOIN events e ON en.event_id = e.id 
             WHERE en.id = ?";
 $stmtRace = $pdo->prepare($sqlInfo);
 $stmtRace->execute([$target_id]);
@@ -24,22 +28,10 @@ $raceInfo = $stmtRace->fetch(PDO::FETCH_ASSOC);
 if (!$raceInfo) die("Data lomba tidak ditemukan.");
 
 // 2. AMBIL DAFTAR KU (AGE GROUPS) UNTUK LOGIKA MAPPING
-// Kita butuh ini untuk menentukan "Si Atlet A masuk KU apa?"
 $ageGroups = [];
 try {
-    // Ambil event_id asli dari tabel events (karena en.event_id NULL)
-    $realEventId = $raceInfo['organizer_id']; // Sesuai data bapak (organizer_id = event.id)
-    
-    // Tapi tunggu, organizer_id itu ID User atau ID Event? 
-    // Di tabel events, kolom id adalah Primary Key.
-    // Di tabel event_numbers, organizer_id merefer ke events.id (berdasarkan query join kita di atas).
-    // Jadi ID Eventnya adalah $raceInfo['id'] (kolom id dari tabel events, hati2 bentrok nama kolom).
-    // Karena kita select *, kolom 'id' akan tertimpa. 
-    // Mari kita pakai $raceInfo['event_id'] jika ada, atau kita ambil ulang ID eventnya.
-    
-    // PERBAIKAN: Ambil ID Event yang benar untuk cari Age Group
-    // Di tabel events: id. Di tabel event_numbers: organizer_id.
-    $eventIdForAge = $raceInfo['organizer_id']; 
+    // PERBAIKAN: Gunakan event_id bukan organizer_id
+    $eventIdForAge = $raceInfo['event_id']; 
     
     $stmtAge = $pdo->prepare("SELECT group_name, min_age, max_age FROM event_age_groups WHERE event_id = ?");
     $stmtAge->execute([$eventIdForAge]);
@@ -78,7 +70,7 @@ $judulTengah = implode(" - ", array_filter($judulParts));
 $nomorAcara  = $pc['show_event_no'] ? "#" . ($raceInfo['event_number'] ?? '?') : "";
 $babakBadge  = $pc['show_round'] ? "FINAL" : "";
 
-// 3. AMBIL DATA PESERTA (Termasuk kolom UID)
+// 3. AMBIL DATA PESERTA 
 $heats = [];
 try {
     $sql = "SELECT es.heat_prelim as heat_no, es.lane_prelim as lane_no, es.time_prelim as entry_time,
@@ -99,8 +91,9 @@ try {
 } catch (Exception $e) { die($e->getMessage()); }
 
 // 4. SPONSOR
+// PERBAIKAN: Gunakan event_id dari relasi event_numbers
 $stmtSpon = $pdo->prepare("SELECT image_path FROM event_sponsors WHERE event_id = ?");
-$stmtSpon->execute([$raceInfo['organizer_id']]); 
+$stmtSpon->execute([$raceInfo['event_id']]); 
 $sponsors = $stmtSpon->fetchAll(PDO::FETCH_COLUMN);
 
 // HELPER LOGIKA KU
@@ -115,7 +108,7 @@ function getKUName($dob, $evtYear, $groups) {
             return $g['group_name'];
         }
     }
-    return $age . " TH"; // Fallback jika tidak ada KU yang cocok
+    return $age . " TH"; 
 }
 
 $partType = $raceInfo['participation_type'] ?? 'club';

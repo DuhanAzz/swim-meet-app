@@ -93,13 +93,13 @@ if (!function_exists('getTeamName')) {
 
 $sqlAll = "SELECT en.id as cat_id, en.event_number, en.distance, en.stroke, en.age_group, en.jenis_kelamin, en.schedule_date, en.schedule_time,
             es.heat_prelim as heat_no, es.lane_prelim as lane_no, es.time_prelim as entry_time,
-            s.uid, s.nama_atlet, s.tanggal_lahir, u.nama_lengkap as club_name, s.asal_sekolah
+            s.uid, s.nama_atlet, s.tanggal_lahir, c.nama_klub as club_name, s.asal_sekolah
            FROM event_numbers en
            JOIN event_entries ee ON ee.category_id = en.id
            JOIN event_seeding es ON es.entry_id = ee.id
            JOIN swimmers s ON ee.swimmer_id = s.id
-           LEFT JOIN users u ON ee.club_id = u.id
-           WHERE en.organizer_id = ? 
+           LEFT JOIN clubs c ON ee.club_id = c.id
+           WHERE en.event_id = ? 
            ORDER BY CAST(en.event_number AS UNSIGNED) ASC, es.heat_prelim ASC, es.lane_prelim ASC";
 
 $stmtAll = $pdo->prepare($sqlAll);

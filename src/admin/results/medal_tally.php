@@ -45,6 +45,7 @@ $available_kus = $stmtKU->fetchAll(PDO::FETCH_ASSOC);
 // --- PROSES FILTER ---
 $mode = $_GET['mode'] ?? 'team'; 
 $filter_gender = $_GET['gender'] ?? 'all';
+$team_source = $_GET['team_source'] ?? 'club'; // Filter Sumber Tim
 $selected_ku_ids = $_GET['ku'] ?? []; 
 
 $valid_birth_years = [];
@@ -62,14 +63,23 @@ if (!empty($selected_ku_ids)) {
     $valid_birth_years = array_unique($valid_birth_years);
 }
 
+// Logika Pemilihan Nama Tim
+if ($team_source == 'school') {
+    $teamColumn = "COALESCE(NULLIF(s.asal_sekolah, ''), 'TANPA SEKOLAH')";
+} else {
+    $teamColumn = "COALESCE(NULLIF(u.nama_lengkap, ''), 'TANPA KLUB/TIM')";
+}
+
 // --- QUERY DATA MEDALI ---
 $tally = [];
+
 $whereClauses = [
-    "en.organizer_id = ?", 
-    "es.rank_prelim IN (1, 2, 3)", 
-    "(es.is_dq_prelim = 0 OR es.is_dq_prelim IS NULL)"
+    "en.event_id = ?", 
+    "es.rank_final IN (1, 2, 3)", 
+    "(es.is_dq_final = 0 OR es.is_dq_final IS NULL)"
 ];
-$params = [$uid];
+
+$params = [$eventId];
 
 // Filter Gender
 if ($mode == 'athlete' && $filter_gender !== 'all') {
@@ -87,12 +97,12 @@ if (!empty($valid_birth_years)) {
 $whereSql = implode(" AND ", $whereClauses);
 
 if ($mode == 'team') {
-    $titlePage = "KLASEMEN JUARA UMUM (KLUB/TIM)";
+    $titlePage = "KLASEMEN JUARA UMUM (" . ($team_source == 'school' ? 'SEKOLAH' : 'KLUB/TIM') . ")";
     $sql = "SELECT 
-                COALESCE(NULLIF(u.nama_lengkap, ''), NULLIF(s.asal_sekolah, ''), 'Unattached') as entity_name,
-                SUM(CASE WHEN es.rank_prelim = 1 THEN 1 ELSE 0 END) as gold,
-                SUM(CASE WHEN es.rank_prelim = 2 THEN 1 ELSE 0 END) as silver,
-                SUM(CASE WHEN es.rank_prelim = 3 THEN 1 ELSE 0 END) as bronze,
+                $teamColumn as entity_name,
+                SUM(CASE WHEN es.rank_final = 1 THEN 1 ELSE 0 END) as gold,
+                SUM(CASE WHEN es.rank_final = 2 THEN 1 ELSE 0 END) as silver,
+                SUM(CASE WHEN es.rank_final = 3 THEN 1 ELSE 0 END) as bronze,
                 COUNT(*) as total
             FROM event_entries ee
             JOIN event_seeding es ON ee.id = es.entry_id
@@ -107,10 +117,10 @@ if ($mode == 'team') {
     $sql = "SELECT 
                 s.nama_atlet as entity_name,
                 s.uid, s.jenis_kelamin, s.tanggal_lahir,
-                COALESCE(NULLIF(u.nama_lengkap, ''), NULLIF(s.asal_sekolah, ''), '-') as team_name,
-                SUM(CASE WHEN es.rank_prelim = 1 THEN 1 ELSE 0 END) as gold,
-                SUM(CASE WHEN es.rank_prelim = 2 THEN 1 ELSE 0 END) as silver,
-                SUM(CASE WHEN es.rank_prelim = 3 THEN 1 ELSE 0 END) as bronze,
+                $teamColumn as team_name,
+                SUM(CASE WHEN es.rank_final = 1 THEN 1 ELSE 0 END) as gold,
+                SUM(CASE WHEN es.rank_final = 2 THEN 1 ELSE 0 END) as silver,
+                SUM(CASE WHEN es.rank_final = 3 THEN 1 ELSE 0 END) as bronze,
                 COUNT(*) as total
             FROM event_entries ee
             JOIN event_seeding es ON ee.id = es.entry_id
@@ -229,11 +239,11 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                 <p class="text-xs text-slate-500">Pilih mode tampilan:</p>
             </div>
             <div class="flex gap-2 bg-slate-100 p-1 rounded-lg">
-                <a href="?mode=team" class="<?= $mode=='team'?'bg-white shadow text-blue-700':'text-gray-500 hover:text-gray-700' ?> px-4 py-1.5 rounded text-xs font-bold uppercase transition">
+                <a href="?mode=team&team_source=<?= $team_source ?>" class="<?= $mode=='team'?'bg-white shadow text-blue-700':'text-gray-500 hover:text-gray-700' ?> px-4 py-1.5 rounded text-xs font-bold uppercase transition">
                     🏆 Juara Umum (Tim)
                 </a>
-                <a href="?mode=athlete" class="<?= $mode=='athlete'?'bg-white shadow text-blue-700':'text-gray-500 hover:text-gray-700' ?> px-4 py-1.5 rounded text-xs font-bold uppercase transition">
-                    🏊 Perenang Terbaik
+                <a href="?mode=athlete&team_source=<?= $team_source ?>" class="<?= $mode=='athlete'?'bg-white shadow text-blue-700':'text-gray-500 hover:text-gray-700' ?> px-4 py-1.5 rounded text-xs font-bold uppercase transition">
+                    🏊‍♂️ Perenang Terbaik
                 </a>
             </div>
         </div>
@@ -243,8 +253,8 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
             <form method="GET" class="space-y-4">
                 <input type="hidden" name="mode" value="athlete">
                 <div class="grid grid-cols-1 md:grid-cols-12 gap-4">
-                    <div class="md:col-span-8 flex flex-col gap-1">
-                        <label class="text-[10px] font-bold text-slate-400 uppercase">Pilih Kelompok Umur (Gabungan)</label>
+                    <div class="md:col-span-5 flex flex-col gap-1">
+                        <label class="text-[10px] font-bold text-slate-400 uppercase">Pilih Kelompok Umur</label>
                         <?php if(empty($available_kus)): ?>
                             <p class="text-xs text-red-500 italic">Belum ada data KU di database.</p>
                         <?php else: ?>
@@ -259,16 +269,44 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                             </div>
                         <?php endif; ?>
                     </div>
+                    
+                    <div class="md:col-span-3 flex flex-col gap-1">
+                        <label class="text-[10px] font-bold text-slate-400 uppercase">Sumber Data Tim</label>
+                        <select name="team_source" class="border border-slate-300 rounded px-3 py-2 text-xs font-bold bg-slate-50 h-10 w-full outline-none">
+                            <option value="club" <?= $team_source=='club'?'selected':'' ?>>KLUB / TIM</option>
+                            <option value="school" <?= $team_source=='school'?'selected':'' ?>>ASAL SEKOLAH</option>
+                        </select>
+                    </div>
+
                     <div class="md:col-span-2 flex flex-col gap-1">
                         <label class="text-[10px] font-bold text-slate-400 uppercase">Gender</label>
-                        <select name="gender" class="border border-slate-300 rounded px-3 py-2 text-xs font-bold bg-slate-50 h-10 w-full">
+                        <select name="gender" class="border border-slate-300 rounded px-3 py-2 text-xs font-bold bg-slate-50 h-10 w-full outline-none">
                             <option value="all">SEMUA</option>
                             <option value="L" <?= $filter_gender=='L'?'selected':'' ?>>PUTRA</option>
                             <option value="P" <?= $filter_gender=='P'?'selected':'' ?>>PUTRI</option>
                         </select>
                     </div>
+
                     <div class="md:col-span-2 flex flex-col justify-end">
-                        <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded text-xs font-bold uppercase shadow w-full">🔍 Terapkan</button>
+                        <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded text-xs font-bold uppercase shadow w-full h-10">🔍 Terapkan</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+        <?php else: ?>
+        <div class="bg-white p-4 rounded-xl shadow border border-blue-100">
+            <form method="GET" class="space-y-4">
+                <input type="hidden" name="mode" value="team">
+                <div class="grid grid-cols-1 md:grid-cols-12 gap-4">
+                    <div class="md:col-span-6 flex flex-col gap-1">
+                        <label class="text-[10px] font-bold text-slate-400 uppercase">Sumber Data Tim</label>
+                        <select name="team_source" class="border border-slate-300 rounded px-3 py-2 text-xs font-bold bg-slate-50 h-10 w-full outline-none">
+                            <option value="club" <?= $team_source=='club'?'selected':'' ?>>KLUB / TIM</option>
+                            <option value="school" <?= $team_source=='school'?'selected':'' ?>>ASAL SEKOLAH</option>
+                        </select>
+                    </div>
+                    <div class="md:col-span-6 flex flex-col justify-end">
+                        <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded text-xs font-bold uppercase shadow w-full h-10">🔍 Terapkan</button>
                     </div>
                 </div>
             </form>
@@ -321,7 +359,7 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                                 <div class="block-tabel">
                                     <div class="event-header">
                                         <div class="eh-left-group">
-                                            <div class="eh-number">REKAP TIM</div>
+                                            <div class="eh-number">REKAP <?= $team_source == 'school' ? 'SEKOLAH' : 'TIM' ?></div>
                                             <div class="eh-date"><?= htmlspecialchars($dateRange) ?></div>
                                         </div>
                                         <div class="eh-center"><div class="eh-title"><?= $titlePage ?></div></div>
@@ -332,7 +370,7 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                                         <thead>
                                             <tr>
                                                 <th class="col-rank">RANK</th>
-                                                <th class="col-nama" style="width: 65%;">NAMA KLUB / TIM / SEKOLAH</th>
+                                                <th class="col-nama" style="width: 65%;">NAMA <?= $team_source == 'school' ? 'SEKOLAH' : 'KLUB / TIM' ?></th>
                                                 <th class="col-med bg-gold">E</th>
                                                 <th class="col-med bg-silver">P</th>
                                                 <th class="col-med bg-bronze">P</th>
@@ -340,7 +378,15 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            <?php $rank=1; foreach($tallyData as $row): ?>
+                                            <?php 
+                                            $rank=1; 
+                                            $tot_e = 0; $tot_p = 0; $tot_b = 0; $tot_all = 0;
+                                            foreach($tallyData as $row): 
+                                                $tot_e += $row['gold'];
+                                                $tot_p += $row['silver'];
+                                                $tot_b += $row['bronze'];
+                                                $tot_all += $row['total'];
+                                            ?>
                                             <tr>
                                                 <td class="col-rank"><?= $rank++ ?></td>
                                                 <td class="col-nama"><?= htmlspecialchars($row['entity_name']) ?></td>
@@ -350,6 +396,13 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                                                 <td class="col-med bg-total"><?= $row['total'] ?></td>
                                             </tr>
                                             <?php endforeach; ?>
+                                            <tr style="background-color: #cbd5e1; border-top: 2px solid #334155;">
+                                                <td colspan="2" style="text-align: right; padding-right: 15px; font-weight: 900; font-size: 9pt;">TOTAL KESELURUHAN:</td>
+                                                <td class="col-med bg-gold"><?= $tot_e ?></td>
+                                                <td class="col-med bg-silver"><?= $tot_p ?></td>
+                                                <td class="col-med bg-bronze"><?= $tot_b ?></td>
+                                                <td class="col-med bg-total"><?= $tot_all ?></td>
+                                            </tr>
                                         </tbody>
                                     </table>
                                 </div>
@@ -374,7 +427,7 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                                                         <tr>
                                                             <th class="col-rank">RANK</th>
                                                             <th class="col-nama">NAMA PERENANG</th>
-                                                            <th class="col-tim">TIM / SEKOLAH</th>
+                                                            <th class="col-tim"><?= $team_source == 'school' ? 'SEKOLAH' : 'TIM / KLUB' ?></th>
                                                             <th class="col-med bg-gold">E</th>
                                                             <th class="col-med bg-silver">P</th>
                                                             <th class="col-med bg-bronze">P</th>
@@ -382,7 +435,15 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                                                         </tr>
                                                     </thead>
                                                     <tbody>
-                                                        <?php $rank=1; foreach($genders[$gender] as $row): ?>
+                                                        <?php 
+                                                        $rank=1; 
+                                                        $tot_e = 0; $tot_p = 0; $tot_b = 0; $tot_all = 0;
+                                                        foreach($genders[$gender] as $row): 
+                                                            $tot_e += $row['gold'];
+                                                            $tot_p += $row['silver'];
+                                                            $tot_b += $row['bronze'];
+                                                            $tot_all += $row['total'];
+                                                        ?>
                                                         <tr>
                                                             <td class="col-rank"><?= $rank++ ?></td>
                                                             <td class="col-nama">
@@ -395,6 +456,13 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                                                             <td class="col-med bg-total"><?= $row['total'] ?></td>
                                                         </tr>
                                                         <?php endforeach; ?>
+                                                        <tr style="background-color: #cbd5e1; border-top: 2px solid #334155;">
+                                                            <td colspan="3" style="text-align: right; padding-right: 15px; font-weight: 900; font-size: 9pt;">TOTAL KESELURUHAN:</td>
+                                                            <td class="col-med bg-gold"><?= $tot_e ?></td>
+                                                            <td class="col-med bg-silver"><?= $tot_p ?></td>
+                                                            <td class="col-med bg-bronze"><?= $tot_b ?></td>
+                                                            <td class="col-med bg-total"><?= $tot_all ?></td>
+                                                        </tr>
                                                     </tbody>
                                                 </table>
                                             </div>
@@ -402,10 +470,6 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                                     <?php endforeach; ?>
                                 <?php endforeach; ?>
                             <?php endif; ?>
-
-                            <div style="margin-top: 5px; font-size: 7.5pt; font-family: 'Arial', sans-serif; font-style: italic; color: #666; text-align: right;">
-                                * Klasemen diurutkan berdasarkan Emas terbanyak, disusul Perak, dan Perunggu (Olympic System).
-                            </div>
                         <?php endif; ?>
                     </td>
                 </tr>

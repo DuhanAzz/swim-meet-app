@@ -1,4 +1,5 @@
 <?php
+// FILE: src/admin/entries/index.php
 session_start();
 require_once __DIR__ . '/../../../src/config/database.php';
 
@@ -9,31 +10,41 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
 
 $uid = $_SESSION['user_id']; 
 
+// --- AMBIL ID EVENT TERAKHIR MILIK ADMIN ---
+// Karena di URL biasanya tidak ada event_id saat admin baru masuk menu ini
+$targetEventId = $_GET['event_id'] ?? 0;
+if ($targetEventId == 0) {
+    $stmtLastEvt = $pdo->prepare("SELECT id FROM events WHERE user_id = ? ORDER BY id DESC LIMIT 1");
+    $stmtLastEvt->execute([$uid]);
+    $targetEventId = $stmtLastEvt->fetchColumn() ?: 0;
+}
+
 // --- HANDLE QUICK ACTION (Validasi Pembayaran) ---
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // APPROVE
     if (isset($_POST['approve_payment_id'])) {
         try {
+            // PERBAIKAN: Ubah menjadi event_id dari form atau url
             $stmt = $pdo->prepare("UPDATE payments SET status = 'Paid', updated_at = NOW() WHERE id = ? AND event_id = ?");
-            $stmt->execute([$_POST['approve_payment_id'], $uid]);
+            $stmt->execute([$_POST['approve_payment_id'], $targetEventId]);
             $_SESSION['swal_type'] = 'success'; $_SESSION['swal_msg'] = 'Pembayaran Lunas! Klub dapat mencetak ID Card.';
         } catch (Exception $e) {}
-        header("Location: index.php"); exit;
+        header("Location: index.php?event_id=" . $targetEventId); exit;
     }
     // REJECT
     if (isset($_POST['reject_payment_id'])) {
         try {
             $stmt = $pdo->prepare("UPDATE payments SET status = 'Rejected', updated_at = NOW() WHERE id = ? AND event_id = ?");
-            $stmt->execute([$_POST['reject_payment_id'], $uid]);
+            $stmt->execute([$_POST['reject_payment_id'], $targetEventId]);
             $_SESSION['swal_type'] = 'warning'; $_SESSION['swal_msg'] = 'Pembayaran Ditolak.';
         } catch (Exception $e) {}
-        header("Location: index.php"); exit;
+        header("Location: index.php?event_id=" . $targetEventId); exit;
     }
 }
 
 // --- AMBIL DATA ENTRY & PEMBAYARAN ---
 try {
-    // Mengambil data payment + info user + jumlah entry
+    // PERBAIKAN: Pastikan kolom p.amount dan p.file_path sesuai dengan database
     $sql = "SELECT 
                 p.id as payment_id,
                 p.status as payment_status,
@@ -52,7 +63,7 @@ try {
                 p.created_at DESC";
     
     $stmt = $pdo->prepare($sql);
-    $stmt->execute([$uid]);
+    $stmt->execute([$targetEventId]);
     $listData = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 } catch (PDOException $e) {
@@ -73,7 +84,7 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
         
         <div class="flex gap-3">
             <div class="px-5 py-2 bg-white rounded-xl shadow-sm border border-slate-200 text-right">
-                <span class="block text-[9px] font-bold text-slate-400 uppercase tracking-widest">Total Klub</span>
+                <span class="block text-[9px] font-bold text-slate-400 uppercase tracking-widest">Total Pendaftar</span>
                 <span class="block text-xl font-black text-slate-800"><?= count($listData) ?></span>
             </div>
         </div>
@@ -88,7 +99,12 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
 
     <div class="max-w-[95%] mx-auto bg-white rounded-[2.5rem] shadow-sm border border-slate-200 overflow-hidden min-h-[500px]">
         
-        <?php if(empty($listData)): ?>
+        <?php if($targetEventId == 0): ?>
+            <div class="flex flex-col items-center justify-center py-32 text-center opacity-50">
+                <div class="text-5xl mb-4 grayscale">⚠️</div>
+                <h3 class="font-black text-slate-400 uppercase tracking-widest text-lg">Anda Belum Memiliki Event Aktif</h3>
+            </div>
+        <?php elseif(empty($listData)): ?>
             <div class="flex flex-col items-center justify-center py-32 text-center opacity-50">
                 <div class="text-5xl mb-4 grayscale">📭</div>
                 <h3 class="font-black text-slate-400 uppercase tracking-widest text-lg">Belum Ada Pendaftar</h3>
@@ -102,6 +118,7 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                             <th class="py-4 px-6 text-[9px] font-black text-slate-400 uppercase tracking-widest w-12">No</th>
                             <th class="py-4 px-4 text-[9px] font-black text-slate-400 uppercase tracking-widest">Klub / Kontingen</th>
                             <th class="py-4 px-4 text-[9px] font-black text-slate-400 uppercase tracking-widest">Ringkasan</th>
+                            <th class="py-4 px-4 text-[9px] font-black text-slate-400 uppercase tracking-widest text-center">Bukti Bayar</th>
                             <th class="py-4 px-4 text-[9px] font-black text-slate-400 uppercase tracking-widest text-center">Status</th>
                             <th class="py-4 px-6 text-[9px] font-black text-slate-400 uppercase tracking-widest text-right">Aksi</th>
                         </tr>
@@ -144,16 +161,27 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                             </td>
 
                             <td class="py-4 px-4 text-center">
+                                <?php if(!empty($row['file_path'])): ?>
+                                    <a href="../../../public/uploads/payments/<?= htmlspecialchars($row['file_path']) ?>" target="_blank" class="inline-flex items-center gap-1 px-3 py-1 rounded-lg bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-100 text-[9px] font-bold uppercase transition">
+                                        👁️ Lihat Bukti
+                                    </a>
+                                <?php else: ?>
+                                    <span class="text-[9px] font-bold text-slate-400 italic">Belum Upload</span>
+                                <?php endif; ?>
+                            </td>
+
+                            <td class="py-4 px-4 text-center">
                                 <?php 
                                 $badgeClass = match($status) {
                                     'Paid' => 'bg-emerald-100 text-emerald-700 border-emerald-200',
+                                    'completed' => 'bg-emerald-100 text-emerald-700 border-emerald-200',
                                     'Pending' => 'bg-amber-100 text-amber-700 border-amber-200 animate-pulse',
                                     'Rejected' => 'bg-red-100 text-red-700 border-red-200',
                                     default => 'bg-slate-100 text-slate-500 border-slate-200'
                                 };
                                 ?>
                                 <span class="px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border <?= $badgeClass ?>">
-                                    <?= $status ?>
+                                    <?= $status == 'completed' ? 'Paid' : $status ?>
                                 </span>
                             </td>
 
@@ -166,6 +194,12 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                                     </a>
 
                                     <?php if($status == 'Pending'): ?>
+                                        <form method="POST" onsubmit="return confirm('Tolak Pembayaran ini?');">
+                                            <input type="hidden" name="reject_payment_id" value="<?= $row['payment_id'] ?>">
+                                            <button type="submit" class="w-8 h-8 rounded-lg bg-red-50 text-red-600 border border-red-200 hover:bg-red-500 hover:text-white flex items-center justify-center transition" title="Tolak">
+                                                ✕
+                                            </button>
+                                        </form>
                                         <form method="POST" onsubmit="return confirm('Verifikasi LUNAS?');">
                                             <input type="hidden" name="approve_payment_id" value="<?= $row['payment_id'] ?>">
                                             <button type="submit" class="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 border border-emerald-200 hover:bg-emerald-500 hover:text-white flex items-center justify-center transition" title="Terima">

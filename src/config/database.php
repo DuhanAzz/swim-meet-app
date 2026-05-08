@@ -5,9 +5,13 @@ error_reporting(E_ALL);
 ob_start(); // Tahan output agar tidak bocor
 if (session_status() === PHP_SESSION_NONE) { session_start(); }
 
-if ($_SERVER['SERVER_NAME'] == 'localhost') {
-    // LOCAL
-    $host = 'localhost';
+if (
+    $_SERVER['SERVER_NAME'] == 'localhost' ||
+    $_SERVER['SERVER_NAME'] == '127.0.0.1' ||
+    str_contains($_SERVER['SERVER_NAME'], 'ngrok')
+) {
+    // LOCAL (termasuk ngrok)
+    $host = '127.0.0.1';
     $dbname = 'swim_meet';
     $username = 'root';
     $password = '';

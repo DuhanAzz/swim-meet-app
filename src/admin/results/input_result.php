@@ -37,23 +37,19 @@ $stmtRace->execute([$cat_id]);
 $raceInfo = $stmtRace->fetch(PDO::FETCH_ASSOC);
 if (!$raceInfo) die("Nomor lomba tidak ditemukan.");
 
+// PERBAIKAN 1: Gunakan event_id langsung
 $eventId = $raceInfo['event_id'] ?? 0; 
-if (empty($eventId)) {
-    $stmtEvent = $pdo->prepare("SELECT * FROM events WHERE user_id = ? ORDER BY id DESC LIMIT 1");
-    $stmtEvent->execute([$raceInfo['organizer_id']]);
-    $eventProfile = $stmtEvent->fetch(PDO::FETCH_ASSOC);
-    $eventId = $eventProfile['id'] ?? 0;
-} else {
-    $stmtEvent = $pdo->prepare("SELECT * FROM events WHERE id = ?");
-    $stmtEvent->execute([$eventId]);
-    $eventProfile = $stmtEvent->fetch(PDO::FETCH_ASSOC);
-}
+if (empty($eventId)) { die("Error: Nomor lomba ini tidak terikat pada Event manapun."); }
 
-// Ensure these variables are defined for the header
+$stmtEvent = $pdo->prepare("SELECT * FROM events WHERE id = ?");
+$stmtEvent->execute([$eventId]);
+$eventProfile = $stmtEvent->fetch(PDO::FETCH_ASSOC);
+
+// Variabel Header
 $eventName  = strtoupper($eventProfile['event_name'] ?? 'EVENT NAME');
 $venueName  = strtoupper($eventProfile['event_location'] ?? '-');
 $eventDate  = $eventProfile['event_date_start'] ?? date('Y-m-d');
-$eventYear   = date('Y', strtotime($eventDate)); 
+$eventYear  = date('Y', strtotime($eventDate)); 
 $displayDate = strtoupper(date('d F Y', strtotime($eventDate)));
 
 if(!empty($eventProfile['event_date_end']) && $eventProfile['event_date_end'] != '0000-00-00' && $eventProfile['event_date_end'] != $eventDate) {
@@ -85,6 +81,7 @@ function getAgeGroupLabel($dob, $eventYear, $ageGroups) {
     return "DILUAR KATEGORI ($age TH)"; 
 }
 
+// PERBAIKAN 2: Mengubah proses POST untuk menargetkan kolom "FINAL" (time_final, is_dq_final, rank_final)
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
         $pdo->beginTransaction();
@@ -93,7 +90,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $_SESSION['ranking_mode_' . $cat_id] = $rankModePost;
         $currentMode = $rankModePost;
 
-        $stmtUpd = $pdo->prepare("UPDATE event_seeding SET time_prelim = ?, is_dq_prelim = ?, dq_reason_prelim = ? WHERE entry_id = ?");
+        $stmtUpd = $pdo->prepare("UPDATE event_seeding SET time_final = ?, is_dq_final = ?, dq_reason_final = ? WHERE entry_id = ?");
         foreach ($entries as $id => $data) {
             $time = trim($data['time'] ?? '');
             $status = $data['status']; 
@@ -105,14 +102,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         $stmtAll = $pdo->prepare("
-            SELECT ee.id, es.time_prelim as final_time, es.is_dq_prelim as is_dq, s.tanggal_lahir
+            SELECT ee.id, es.time_final as final_time, es.is_dq_final as is_dq, s.tanggal_lahir
             FROM event_entries ee JOIN event_seeding es ON ee.id = es.entry_id JOIN swimmers s ON ee.swimmer_id = s.id 
             WHERE ee.category_id = ?
         ");
         $stmtAll->execute([$cat_id]);
         $allSwimmers = $stmtAll->fetchAll(PDO::FETCH_ASSOC);
 
-        $stmtRank = $pdo->prepare("UPDATE event_seeding SET rank_prelim = ? WHERE entry_id = ?");
+        $stmtRank = $pdo->prepare("UPDATE event_seeding SET rank_final = ? WHERE entry_id = ?");
         if ($rankModePost === 'overall') {
             $valid = []; $invalid = [];
             foreach ($allSwimmers as $s) {
@@ -127,7 +124,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $stmtRank->execute([$rank, $s['id']]); $prevMs = $s['ms']; $counter++;
             }
             foreach ($invalid as $s) { $stmtRank->execute([NULL, $s['id']]); }
-            $msg_success = "Data disimpan! Ranking GABUNGAN.";
+            $msg_success = "Data disimpan! Ranking GABUNGAN (Final).";
         } else {
             $groupedSwimmers = [];
             foreach ($allSwimmers as $s) {
@@ -149,21 +146,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 foreach ($invalid as $s) { $stmtRank->execute([NULL, $s['id']]); }
             }
-            $msg_success = "Data disimpan! Ranking SPLIT (KU).";
+            $msg_success = "Data disimpan! Ranking SPLIT KU (Final).";
         }
         $pdo->commit();
     } catch (Exception $e) { $pdo->rollBack(); $msg_error = "Error: " . $e->getMessage(); }
 }
 
-$currentOrganizerId = $raceInfo['organizer_id'];
-$stmtPrev = $pdo->prepare("SELECT id FROM event_numbers WHERE organizer_id = ? AND id < ? ORDER BY id DESC LIMIT 1");
-$stmtPrev->execute([$currentOrganizerId, $cat_id]);
+// PERBAIKAN 3: Tombol Navigasi Next & Prev disesuaikan dengan event_id
+$currentEventId = $raceInfo['event_id'];
+$stmtPrev = $pdo->prepare("SELECT id FROM event_numbers WHERE event_id = ? AND id < ? ORDER BY id DESC LIMIT 1");
+$stmtPrev->execute([$currentEventId, $cat_id]);
 $rowPrev = $stmtPrev->fetch(PDO::FETCH_ASSOC);
 $prevUrl = $rowPrev ? "input_result.php?category_id=" . $rowPrev['id'] : "#";
 $prevClass = $rowPrev ? "bg-slate-700 hover:bg-slate-800 text-white" : "bg-slate-200 text-slate-400 cursor-not-allowed pointer-events-none";
 
-$stmtNext = $pdo->prepare("SELECT id FROM event_numbers WHERE organizer_id = ? AND id > ? ORDER BY id ASC LIMIT 1");
-$stmtNext->execute([$currentOrganizerId, $cat_id]);
+$stmtNext = $pdo->prepare("SELECT id FROM event_numbers WHERE event_id = ? AND id > ? ORDER BY id ASC LIMIT 1");
+$stmtNext->execute([$currentEventId, $cat_id]);
 $rowNext = $stmtNext->fetch(PDO::FETCH_ASSOC);
 $nextUrl = $rowNext ? "input_result.php?category_id=" . $rowNext['id'] : "#";
 $nextClass = $rowNext ? "bg-slate-700 hover:bg-slate-800 text-white" : "bg-slate-200 text-slate-400 cursor-not-allowed pointer-events-none";    

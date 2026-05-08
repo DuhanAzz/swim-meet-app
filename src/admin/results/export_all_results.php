@@ -8,7 +8,7 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') { die("Akses Dit
 $protocol = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? "https" : "http");
 $host = $_SERVER['HTTP_HOST'];
 
-// === AMBIL DATA (SAMA PERSIS DENGAN PRINT_FULL_BOOK) ===
+// === AMBIL DATA ===
 $eventId = $_GET['event_id'] ?? 0;
 if ($eventId == 0) {
     $uid = $_SESSION['user_id'];
@@ -69,22 +69,24 @@ if (!function_exists('getTeamName')) {
 }
 
 // === AMBIL DATA HASIL LOMBA KESELURUHAN ===
+// PERBAIKAN: Gunakan event_id dan panggil kolom rank_final, time_final secara akurat
 $sqlAll = "SELECT 
             en.id as cat_id, en.event_number, en.distance, en.stroke, en.age_group, en.jenis_kelamin, 
-            es.rank_prelim as rank_final, es.time_prelim as entry_time, es.time_prelim as time_final, es.is_dq_prelim as is_dq_final, es.dq_reason_prelim as dq_reason_final,
+            es.rank_final, es.time_prelim as entry_time, es.time_final, es.is_dq_final, es.dq_reason_final,
             s.uid, s.nama_atlet, s.tanggal_lahir, u.nama_lengkap as club_name, s.asal_sekolah
            FROM event_numbers en
            JOIN event_entries ee ON ee.category_id = en.id
            JOIN event_seeding es ON ee.id = es.entry_id
            JOIN swimmers s ON ee.swimmer_id = s.id
-           LEFT JOIN users u ON ee.club_id = u.id
-        WHERE (es.time_prelim IS NOT NULL OR es.is_dq_prelim = 1)
-           AND en.organizer_id = ?
+           LEFT JOIN users u ON (ee.club_id = u.id OR ee.user_id = u.id)
+        WHERE (es.time_final IS NOT NULL OR es.is_dq_final = 1)
+           AND en.event_id = ?
            ORDER BY CAST(en.event_number AS UNSIGNED) ASC, 
-                    CASE WHEN es.rank_prelim IS NULL THEN 9999 ELSE es.rank_prelim END ASC";
+                    CASE WHEN es.rank_final IS NULL THEN 9999 ELSE es.rank_final END ASC";
 
 $stmtAll = $pdo->prepare($sqlAll);
-$stmtAll->execute([$raceInfo['user_id']]);
+// PERBAIKAN: Lempar $eventId, BUKAN user_id
+$stmtAll->execute([$eventId]);
 $rawData = $stmtAll->fetchAll(PDO::FETCH_ASSOC);
 
 $fullResults = [];

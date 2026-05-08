@@ -10,32 +10,37 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'user') {
 // 1. AMBIL DAFTAR KOMPETISI (ACTIVE EVENTS)
 // Kita mengambil dari tabel 'events' yang di-join dengan 'users' (penyelenggara)
 try {
+    // Kueri sudah disesuaikan dengan struktur tabel `events` terbaru
     $sql = "SELECT 
                 e.id as event_id,
-                e.nama_event,
-                e.banner_image,
-                e.lokasi,
-                e.tanggal_pelaksanaan,
-                e.status,
+                e.event_name as nama_event,
+                e.logo_left as banner_image,
+                e.event_location as lokasi,
+                e.event_date_start as tanggal_pelaksanaan,
+                e.event_status as status,
                 u.nama_lengkap as penyelenggara
             FROM events e
-            JOIN users u ON e.organizer_id = u.id
-            WHERE e.status = 'open' OR e.status = 'upcoming'
-            ORDER BY e.tanggal_pelaksanaan ASC";
+            LEFT JOIN users u ON e.user_id = u.id
+            WHERE e.event_status IN ('open', 'upcoming')
+            ORDER BY e.event_date_start ASC";
             
     $stmt = $pdo->prepare($sql);
     $stmt->execute();
-    $competitions = $stmt->fetchAll();
+    $competitions = $stmt->fetchAll(PDO::FETCH_ASSOC);
     
-    // FALLBACK: Jika tabel events kosong/belum migrasi, pakai logika lama (ambil dari users admin)
-    if(empty($competitions) && count($competitions) == 0) {
-        $sqlBackup = "SELECT id as event_id, nama_lengkap as nama_event, profile_image as banner_image, location as lokasi, event_start_date as tanggal_pelaksanaan, 'open' as status, nama_lengkap as penyelenggara FROM users WHERE role = 'admin' ORDER BY created_at DESC";
-        $stmt = $pdo->prepare($sqlBackup);
-        $stmt->execute();
-        $competitions = $stmt->fetchAll();
+    // FALLBACK: Jika tabel events kosong/belum ada event, pakai logika lama (dari users admin)
+    if(empty($competitions)) {
+        // Abaikan jika error pada fallback, ini hanya cadangan
+        try {
+            $sqlBackup = "SELECT id as event_id, nama_lengkap as nama_event, profile_image as banner_image, location as lokasi, event_start_date as tanggal_pelaksanaan, 'open' as status, nama_lengkap as penyelenggara FROM users WHERE role = 'admin' ORDER BY created_at DESC";
+            $stmtBack = $pdo->prepare($sqlBackup);
+            $stmtBack->execute();
+            $competitions = $stmtBack->fetchAll(PDO::FETCH_ASSOC);
+        } catch(Exception $ex) {
+            $competitions = []; // Kosongkan jika fallback juga gagal
+        }
     }
-
-} catch (PDOException $e) {
+} catch(PDOException $e) {
     die("Error Database: " . $e->getMessage());
 }
 
