@@ -86,8 +86,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             }
         }
         $pdo->commit();
-        header("Location: register_event.php?event_id=" . $targetEventId); exit;
-    } catch (Exception $e) { if($pdo->inTransaction()) $pdo->rollBack(); die("Gagal: " . $e->getMessage()); }
+header("Location: registration.php?event_id=" . $targetEventId); exit;    } catch (Exception $e) { if($pdo->inTransaction()) $pdo->rollBack(); die("Gagal: " . $e->getMessage()); }
 }
 
 // --- 5. DATA FETCHING ---
@@ -116,11 +115,33 @@ foreach ($registeredSwimmers as $regId) {
 }
 
 if (isset($_GET['add_swimmer'])) {
-    if ($isLocked) { header("Location: register_event.php?event_id=$targetEventId"); exit; } 
+    if ($isLocked) { header("Location: registration.php?event_id=$targetEventId"); exit; } 
     $addId = (int)$_GET['add_swimmer'];
     $validSw = false; foreach($allSwimmers as $s) { if($s['id'] == $addId) $validSw = true; }
     if ($validSw && !in_array($addId, $_SESSION['matrix_list'][$targetEventId])) { $_SESSION['matrix_list'][$targetEventId][] = $addId; }
-    header("Location: register_event.php?event_id=$targetEventId"); exit;
+    header("Location: registration.php?event_id=$targetEventId"); exit;
+}
+// --- LOGIKA HAPUS ATLET DARI MATRIX ---
+if (isset($_GET['remove_swimmer'])) {
+    if ($isLocked) { header("Location: registration.php?event_id=$targetEventId"); exit; } 
+    
+    $remId = (int)$_GET['remove_swimmer'];
+    
+    // 1. Hapus dari Session Matrix List
+    if (isset($_SESSION['matrix_list'][$targetEventId])) {
+        $key = array_search($remId, $_SESSION['matrix_list'][$targetEventId]);
+        if ($key !== false) {
+            unset($_SESSION['matrix_list'][$targetEventId][$key]);
+        }
+    }
+    
+    // 2. Sapu bersih datanya dari Database (event_entries)
+    $stmtDel = $pdo->prepare("DELETE FROM event_entries WHERE user_id = ? AND event_id = ? AND swimmer_id = ?");
+    $stmtDel->execute([$uid, $targetEventId, $remId]);
+    
+    // Refresh halaman
+    header("Location: registration.php?event_id=$targetEventId"); 
+    exit;
 }
 $visibleSwimmers = array_filter($allSwimmers, fn($s) => in_array($s['id'], $_SESSION['matrix_list'][$targetEventId] ?? []));
 
@@ -392,14 +413,18 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
             <div><h2 class="text-xl font-black italic uppercase tracking-tighter" id="mName">ATLET</h2><p class="text-[10px] font-bold text-blue-400 uppercase mt-1" id="mInfo">INFO</p></div>
             <button onclick="closeModal()" class="text-3xl hover:text-red-400">&times;</button>
         </div>
-        <form method="POST" action="register_event.php?event_id=<?= $targetEventId ?>" class="flex flex-col flex-1 overflow-hidden">
-            <input type="hidden" name="action" value="save_entries">
+        <form method="POST" action="registration.php?event_id=<?= $targetEventId ?>" class="flex flex-col flex-1 overflow-hidden">            <input type="hidden" name="action" value="save_entries">
             <input type="hidden" name="swimmer_id" id="mSwimmerId">
             <div class="flex-1 overflow-y-auto p-6 space-y-4 bg-slate-50" id="mBody"></div>
             <?php if(!$isLocked): ?>
             <div class="p-4 bg-white border-t space-y-2 shadow-inner">
-                <button type="button" onclick="fillAllBestTimes()" class="w-full text-[10px] font-bold text-blue-600 bg-blue-50 py-2 rounded-xl border border-blue-200 hover:bg-blue-100">⚡ ISI SEMUA BEST TIME</button>
-                <button type="submit" class="w-full bg-blue-600 text-white py-3 rounded-xl font-black text-xs shadow-xl hover:bg-blue-700">SIMPAN PERUBAHAN</button>
+                <div class="flex gap-2">
+                    <button type="button" onclick="fillAllBestTimes()" class="flex-1 text-[10px] font-bold text-blue-600 bg-blue-50 py-2 rounded-xl border border-blue-200 hover:bg-blue-100 transition">⚡ ISI SEMUA BEST TIME</button>
+                    
+                    <button type="button" onclick="hapusAtletDariList()" class="flex-1 text-[10px] font-bold text-red-600 bg-red-50 py-2 rounded-xl border border-red-200 hover:bg-red-100 transition">❌ HAPUS ATLET</button>
+                </div>
+                
+                <button type="submit" class="w-full bg-blue-600 text-white py-3 rounded-xl font-black text-xs shadow-xl hover:bg-blue-700 transition">SIMPAN PERUBAHAN</button>
             </div>
             <?php else: ?><div class="p-4 bg-red-50 text-center font-bold text-red-500 text-xs">🔒 DATA TERKUNCI</div><?php endif; ?>
         </form>
@@ -477,4 +502,14 @@ function fillAllBestTimes() {
     currentSwimmerData.forEach(ev => { if(ev.best_time) { const el = document.getElementById('input_' + ev.id); if(el && (el.value === '' || el.value === '00.00.00')) el.value = ev.best_time; } });
 }
 function closeModal() { document.getElementById('modalEntry').classList.add('hidden'); }
+function hapusAtletDariList() {
+    // Ambil ID atlet yang sedang dibuka di modal
+    const swId = document.getElementById('mSwimmerId').value;
+    
+    // Tampilkan konfirmasi keamanan
+    if (confirm('Apakah Anda yakin ingin menghapus atlet ini dari daftar lomba? Semua nomor lomba yang ia ikuti di event ini akan ikut terhapus.')) {
+        // Lakukan redirect ke link penghapusan
+        window.location.href = 'registration.php?event_id=<?= $targetEventId ?>&remove_swimmer=' + swId;
+    }
+}
 </script>
