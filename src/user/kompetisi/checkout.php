@@ -1,6 +1,5 @@
 <?php
-// FILE: src/pages/registrant/checkout.php
-// ATAU: src/user/kompetisi/checkout.php
+// FILE: src/user/kompetisi/checkout.php
 session_start();
 require_once __DIR__ . '/../../config/database.php';
 
@@ -12,7 +11,7 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'user') {
 $uid = $_SESSION['user_id'];
 $targetEventId = (int)($_GET['event_id'] ?? 0); 
 
-// 2. AMBIL DATA EVENT BERDASARKAN ID EVENT
+// 2. AMBIL DATA EVENT
 $stmtEvt = $pdo->prepare("SELECT * FROM events WHERE id = ? LIMIT 1");
 $stmtEvt->execute([$targetEventId]);
 $eventData = $stmtEvt->fetch(PDO::FETCH_ASSOC);
@@ -36,12 +35,11 @@ $pay = $stmtPay->fetch(PDO::FETCH_ASSOC);
 if ($pay) {
     $paymentId = $pay['id'];
     $paymentStatus = $pay['status']; 
-    // PERBAIKAN: Menyesuaikan dengan nama kolom di database Anda
     $adminFile = $pay['admin_file_path'] ?? null; 
     $proofFile = $pay['file_path'] ?? null; 
 }
 
-// 4. HITUNG TOTAL TAGIHAN (BERDASARKAN ENTRIES)
+// 4. HITUNG TOTAL TAGIHAN
 $stmtSum = $pdo->prepare("
     SELECT SUM(en.price) 
     FROM event_entries ee 
@@ -68,22 +66,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['bukti_transfer'])) {
     $uploadDir = __DIR__ . '/../../../public/uploads/payments/';
     if (!is_dir($uploadDir)) mkdir($uploadDir, 0777, true);
 
-    $fileExt = pathinfo($_FILES['bukti_transfer']['name'], PATHINFO_EXTENSION);
+    $fileExt = strtolower(pathinfo($_FILES['bukti_transfer']['name'], PATHINFO_EXTENSION));
     $fileName = 'PAY_' . $targetEventId . '_' . $uid . '_' . time() . '.' . $fileExt;
     $targetFile = $uploadDir . $fileName;
 
-    if (move_uploaded_file($_FILES['bukti_transfer']['tmp_name'], $targetFile)) {
-        if ($paymentId) {
-            // PERBAIKAN: Gunakan file_path
-            $stmtUp = $pdo->prepare("UPDATE payments SET file_path = ?, status = 'Pending', created_at = NOW() WHERE id = ?");
-            $stmtUp->execute([$fileName, $paymentId]);
-        } else {
-            // PERBAIKAN: Gunakan amount dan file_path (Menghilangkan total_amount)
-            $stmtIns = $pdo->prepare("INSERT INTO payments (user_id, event_id, amount, file_path, status, created_at) VALUES (?, ?, ?, ?, 'Pending', NOW())");
-            $stmtIns->execute([$uid, $targetEventId, $totalTagihan, $fileName]);
+    // Filter file aman
+    if (in_array($fileExt, ['jpg', 'jpeg', 'png', 'pdf'])) {
+        if (move_uploaded_file($_FILES['bukti_transfer']['tmp_name'], $targetFile)) {
+            if ($paymentId) {
+                $stmtUp = $pdo->prepare("UPDATE payments SET file_path = ?, status = 'Pending', created_at = NOW() WHERE id = ?");
+                $stmtUp->execute([$fileName, $paymentId]);
+            } else {
+                $stmtIns = $pdo->prepare("INSERT INTO payments (user_id, event_id, amount, file_path, status, created_at) VALUES (?, ?, ?, ?, 'Pending', NOW())");
+                $stmtIns->execute([$uid, $targetEventId, $totalTagihan, $fileName]);
+            }
+            echo "<script>alert('Bukti transfer berhasil diunggah! Menunggu verifikasi admin.'); window.location.href='checkout.php?event_id=$targetEventId';</script>";
+            exit;
         }
-        echo "<script>alert('Bukti transfer berhasil diunggah! Menunggu verifikasi admin.'); window.location.href='checkout.php?event_id=$targetEventId';</script>";
-        exit;
+    } else {
+        echo "<script>alert('Gagal! Format file hanya boleh JPG, PNG, atau PDF.'); window.history.back();</script>"; exit;
     }
 }
 
@@ -100,7 +101,7 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                     <h2 class="text-xl font-black text-slate-800 uppercase italic mb-1">Ringkasan Pendaftaran</h2>
                     <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-6"><?= htmlspecialchars($namaEvent) ?></p>
 
-                    <div class="space-y-3">
+                    <div class="space-y-3 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
                         <?php if(empty($details)): ?>
                             <p class="text-center py-10 text-slate-400 text-xs italic font-bold">Belum ada atlet yang didaftarkan.</p>
                         <?php else: ?>
@@ -120,8 +121,8 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                     </div>
 
                     <div class="mt-6 pt-6 border-t-2 border-dashed border-slate-200 flex justify-between items-center">
-                        <p class="text-sm font-black text-slate-800 uppercase italic">Total Pembayaran</p>
-                        <p class="text-2xl font-black text-blue-600">Rp <?= number_format($totalTagihan, 0, ',', '.') ?></p>
+                        <p class="text-sm font-black text-slate-800 uppercase italic">Total Tagihan</p>
+                        <p class="text-3xl font-black text-blue-600">Rp <?= number_format($totalTagihan, 0, ',', '.') ?></p>
                     </div>
                 </div>
             </div>
@@ -152,11 +153,11 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                             </div>
 
                             <div>
-                                <label class="block text-xs font-bold text-slate-700 mb-1.5 uppercase italic">Bukti Transfer <span class="text-red-500">*</span></label>
-                                <input type="file" name="bukti_transfer" required accept="image/*,.pdf" class="w-full text-xs border border-slate-200 rounded-xl p-3 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                <label class="block text-xs font-bold text-slate-700 mb-1.5 uppercase italic">Upload Bukti Transfer <span class="text-red-500">*</span></label>
+                                <input type="file" name="bukti_transfer" required accept="image/jpeg,image/png,application/pdf" class="w-full text-xs font-bold text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-slate-800 file:text-white hover:file:bg-slate-700 border border-slate-200 rounded-xl p-2 bg-slate-50">
                             </div>
 
-                            <button type="submit" class="w-full bg-slate-900 hover:bg-blue-600 text-white font-black py-4 rounded-2xl shadow-lg transition-all uppercase text-xs tracking-widest italic active:scale-95">
+                            <button type="submit" class="w-full bg-blue-600 hover:bg-slate-900 text-white font-black py-4 rounded-2xl shadow-lg shadow-blue-200 transition-all uppercase text-xs tracking-widest italic active:scale-95">
                                 <?= $paymentStatus == 'Rejected' ? 'Upload Ulang Bukti' : 'Konfirmasi Bayar' ?> ➜
                             </button>
                         </form>
@@ -166,20 +167,27 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                                 <?= ($paymentStatus == 'Pending') ? '⏳' : '✅' ?>
                             </div>
                             <p class="text-xs font-bold text-slate-500 leading-relaxed px-4">
-                                <?= ($paymentStatus == 'Pending') ? 'Bukti transfer Anda sedang diverifikasi oleh panitia. Mohon tunggu.' : 'Pembayaran lunas! Anda sudah resmi terdaftar di event ini.' ?>
+                                <?= ($paymentStatus == 'Pending') ? 'Bukti transfer Anda sedang diverifikasi oleh panitia. Mohon tunggu.' : 'Pembayaran lunas! Atlet Anda sudah resmi terdaftar.' ?>
                             </p>
                             <?php if($proofFile): ?>
-                                <a href="../../../public/uploads/payments/<?= htmlspecialchars($proofFile) ?>" target="_blank" class="text-[10px] font-bold text-blue-500 underline uppercase italic">Lihat Bukti Saya</a>
+                                <a href="../../../public/uploads/payments/<?= htmlspecialchars($proofFile) ?>" target="_blank" class="inline-block mt-2 text-[10px] font-bold text-blue-600 underline uppercase italic hover:text-slate-900">Lihat Bukti Saya</a>
                             <?php endif; ?>
                         </div>
                     <?php endif; ?>
                 </div>
                 
-                <a href="register_event.php?event_id=<?= $targetEventId ?>" class="block w-full py-4 bg-white border border-slate-200 rounded-2xl text-center text-xs font-black text-slate-400 uppercase italic hover:bg-slate-50 transition-all">
-                    Kembali ke Matrix
+                <a href="registration.php?event_id=<?= $targetEventId ?>" class="block w-full py-4 bg-white border border-slate-200 rounded-2xl text-center text-xs font-black text-slate-400 uppercase italic hover:bg-slate-50 hover:text-slate-600 transition-all">
+                    &larr; Kembali ke Matrix
                 </a>
             </div>
 
         </div>
     </div>
 </div>
+
+<style>
+/* Custom Scrollbar untuk kotak tagihan */
+.custom-scrollbar::-webkit-scrollbar { width: 6px; }
+.custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+.custom-scrollbar::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 20px; }
+</style>
