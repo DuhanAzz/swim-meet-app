@@ -123,7 +123,7 @@ else $dashLink = '/swim-meet/public/login.php';
 
          <?php endif; ?>
 
-      <?php if($role == 'user'): ?>
+<?php if($role == 'user'): ?>
          <div class="px-8 mt-8 mb-2 text-[10px] font-black text-slate-600 uppercase tracking-widest">Club Management</div>
          <a href="/swim-meet/src/user/atlet/index.php" class="<?= (strpos($req,"user/atlet")!==false) ? $activeLink : $baseLink ?>">
             <span class="w-6 text-xl mr-3 text-center opacity-80">🏊</span>
@@ -139,7 +139,13 @@ else $dashLink = '/swim-meet/public/login.php';
             <span class="w-6 text-xl mr-3 text-center opacity-80">💸</span>
             <span class="font-bold text-[11px] tracking-widest uppercase">Status Bayar</span>
          </a>
-      <?php endif; ?>
+         
+         <div class="px-8 mt-8 mb-2 text-[10px] font-black text-slate-600 uppercase tracking-widest">Information</div>
+         <a href="/swim-meet/src/user/pengumuman.php" class="<?= (strpos($req,"pengumuman")!==false) ? $activeLink : $baseLink ?>">
+            <span class="w-6 text-xl mr-3 text-center opacity-80">📢</span>
+            <span class="font-bold text-[11px] tracking-widest uppercase">Pengumuman</span>
+         </a>
+         <?php endif; ?>
 
    </div>
 
