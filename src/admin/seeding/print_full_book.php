@@ -8,15 +8,38 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') { die("Akses Dit
 // === LOGIKA CONFIG ===
 $usePost = ($_SERVER['REQUEST_METHOD'] === 'POST');
 
+// Mendeteksi request konfigurasi dari GET maupun POST
+$isSubmitted = $usePost || isset($_REQUEST['print_trigger']) || isset($_REQUEST['cfg_event_name']) || isset($_REQUEST['cfg_event_no']) || isset($_REQUEST['col_uid']);
+
+// 1. Konfigurasi Komponen Judul
 $pc = [
-    'show_event_no'   => $usePost ? isset($_POST['cfg_event_no']) : true,
-    'show_date'       => $usePost ? isset($_POST['cfg_date']) : true,
-    'show_event_name' => $usePost ? isset($_POST['cfg_event_name']) : true,
-    'show_group'      => $usePost ? isset($_POST['cfg_group']) : true,
-    'show_gender'     => $usePost ? isset($_POST['cfg_gender']) : true,
-    'show_pool'       => $usePost ? isset($_POST['cfg_pool']) : true,
-    'show_round'      => $usePost ? isset($_POST['cfg_round']) : true
+    'show_event_no'   => $isSubmitted ? isset($_REQUEST['cfg_event_no']) : true,
+    'show_date'       => $isSubmitted ? isset($_REQUEST['cfg_date']) : true,
+    'show_event_name' => $isSubmitted ? isset($_REQUEST['cfg_event_name']) : true,
+    'show_group'      => $isSubmitted ? isset($_REQUEST['cfg_group']) : true,
+    'show_gender'     => $isSubmitted ? isset($_REQUEST['cfg_gender']) : true,
+    'show_pool'       => $isSubmitted ? isset($_REQUEST['cfg_pool']) : true,
+    'show_round'      => $isSubmitted ? isset($_REQUEST['cfg_round']) : true
 ];
+
+// 🚀 2. Konfigurasi Visibilitas Kolom Tabel (Fitur Baru)
+$cc = [
+    'uid'   => $isSubmitted ? isset($_REQUEST['col_uid']) : true,
+    'lahir' => $isSubmitted ? isset($_REQUEST['col_lahir']) : true,
+    'ku'    => $isSubmitted ? isset($_REQUEST['col_ku']) : true,
+    'tim'   => $isSubmitted ? isset($_REQUEST['col_tim']) : true,
+    'waktu' => $isSubmitted ? isset($_REQUEST['col_waktu']) : true,
+    'hasil' => $isSubmitted ? isset($_REQUEST['col_hasil']) : true,
+];
+
+// 🚀 3. Hitung Jumlah Kolom yang Aktif untuk keperluan colspan jika baris kosong
+$activeColumnsCount = 2; // LN & NAMA ATLET selalu aktif (default)
+if ($cc['uid'])   $activeColumnsCount++;
+if ($cc['lahir']) $activeColumnsCount++;
+if ($cc['ku'])    $activeColumnsCount++;
+if ($cc['tim'])   $activeColumnsCount++;
+if ($cc['waktu']) $activeColumnsCount++;
+if ($cc['hasil']) $activeColumnsCount++;
 
 // Handle Images
 $scheduleImage = null;
@@ -24,7 +47,8 @@ if ($usePost && !empty($_FILES['schedule_image']['tmp_name'])) {
     $imgData = file_get_contents($_FILES['schedule_image']['tmp_name']);
     $scheduleImage = 'data:' . $_FILES['schedule_image']['type'] . ';base64,' . base64_encode($imgData);
 }
-$showScheduleAuto = ($usePost ? isset($_POST['show_schedule_auto']) : false) && empty($scheduleImage);
+
+$showScheduleAuto = ($isSubmitted ? isset($_REQUEST['show_schedule_auto']) : false) && empty($scheduleImage);
 
 $coverImage = null;
 if ($usePost && !empty($_FILES['cover_image']['tmp_name'])) {
@@ -167,14 +191,10 @@ if ($showScheduleAuto) {
         /* CONTAINER HALAMAN BIASA */
         .page-wrapper { background: white; width: 210mm; margin: 20px auto; padding: 0 10mm; min-height: 297mm; position: relative; }
         
-        /* PERBAIKAN CSS FULL PAGE (Cover & Jadwal) 
-           Menggunakan position: relative agar tidak menumpuk (stacking),
-           tetapi Z-index tinggi dan Background Putih agar menutupi Header Fixed.
-        */
         .full-page { 
-            position: relative; /* Jangan Absolute */
+            position: relative; 
             width: 210mm; 
-            height: 297mm; /* Ukuran A4 */
+            height: 297mm; 
             margin: 0 auto;
             z-index: 99999; 
             background: white; 
@@ -182,8 +202,7 @@ if ($showScheduleAuto) {
             justify-content: center; 
             align-items: center; 
             overflow: hidden;
-            /* Trik menutupi header */
-            margin-bottom: -35mm; /* Tarik halaman berikutnya ke atas sedikit jika perlu, atau biarkan normal */
+            margin-bottom: -35mm; 
         }
         
         .full-page-img { width: 100%; height: 100%; object-fit: fill; }
@@ -221,17 +240,22 @@ if ($showScheduleAuto) {
         .eh-right  { font-size: 10pt; font-weight: 900; width: 80px; text-align: right; z-index: 2; position: relative; background: white; }
         .heat-title { text-align: right; font-size: 9pt; font-weight: bold; font-family: 'Arial', sans-serif; text-transform: uppercase; margin-top: 12px; margin-bottom: 2px; }
         .event-header + .heat-title { margin-top: 2px !important; }
+        
+        /* DATA TABLE DINAMIS */
         .data-table { width: 100%; border-collapse: collapse; table-layout: fixed; margin-bottom: 2px; font-family: 'Courier New', Courier, monospace; font-size: 8pt; }
         .data-table th { background-color: #e5e7eb; color: #000; font-family: 'Arial Narrow', sans-serif; font-weight: bold; font-size: 8pt; text-transform: uppercase; padding: 2px 2px; border-top: 1px solid #000; border-bottom: 2px solid #000; text-align: center; }
         .data-table td { padding: 4px 4px; border-bottom: 1px solid #ccc; vertical-align: middle; }
-        .col-ln { width: 4%; text-align: center; background: #f8f9fa; border-right: 1px solid #eee; font-weight: bold; white-space: nowrap; }
-        .col-uid { width: 11%; text-align: center; white-space: nowrap; }
-        .col-nama { width: 27%; text-align: left; padding-left: 5px; white-space: normal; line-height: 1.1; }
+        
+        /* Ukuran Kolom Default */
+        .col-ln { width: 5%; text-align: center; background: #f8f9fa; border-right: 1px solid #eee; font-weight: bold; white-space: nowrap; }
+        .col-uid { width: 12%; text-align: center; white-space: nowrap; }
+        .col-nama { text-align: left; padding-left: 5px; white-space: normal; line-height: 1.1; }
         .col-lahir { width: 8%; text-align: center; white-space: nowrap; }
         .col-ku { width: 10%; text-align: center; white-space: nowrap; }
-        .col-tim { width: 20%; text-align: left; padding-left: 5px; white-space: normal; line-height: 1.1; }
-        .col-waktu { width: 9%; text-align: right; padding-right: 5px; white-space: nowrap; }
-        .col-hasil { width: 11%; text-align: right; color: #000; letter-spacing: 0px; white-space: nowrap; }
+        .col-tim { width: 22%; text-align: left; padding-left: 5px; white-space: normal; line-height: 1.1; }
+        .col-waktu { width: 10%; text-align: right; padding-right: 5px; white-space: nowrap; }
+        .col-hasil { width: 12%; text-align: right; color: #000; letter-spacing: 0px; white-space: nowrap; }
+        
         .data-table tr:nth-child(even) { background-color: #f9fafb; }
         .data-table tr { break-inside: avoid; }
 
@@ -239,11 +263,10 @@ if ($showScheduleAuto) {
             @page { size: A4; margin: 0; }
             body { background: white; margin: 0; }
             
-            /* Full Page di Print mode */
             .full-page { 
-                position: relative; /* Tetap relative agar tidak tumpuk */
+                position: relative; 
                 width: 100%; 
-                height: 100vh; /* Full viewport height */
+                height: 100vh; 
                 margin: 0; 
                 page-break-after: always; 
                 break-after: always;
@@ -362,7 +385,14 @@ if ($showScheduleAuto) {
                                     <table class="data-table">
                                         <thead>
                                             <tr>
-                                                <th class="col-ln">LN</th> <th class="col-uid">UID</th> <th class="col-nama">NAMA ATLET</th> <th class="col-lahir">LAHIR</th> <th class="col-ku">KU</th> <th class="col-tim">TIM</th> <th class="col-waktu">WAKTU</th> <th class="col-hasil">HASIL</th>
+                                                <th class="col-ln">LN</th>
+                                                <?php if($cc['uid']): ?><th class="col-uid">UID</th><?php endif; ?>
+                                                <th class="col-nama">NAMA ATLET</th>
+                                                <?php if($cc['lahir']): ?><th class="col-lahir">LAHIR</th><?php endif; ?>
+                                                <?php if($cc['ku']): ?><th class="col-ku">KU</th><?php endif; ?>
+                                                <?php if($cc['tim']): ?><th class="col-tim">TIM</th><?php endif; ?>
+                                                <?php if($cc['waktu']): ?><th class="col-waktu">WAKTU</th><?php endif; ?>
+                                                <?php if($cc['hasil']): ?><th class="col-hasil">HASIL</th><?php endif; ?>
                                             </tr>
                                         </thead>
                                         <tbody>
@@ -370,15 +400,15 @@ if ($showScheduleAuto) {
                                             <tr>
                                                 <td class="col-ln"><?= $ln ?></td>
                                                 <?php if($s): ?>
-                                                    <td class="col-uid"><?= htmlspecialchars($s['uid'] ?? '-') ?></td>
-                                                    <td class="col-nama"><?= $s['nama_atlet'] ?></td>
-                                                    <td class="col-lahir"><?= ($s['tanggal_lahir'] && $s['tanggal_lahir']!='0000-00-00') ? date('Y', strtotime($s['tanggal_lahir'])) : '-' ?></td>
-                                                    <td class="col-ku"><?= getKUName($s['tanggal_lahir'], $eventYear, $ageGroups) ?></td>
-                                                    <td class="col-tim"><?= getTeamName($s, $partType) ?></td>
-                                                    <td class="col-waktu"><?= (!$s['entry_time'] || $s['entry_time']=='99.99.99') ? 'NT' : $s['entry_time'] ?></td>
-                                                    <td class="col-hasil">[.......]</td>
+                                                    <?php if($cc['uid']): ?><td class="col-uid"><?= htmlspecialchars($s['uid'] ?? '-') ?></td><?php endif; ?>
+                                                    <td class="col-nama"><?= htmlspecialchars($s['nama_atlet']) ?></td>
+                                                    <?php if($cc['lahir']): ?><td class="col-lahir"><?= ($s['tanggal_lahir'] && $s['tanggal_lahir']!='0000-00-00') ? date('Y', strtotime($s['tanggal_lahir'])) : '-' ?></td><?php endif; ?>
+                                                    <?php if($cc['ku']): ?><td class="col-ku"><?= getKUName($s['tanggal_lahir'], $eventYear, $ageGroups) ?></td><?php endif; ?>
+                                                    <?php if($cc['tim']): ?><td class="col-tim"><?= htmlspecialchars(getTeamName($s, $partType)) ?></td><?php endif; ?>
+                                                    <?php if($cc['waktu']): ?><td class="col-waktu"><?= (!$s['entry_time'] || $s['entry_time']=='99.99.99') ? 'NT' : $s['entry_time'] ?></td><?php endif; ?>
+                                                    <?php if($cc['hasil']): ?><td class="col-hasil">[.......]</td><?php endif; ?>
                                                 <?php else: ?>
-                                                    <td colspan="7" style="color:#aaa; font-style:italic; padding-left:10px;">&lt;Kosong&gt;</td>
+                                                    <td colspan="<?= ($activeColumnsCount - 1) ?>" style="color:#aaa; font-style:italic; padding-left:10px;">&lt;Kosong&gt;</td>
                                                 <?php endif; ?>
                                             </tr>
                                             <?php endfor; ?>

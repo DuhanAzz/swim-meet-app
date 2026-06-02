@@ -160,18 +160,30 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
             </div>
             <hr class="border-slate-100 my-4">
 
-            <div class="mb-6">
-                <p class="text-[10px] font-black text-slate-400 uppercase mb-3">3. Komponen Judul:</p>
-                <div class="grid grid-cols-2 gap-3">
-                    <label class="flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer"><input type="checkbox" name="cfg_event_no" class="rounded text-blue-600" checked> Nomor Acara</label>
-                    <label class="flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer"><input type="checkbox" name="cfg_date" class="rounded text-blue-600" checked> Tanggal & Jam</label>
-                    <label class="flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer"><input type="checkbox" name="cfg_event_name" class="rounded text-blue-600" checked> Nama Acara</label>
-                    <label class="flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer"><input type="checkbox" name="cfg_group" class="rounded text-blue-600" checked> Kelompok Umur</label>
-                    <label class="flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer"><input type="checkbox" name="cfg_gender" class="rounded text-blue-600" checked> Gender</label>
-                    <label class="flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer"><input type="checkbox" name="cfg_pool" class="rounded text-blue-600" checked> Tipe Kolam</label>
-                    <label class="flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer"><input type="checkbox" name="cfg_round" class="rounded text-blue-600" checked> Babak</label>
-                </div>
-            </div>
+            <div class="mb-4">
+    <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">3. Komponen Judul Acara:</label>
+    <div class="grid grid-cols-2 gap-2 text-xs font-bold text-slate-600">
+        <label class="flex items-center gap-2"><input type="checkbox" name="cfg_event_no" value="1" class="rounded border-slate-300 text-blue-600" checked> Nomor Acara</label>
+        <label class="flex items-center gap-2"><input type="checkbox" name="cfg_date" value="1" class="rounded border-slate-300 text-blue-600" checked> Tanggal & Jam</label>
+        <label class="flex items-center gap-2"><input type="checkbox" name="cfg_event_name" value="1" class="rounded border-slate-300 text-blue-600" checked> Jarak & Gaya</label>
+        <label class="flex items-center gap-2"><input type="checkbox" name="cfg_group" value="1" class="rounded border-slate-300 text-blue-600" checked> Kelompok Umur (KU)</label>
+        <label class="flex items-center gap-2"><input type="checkbox" name="cfg_gender" value="1" class="rounded border-slate-300 text-blue-600" checked> Jenis Kelamin</label>
+        <label class="flex items-center gap-2"><input type="checkbox" name="cfg_pool" value="1" class="rounded border-slate-300 text-blue-600" checked> Tipe Kolam (LCM/SCM)</label>
+        <label class="flex items-center gap-2"><input type="checkbox" name="cfg_round" value="1" class="rounded border-slate-300 text-blue-600" checked> Babak (FINAL)</label>
+    </div>
+</div>
+
+<div class="mb-4 border-t border-slate-100 pt-3">
+    <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">4. Kolom Tabel Atlet:</label>
+    <div class="grid grid-cols-2 gap-2 text-xs font-bold text-slate-600">
+        <label class="flex items-center gap-2"><input type="checkbox" name="col_uid" value="1" class="rounded border-slate-300 text-blue-600" checked> Kolom UID</label>
+        <label class="flex items-center gap-2"><input type="checkbox" name="col_lahir" value="1" class="rounded border-slate-300 text-blue-600" checked> Kolom Tahun Lahir</label>
+        <label class="flex items-center gap-2"><input type="checkbox" name="col_ku" value="1" class="rounded border-slate-300 text-blue-600" checked> Kolom KU (Kel. Umur)</label>
+        <label class="flex items-center gap-2"><input type="checkbox" name="col_tim" value="1" class="rounded border-slate-300 text-blue-600" checked> Kolom TIM/Klub</label>
+        <label class="flex items-center gap-2"><input type="checkbox" name="col_waktu" value="1" class="rounded border-slate-300 text-blue-600" checked> Kolom Waktu Entry (Seed Time)</label>
+        <label class="flex items-center gap-2"><input type="checkbox" name="col_hasil" value="1" class="rounded border-slate-300 text-blue-600" checked> Kolom Hasil Lembar Titik</label>
+    </div>
+</div>
 
             <div class="flex gap-3 sticky bottom-0 bg-white pt-2">
                 <button type="button" onclick="closePrintModal()" class="flex-1 py-3 bg-slate-100 text-slate-500 rounded-xl font-bold text-xs uppercase hover:bg-slate-200">Batal</button>

@@ -12,13 +12,13 @@ if ($eventId == 0) die("Error: ID Kategori tidak ditemukan.");
 
 
 // =====================================================
-// 🔧 FUNGSI KONVERSI WAKTU
+// 🎯 FUNGSI KONVERSI WAKTU
 // =====================================================
 function timeToMs($timeStr) {
     $cleanStr = str_replace([':', ' '], '.', trim($timeStr));
     
     if (empty($cleanStr) || strpos($cleanStr, '99') === 0 || strtoupper($cleanStr) == 'NT') {
-        return 999999999;
+        return 999999999; // NT / No Time ditaruh paling lambat
     }
 
     $parts = explode('.', $cleanStr);
@@ -40,7 +40,7 @@ function timeToMs($timeStr) {
 
 
 // =====================================================
-// 🏊 FUNGSI URUTAN LANE (ZIG-ZAG STANDARD)
+// 🎯 FUNGSI URUTAN LANE (ZIG-ZAG STANDARD)
 // =====================================================
 function getLaneOrder($total_lane) {
     $center = ceil($total_lane / 2);
@@ -135,42 +135,61 @@ try {
         });
 
         // =====================================================
-        // 🔥 6. HITUNG HEAT IDEAL (ANTI 1-2 ORANG)
+        // 🚀 6. ALOKASI HEAT (STANDARD SEEDING RENANG)
         // =====================================================
         $totalHeats = ceil($totalSwimmers / $LANE_COUNT);
-        $idealPerHeat = ceil($totalSwimmers / $totalHeats);
-
-        $chunks = [];
-        $index = 0;
-
+        
+        $heatSizes = [];
+        $remaining = $totalSwimmers;
+        
+        // Isi heat dari yang tercepat (index 0 = Heat Final) sampai yang terlambat
         for ($i = 0; $i < $totalHeats; $i++) {
-            $chunks[$i] = array_slice($swimmers, $index, $idealPerHeat);
-            $index += $idealPerHeat;
-        }
-
-        // =====================================================
-        // 🔥 7. SAFETY: MINIMAL 3 ORANG DI HEAT TERAKHIR
-        // =====================================================
-        if ($totalHeats > 1) {
-            $lastIndex = $totalHeats - 1;
-            if (count($chunks[$lastIndex]) < 3) {
-                $need = 3 - count($chunks[$lastIndex]);
-                $donor = $lastIndex - 1;
-
-                $move = array_splice($chunks[$donor], -$need);
-                $chunks[$lastIndex] = array_merge($move, $chunks[$lastIndex]);
+            if ($remaining >= $LANE_COUNT) {
+                $heatSizes[] = $LANE_COUNT; // Isi penuh heat yang cepat
+                $remaining -= $LANE_COUNT;
+            } else {
+                $heatSizes[] = $remaining; // Sisa perenang dibuang ke heat paling lambat
             }
         }
 
         // =====================================================
-        // 🔥 8. ASSIGN LANE + SIMPAN
+        // 🚀 7. SAFETY: MINIMAL 3 ORANG DI HEAT PERTAMA (TERLAMBAT)
+        // =====================================================
+        if ($totalHeats > 1) {
+            $slowestIndex = $totalHeats - 1; // Index array untuk Heat ke-1
+            $nextSlowestIndex = $totalHeats - 2; // Index array untuk Heat ke-2
+            
+            // Jika heat paling lambat isinya cuma 1 atau 2 orang, pinjam dari heat atasnya!
+            if ($heatSizes[$slowestIndex] < 3 && $heatSizes[$slowestIndex] > 0) {
+                $butuh = 3 - $heatSizes[$slowestIndex];
+                
+                // Pastikan setelah dipinjam, heat atasnya tetap punya minimal 3 orang
+                if (($heatSizes[$nextSlowestIndex] - $butuh) >= 3) {
+                    $heatSizes[$nextSlowestIndex] -= $butuh;
+                    $heatSizes[$slowestIndex] += $butuh;
+                }
+            }
+        }
+
+        // Potong array perenang berdasarkan ukuran heat yang sudah dihitung
+        $chunks = [];
+        $offset = 0;
+        foreach ($heatSizes as $size) {
+            if ($size > 0) {
+                $chunks[] = array_slice($swimmers, $offset, $size);
+                $offset += $size;
+            }
+        }
+
+        // =====================================================
+        // 8. ASSIGN LANE + SIMPAN
         // =====================================================
         foreach ($chunks as $i => $batchSwimmers) {
 
-            // heat dibalik → fastest di heat terakhir
+            // Karena chunk[0] berisi atlet tercepat, dia dapat angka Heat paling besar (Seri Terakhir)
             $heatNumber = $totalHeats - $i;
 
-            // 🔥 hanya ambil lane sesuai jumlah peserta (centered)
+            // Ambil urutan lane sebanyak jumlah perenang di heat tersebut (Center Out)
             $usedLane = array_slice($lanePriority, 0, count($batchSwimmers));
 
             foreach ($batchSwimmers as $rank => $swimmer) {
@@ -183,36 +202,11 @@ try {
                     $chk->execute([$swimmer['id']]);
                     
                     if ($chk->rowCount() > 0) {
-
-                        $upd = $pdo->prepare("
-                            UPDATE event_seeding 
-                            SET heat_prelim = ?, lane_prelim = ?, time_prelim = ?, time_prelim_ms = ? 
-                            WHERE entry_id = ?
-                        ");
-
-                        $upd->execute([
-                            $heatNumber, 
-                            $lane, 
-                            $swimmer['entry_time'], 
-                            $swimmer['ms'], 
-                            $swimmer['id']
-                        ]);
-
+                        $upd = $pdo->prepare("UPDATE event_seeding SET heat_prelim = ?, lane_prelim = ?, time_prelim = ?, time_prelim_ms = ? WHERE entry_id = ?");
+                        $upd->execute([$heatNumber, $lane, $swimmer['entry_time'], $swimmer['ms'], $swimmer['id']]);
                     } else {
-
-                        $ins = $pdo->prepare("
-                            INSERT INTO event_seeding 
-                            (entry_id, heat_prelim, lane_prelim, time_prelim, time_prelim_ms) 
-                            VALUES (?, ?, ?, ?, ?)
-                        ");
-
-                        $ins->execute([
-                            $swimmer['id'], 
-                            $heatNumber, 
-                            $lane, 
-                            $swimmer['entry_time'], 
-                            $swimmer['ms']
-                        ]);
+                        $ins = $pdo->prepare("INSERT INTO event_seeding (entry_id, heat_prelim, lane_prelim, time_prelim, time_prelim_ms) VALUES (?, ?, ?, ?, ?)");
+                        $ins->execute([$swimmer['id'], $heatNumber, $lane, $swimmer['entry_time'], $swimmer['ms']]);
                     }
                 }
             }

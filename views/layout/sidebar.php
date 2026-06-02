@@ -111,9 +111,15 @@ else $dashLink = '/swim-meet/public/login.php';
          <?php endif; ?>
 
          <div class="px-8 mt-8 mb-2 text-[10px] font-black text-slate-600 uppercase tracking-widest">Results & Awards</div>
+         
          <a href="/swim-meet/src/admin/results/index.php" class="<?= (strpos($req,"results/index")!==false) ? $activeLink : $baseLink ?>">
             <span class="w-6 text-xl mr-3 text-center opacity-80">⏱️</span>
             <span class="font-bold text-[11px] tracking-widest uppercase">Input Hasil</span>
+         </a>
+
+         <a href="/swim-meet/src/admin/results/publish_result.php" class="<?= (strpos($req,"publish_result")!==false) ? $activeLink : $baseLink ?>">
+            <span class="w-6 text-xl mr-3 text-center opacity-80">📢</span>
+            <span class="font-bold text-[11px] tracking-widest uppercase">Publikasi Hasil</span>
          </a>
 
          <a href="/swim-meet/src/admin/results/medal_tally.php" class="<?= (strpos($req,"medal_tally")!==false) ? $activeLink : $baseLink ?>">
@@ -145,6 +151,7 @@ else $dashLink = '/swim-meet/public/login.php';
             <span class="w-6 text-xl mr-3 text-center opacity-80">📢</span>
             <span class="font-bold text-[11px] tracking-widest uppercase">Pengumuman</span>
          </a>
+         
          <?php endif; ?>
 
    </div>

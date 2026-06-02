@@ -1,33 +1,52 @@
 <?php
 // FILE: public/results.php
-// 1. KONEKSI DATABASE
 require_once __DIR__ . '/../src/config/database.php';
 if (session_status() === PHP_SESSION_NONE) session_start();
 
-// 2. DATA UMUM (HEADER/FOOTER)
+// 1. DATA UMUM (HEADER/FOOTER)
 $s = $pdo->query("SELECT * FROM site_settings WHERE id=1")->fetch();
 $heroTitle = $s['hero_title'] ?? 'SWIMMEET CHAMPIONSHIP'; 
 
-// 3. LOGIC PENCARIAN & FILTER DATA (REVISI: Tabel Events)
+// 2. LOGIC PENCARIAN & FILTER DATA
 $search = $_GET['q'] ?? '';
 
-// Ubah query: Ambil dari tabel 'events', bukan 'users'
-$sql = "SELECT * FROM events WHERE event_status != 'Draft'"; 
+// Ambil event terbaru yang bukan draft
+$sql = "SELECT id, event_name, event_location, event_date_start, event_status, is_result_published 
+        FROM events 
+        WHERE event_status != 'draft'"; 
 $params = [];
 
 if (!empty($search)) {
-    // Revisi kolom pencarian: nama_lengkap -> event_name, location -> event_location
     $sql .= " AND (event_name LIKE ? OR event_location LIKE ?)";
     $params[] = "%$search%";
     $params[] = "%$search%";
 }
 
-// Revisi Order: event_start_date -> event_date_start
-$sql .= " ORDER BY event_date_start DESC";
+$sql .= " ORDER BY id DESC"; // Urut Berdasarkan Terbaru
 
 $stmt = $pdo->prepare($sql);
 $stmt->execute($params);
-$events = $stmt->fetchAll();
+$events = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+// 3. AMBIL DOKUMEN (BUKU ACARA / HASIL) DARI TABEL `documents`
+$documentsByEvent = [];
+if (!empty($events)) {
+    $eventIds = array_column($events, 'id');
+    $placeholders = implode(',', array_fill(0, count($eventIds), '?'));
+    
+    // Hanya ambil dokumen yang relevan dengan hasil perlombaan
+    $docSql = "SELECT event_id, judul_file, file_path, kategori FROM documents 
+               WHERE event_id IN ($placeholders) 
+               AND kategori IN ('buku_acara', 'buku_hasil', 'lainnya') 
+               ORDER BY kategori ASC";
+    $docStmt = $pdo->prepare($docSql);
+    $docStmt->execute($eventIds);
+    $docs = $docStmt->fetchAll(PDO::FETCH_ASSOC);
+    
+    foreach ($docs as $d) {
+        $documentsByEvent[$d['event_id']][] = $d;
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="id" class="scroll-smooth">
@@ -40,7 +59,7 @@ $events = $stmt->fetchAll();
     <style>
         body { font-family: 'Inter', sans-serif; }
         
-        /* --- LIQUID PRELOADER STYLE --- */
+        /* --- LIQUID PRELOADER --- */
         #preloader { position: fixed; inset: 0; z-index: 9999; background-color: #0F172A; display: flex; flex-direction: column; align-items: center; justify-content: center; }
         .loader-container { position: relative; width: 150px; height: 150px; }
         .circle-loader { position: relative; width: 100%; height: 100%; border: 6px solid #1e293b; border-radius: 50%; overflow: hidden; background: #161e31; box-shadow: 0 0 50px rgba(59, 130, 246, 0.2); }
@@ -50,7 +69,7 @@ $events = $stmt->fetchAll();
         .load-text { margin-top: 30px; color: white; font-weight: 900; letter-spacing: 0.4em; font-size: 12px; text-transform: uppercase; }
         .loader-finish { opacity: 0; visibility: hidden; transition: opacity 0.5s ease, visibility 0.5s; }
 
-        /* --- NAV & HEADER STYLE --- */
+        /* --- NAV & HEADER --- */
         #navbar { transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1); height: 110px; display: flex; align-items: center; }
         #navbar.scrolled { background-color: #0F172A; height: 85px; border-bottom: 1px solid #1e293b; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }
         .nav-link { position: relative; color: white; transition: all 0.3s ease; font-size: 0.95rem; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; }
@@ -58,11 +77,7 @@ $events = $stmt->fetchAll();
         .nav-link:hover::after, .nav-link.active::after { width: 100%; }
         .nav-link:hover { color: #3b82f6; }
 
-        /* --- PAGE HEADER BG --- */
-        .page-header {
-            background-image: url('https://images.unsplash.com/photo-1519315901367-f34ff9154487?q=80&w=2070&auto=format&fit=crop'); 
-            background-size: cover; background-position: center;
-        }
+        .page-header { background-image: url('https://images.unsplash.com/photo-1519315901367-f34ff9154487?q=80&w=2070&auto=format&fit=crop'); background-size: cover; background-position: center; }
     </style>
 </head>
 <body class="bg-slate-50 text-slate-800 flex flex-col min-h-screen">
@@ -80,15 +95,14 @@ $events = $stmt->fetchAll();
                 <div class="hidden lg:flex items-center space-x-10">
                     <a href="index.php" class="nav-link">Home</a>
                     <a href="events.php" class="nav-link">Jadwal Lomba</a>
-                    <a href="results.php" class="nav-link active text-blue-400">Hasil & Dokumen</a> <a href="index.php#instruction" class="nav-link text-yellow-400">Panduan</a>
+                    <a href="results.php" class="nav-link active text-blue-400">Hasil Lomba</a> 
+                    <a href="index.php#instruction" class="nav-link text-yellow-400">Panduan</a>
                 </div>
                 <div class="flex items-center border-l border-white/20 pl-10">
                     <?php if(isset($_SESSION['user_id'])): 
-                        // REVISI: Link Dashboard sesuai Role
-                        $dashLink = 'dashboard.php';
+                        $dashLink = '../src/user/dashboard.php';
                         if($_SESSION['role'] == 'master') $dashLink = '../src/master/dashboard.php';
                         if($_SESSION['role'] == 'admin') $dashLink = '../src/admin/dashboard.php';
-                        if($_SESSION['role'] == 'user') $dashLink = '../src/user/dashboard.php';
                     ?>
                         <a href="<?= $dashLink ?>" class="bg-blue-600 hover:bg-blue-700 text-white px-10 py-3 rounded-full font-black text-xs uppercase tracking-widest shadow-xl transition transform hover:scale-105">Dashboard</a>
                     <?php else: ?>
@@ -100,12 +114,13 @@ $events = $stmt->fetchAll();
     </nav>
 
     <header class="page-header relative pt-48 pb-20 overflow-hidden">
-        <div class="absolute inset-0 bg-slate-900/80"></div> <div class="max-w-screen-xl mx-auto px-6 relative z-10 text-center">
+        <div class="absolute inset-0 bg-slate-900/80"></div> 
+        <div class="max-w-screen-xl mx-auto px-6 relative z-10 text-center">
             <h1 class="text-4xl md:text-6xl font-black uppercase tracking-tighter text-white italic mb-4 drop-shadow-2xl">
-                Hasil & Dokumen
+                Hasil Perlombaan
             </h1>
             <p class="text-slate-400 text-sm font-bold uppercase tracking-[0.3em]">
-                Arsip Lengkap Kejuaraan & Startlist
+                Live Result Digital & Arsip Buku Hasil
             </p>
         </div>
     </header>
@@ -127,78 +142,97 @@ $events = $stmt->fetchAll();
         <?php if(count($events) > 0): ?>
             <div class="grid grid-cols-1 gap-8">
                 <?php foreach($events as $e): 
-                    // Cek Status untuk Badge
-                    $status = $e['event_status'] ?? 'Registration';
-                    $statusColor = ($status == 'Finished' || $status == 'Closed') ? 'bg-slate-600' : (($status == 'Running') ? 'bg-red-600 animate-pulse' : 'bg-emerald-500');
+                    // Logika Status Badge
+                    $rawStatus = strtolower($e['event_status'] ?? 'upcoming');
+                    if ($rawStatus == 'open') {
+                        $badge = "bg-emerald-500"; $statusText = "OPEN";
+                    } elseif ($rawStatus == 'closed' || $rawStatus == 'running') {
+                        $badge = "bg-red-600 animate-pulse"; $statusText = "RUNNING";
+                    } elseif ($rawStatus == 'done') {
+                        $badge = "bg-slate-600"; $statusText = "FINISHED";
+                    } else { 
+                        $badge = "bg-amber-500"; $statusText = "UPCOMING";
+                    }
                     
-                    // Ambil File Dokumen dari tabel event_results
-                    $stmtDoc = $pdo->prepare("SELECT file_path, category FROM event_results WHERE event_id = ?");
-                    $stmtDoc->execute([$e['id']]);
-                    $docs = $stmtDoc->fetchAll();
-                    
-                    $hasStartlist = false;
-                    $hasResult = false;
-                    foreach($docs as $d) {
-                        if($d['category'] == 'StartList') $hasStartlist = $d['file_path'];
-                        if($d['category'] == 'Result') $hasResult = $d['file_path'];
+                    // Cek Dokumen PDF
+                    $bukuAcara = null;
+                    $bukuHasil = null;
+                    if(!empty($documentsByEvent[$e['id']])) {
+                        foreach($documentsByEvent[$e['id']] as $doc) {
+                            if($doc['kategori'] == 'buku_acara') $bukuAcara = $doc;
+                            if($doc['kategori'] == 'buku_hasil') $bukuHasil = $doc;
+                        }
                     }
                 ?>
-                <div class="group bg-white rounded-3xl p-8 border border-slate-200 hover:shadow-2xl hover:border-blue-200 transition-all duration-300 flex flex-col md:flex-row md:items-center gap-8 relative overflow-hidden">
+                <div class="group bg-white rounded-3xl p-8 border border-slate-200 hover:shadow-2xl hover:border-blue-200 transition-all duration-300 flex flex-col md:flex-row md:items-center justify-between gap-8 relative overflow-hidden">
                     
-                    <span class="absolute -right-6 -bottom-10 text-[10rem] font-black text-slate-50 italic select-none pointer-events-none group-hover:text-blue-50 transition"><?= date('d', strtotime($e['event_date_start'])) ?></span>
+                    <span class="absolute -right-6 -bottom-10 text-[10rem] font-black text-slate-50 italic select-none pointer-events-none group-hover:text-blue-50 transition">
+                        <?= !empty($e['event_date_start']) ? date('d', strtotime($e['event_date_start'])) : '' ?>
+                    </span>
 
                     <div class="flex-1 relative z-10">
                         <div class="flex items-center gap-3 mb-3">
-                            <span class="<?= $statusColor ?> text-white text-[9px] font-black px-3 py-1 rounded-full uppercase tracking-widest shadow-md">
-                                <?= $status ?>
+                            <span class="<?= $badge ?> text-white text-[9px] font-black px-3 py-1 rounded-full uppercase tracking-widest shadow-md">
+                                <?= $statusText ?>
                             </span>
                             <span class="text-slate-400 text-[10px] font-bold uppercase tracking-wider">
-                                <?= date('d F Y', strtotime($e['event_date_start'])) ?>
+                                <?= !empty($e['event_date_start']) ? date('d F Y', strtotime($e['event_date_start'])) : 'TBA' ?>
                             </span>
                         </div>
                         
-                        <h3 class="text-2xl md:text-3xl font-black uppercase italic text-slate-800 leading-none mb-2 group-hover:text-blue-600 transition">
+                        <h3 class="text-2xl md:text-3xl font-black uppercase italic text-slate-800 leading-none mb-3 group-hover:text-blue-600 transition">
                             <?= htmlspecialchars($e['event_name']) ?>
                         </h3>
                         
-                        <p class="text-slate-500 font-bold text-xs uppercase flex items-center gap-1">
+                        <p class="text-slate-500 font-bold text-xs uppercase flex items-center gap-2">
                             <span>📍</span> <?= htmlspecialchars($e['event_location']) ?>
                         </p>
                     </div>
 
-                    <div class="flex flex-wrap gap-3 relative z-10">
-                        <?php if($hasStartlist): ?>
-                            <a href="<?= $hasStartlist ?>" target="_blank" class="flex items-center gap-3 px-6 py-4 rounded-xl border-2 border-slate-100 hover:border-blue-500 hover:bg-blue-50 transition group/btn">
-                                <div class="bg-blue-100 text-blue-600 p-2 rounded-lg group-hover/btn:bg-blue-600 group-hover/btn:text-white transition">📄</div>
+                    <div class="flex flex-wrap md:flex-nowrap gap-3 relative z-10">
+                        
+                        <?php if($bukuAcara): ?>
+                            <a href="<?= htmlspecialchars($bukuAcara['file_path']) ?>" target="_blank" class="flex items-center gap-3 px-5 py-3 rounded-xl border-2 border-slate-100 hover:border-blue-500 hover:bg-blue-50 transition group/btn min-w-[160px]">
+                                <div class="bg-blue-100 text-blue-600 p-2.5 rounded-lg group-hover/btn:bg-blue-600 group-hover/btn:text-white transition text-lg">📋</div>
                                 <div class="text-left">
-                                    <div class="text-[9px] text-slate-400 font-black uppercase tracking-widest">Dokumen</div>
-                                    <div class="text-xs font-bold text-slate-800 uppercase">Start List</div>
+                                    <div class="text-[9px] text-slate-400 font-black uppercase tracking-widest">Download</div>
+                                    <div class="text-xs font-bold text-slate-800 uppercase">Buku Acara</div>
                                 </div>
                             </a>
                         <?php else: ?>
-                            <button disabled class="flex items-center gap-3 px-6 py-4 rounded-xl border border-slate-50 bg-slate-50 opacity-50 cursor-not-allowed grayscale">
-                                <div class="bg-slate-200 text-slate-400 p-2 rounded-lg">📄</div>
+                            <div class="flex items-center gap-3 px-5 py-3 rounded-xl border border-slate-50 bg-slate-50 opacity-60 cursor-not-allowed min-w-[160px]" title="Buku Acara Belum Tersedia">
+                                <div class="bg-slate-200 text-slate-400 p-2.5 rounded-lg text-lg">📋</div>
                                 <div class="text-left">
                                     <div class="text-[9px] text-slate-400 font-black uppercase tracking-widest">Belum Ada</div>
-                                    <div class="text-xs font-bold text-slate-400 uppercase">Start List</div>
+                                    <div class="text-xs font-bold text-slate-400 uppercase">Buku Acara</div>
                                 </div>
-                            </button>
+                            </div>
                         <?php endif; ?>
 
-                        <?php if($hasResult): ?>
-                            <a href="<?= $hasResult ?>" target="_blank" class="flex items-center gap-3 px-6 py-4 rounded-xl border-2 border-emerald-100 bg-emerald-50/50 hover:border-emerald-500 hover:bg-emerald-100 transition group/btn">
-                                <div class="bg-emerald-100 text-emerald-600 p-2 rounded-lg group-hover/btn:bg-emerald-600 group-hover/btn:text-white transition">🏆</div>
+                        <?php if($bukuHasil): ?>
+                            <a href="<?= htmlspecialchars($bukuHasil['file_path']) ?>" target="_blank" class="flex items-center gap-3 px-5 py-3 rounded-xl border-2 border-emerald-100 bg-emerald-50/50 hover:border-emerald-500 hover:bg-emerald-100 transition group/btn min-w-[160px]">
+                                <div class="bg-emerald-100 text-emerald-600 p-2.5 rounded-lg group-hover/btn:bg-emerald-600 group-hover/btn:text-white transition text-lg">📄</div>
                                 <div class="text-left">
-                                    <div class="text-[9px] text-emerald-600 font-black uppercase tracking-widest">Official</div>
-                                    <div class="text-xs font-bold text-slate-800 uppercase">Hasil Lomba</div>
+                                    <div class="text-[9px] text-emerald-600 font-black uppercase tracking-widest">Download</div>
+                                    <div class="text-xs font-bold text-slate-800 uppercase">Buku Hasil</div>
+                                </div>
+                            </a>
+                        <?php endif; ?>
+
+                        <?php if ($e['is_result_published'] == 1): ?>
+                            <a href="live_result.php?event_id=<?= $e['id'] ?>" class="flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-slate-900 text-white hover:bg-blue-600 transition shadow-lg min-w-[160px] md:min-w-[200px]">
+                                <span class="animate-bounce text-xl">🏆</span>
+                                <div class="text-left">
+                                    <div class="text-[9px] text-blue-300 font-black uppercase tracking-widest">Real-Time</div>
+                                    <div class="text-sm font-bold uppercase">Live Result</div>
                                 </div>
                             </a>
                         <?php else: ?>
-                             <div class="flex items-center gap-3 px-6 py-4 rounded-xl border border-slate-100 bg-white opacity-60">
-                                <div class="bg-slate-100 text-slate-400 p-2 rounded-lg">⏳</div>
+                            <div class="flex items-center justify-center gap-2 px-6 py-3 rounded-xl border-2 border-slate-100 bg-slate-50 text-slate-400 cursor-not-allowed min-w-[160px] md:min-w-[200px]" title="Live Result belum dipublikasikan panitia">
+                                <span class="text-xl opacity-50">🔒</span>
                                 <div class="text-left">
-                                    <div class="text-[9px] text-slate-400 font-black uppercase tracking-widest">Pending</div>
-                                    <div class="text-xs font-bold text-slate-400 uppercase">Hasil Lomba</div>
+                                    <div class="text-[9px] text-slate-400 font-black uppercase tracking-widest">Tertutup</div>
+                                    <div class="text-sm font-bold uppercase">Live Result</div>
                                 </div>
                             </div>
                         <?php endif; ?>
@@ -208,10 +242,10 @@ $events = $stmt->fetchAll();
                 <?php endforeach; ?>
             </div>
         <?php else: ?>
-            <div class="text-center py-20 border-2 border-dashed border-slate-200 rounded-3xl">
-                <div class="text-6xl mb-4">📂</div>
-                <h3 class="text-xl font-black text-slate-800 uppercase">Data Tidak Ditemukan</h3>
-                <p class="text-slate-400 text-sm font-bold uppercase mt-2">Belum ada dokumen yang diunggah.</p>
+            <div class="text-center py-24 border-2 border-dashed border-slate-200 rounded-3xl bg-white shadow-sm">
+                <div class="text-6xl mb-4 opacity-50">📭</div>
+                <h3 class="text-xl font-black text-slate-800 uppercase italic">Belum Ada Data Hasil</h3>
+                <p class="text-slate-400 text-sm font-bold uppercase mt-2 tracking-widest">Hasil kompetisi akan muncul di sini.</p>
             </div>
         <?php endif; ?>
 
@@ -220,7 +254,7 @@ $events = $stmt->fetchAll();
     <footer class="bg-[#0F172A] text-white pt-32 pb-16 border-t-4 border-blue-600 text-center mt-auto">
         <div class="max-w-screen-xl mx-auto px-10">
             <img src="img/logo.png" class="h-32 mx-auto mb-16 grayscale opacity-50">
-            <p class="text-slate-600 text-[11px] font-black tracking-[0.6em] uppercase">&copy; 2025 SWIMMEET MANAGER. All Rights Reserved.</p>
+            <p class="text-slate-600 text-[11px] font-black tracking-[0.6em] uppercase">&copy; 2026 SWIMMEET MANAGER. All Rights Reserved.</p>
         </div>
     </footer>
 
@@ -234,8 +268,7 @@ $events = $stmt->fetchAll();
             const interval = setInterval(() => {
                 progress += Math.floor(Math.random() * 20) + 10;
                 if (progress >= 100) { 
-                    progress = 100; 
-                    clearInterval(interval); 
+                    progress = 100; clearInterval(interval); 
                     setTimeout(() => { preloader.classList.add('loader-finish'); }, 400); 
                 }
                 if(liquid) liquid.style.top = (100 - progress) + '%'; 
@@ -250,8 +283,7 @@ $events = $stmt->fetchAll();
             if(window.scrollY > 20) { 
                 navbar.classList.add('scrolled'); 
                 if(logo) logo.classList.replace('h-24', 'h-16'); 
-            } 
-            else { 
+            } else { 
                 navbar.classList.remove('scrolled'); 
                 if(logo) logo.classList.replace('h-16', 'h-24'); 
             }

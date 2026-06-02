@@ -9,6 +9,24 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
 }
 $uid = $_SESSION['user_id'];
 
+// --- 🚀 AUTO-UPDATE DATABASE (HANYA UNTUK DEVELOPMENT) ---
+try {
+    $stmtCekPoster = $pdo->query("SHOW COLUMNS FROM events LIKE 'poster_image'");
+    if ($stmtCekPoster->rowCount() == 0) {
+        $pdo->exec("ALTER TABLE events ADD COLUMN poster_image VARCHAR(255) NULL AFTER event_location");
+    }
+    
+    $stmtCekPublish = $pdo->query("SHOW COLUMNS FROM event_numbers LIKE 'is_published'");
+    if ($stmtCekPublish->rowCount() == 0) {
+        $pdo->exec("ALTER TABLE event_numbers ADD COLUMN is_published TINYINT(1) DEFAULT 0 AFTER event_id");
+    }
+
+    $pdo->exec("ALTER TABLE documents MODIFY COLUMN kategori ENUM('buku_acara','buku_hasil','lainnya','JUKNIS','FORMULIR')");
+} catch (PDOException $e) {
+    error_log("Gagal auto-update DB: " . $e->getMessage()); 
+}
+
+
 // --- 1. LOGIKA MENCARI EVENT ---
 $eventId = $_GET['event_id'] ?? 0;
 
@@ -19,6 +37,12 @@ if ($eventId == 0) {
     if ($lastEvent) $eventId = $lastEvent['id'];
 }
 
+// 🍏 JURUS AMAN MACOS: Deteksi folder root fisik
+$baseDir = dirname(dirname(dirname(__DIR__))); 
+$targetDir = $baseDir . "/uploads/logos/";
+$posterDir = $baseDir . "/uploads/posters/";
+$docDir    = $baseDir . "/uploads/documents/";
+
 // --- 2. FITUR HAPUS SPONSOR ---
 if (isset($_GET['del_sponsor']) && $eventId > 0) {
     $sponsorId = $_GET['del_sponsor'];
@@ -27,7 +51,11 @@ if (isset($_GET['del_sponsor']) && $eventId > 0) {
     $img = $stmt->fetch();
     
     if ($img) {
-        $fullPath = __DIR__ . "/../../../public/" . $img['image_path'];
+        // Bersihkan path untuk menghapus file fisik
+        $cleanPath = ltrim(preg_replace('/^(\.\.\/)+/', '', $img['image_path']), '/');
+        if (strpos($cleanPath, 'swim-meet/') === 0) $cleanPath = substr($cleanPath, 10);
+        $fullPath = $baseDir . "/" . $cleanPath;
+        
         if (file_exists($fullPath)) unlink($fullPath); 
         $pdo->prepare("DELETE FROM event_sponsors WHERE id = ?")->execute([$sponsorId]);
         $_SESSION['swal_type'] = "success";
@@ -41,8 +69,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     try {
         $pdo->beginTransaction();
         
-        $targetDir = __DIR__ . "/../../../public/uploads/logos/";
+        // Buat folder secara paksa jika belum terbentuk
         if (!is_dir($targetDir)) mkdir($targetDir, 0777, true);
+        if (!is_dir($posterDir)) mkdir($posterDir, 0777, true);
+        if (!is_dir($docDir)) mkdir($docDir, 0777, true);
 
         // MAPPING INPUT
         $eventName   = $_POST['nama_event'] ?? '';
@@ -78,19 +108,19 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $stmt->execute([$eventName, $eventLoc, $dateStart, $dateEnd, $laneCount, $poolType, $ageCalc, $partType, $status, $bankName, $bankRek, $bankAtas, $uid, $eventId]);
         }
 
-        // --- HANDLE LOGO ---
+        // --- HANDLE UPLOAD LOGO & BRANDING ---
         if (!empty($_FILES['logo_left']['name'])) {
             $ext = pathinfo($_FILES['logo_left']['name'], PATHINFO_EXTENSION);
             $fn = "LOGO_L_" . $eventId . "_" . time() . "." . $ext;
             if(move_uploaded_file($_FILES['logo_left']['tmp_name'], $targetDir . $fn)) {
-                $pdo->prepare("UPDATE events SET logo_left = ? WHERE id = ?")->execute(["uploads/logos/" . $fn, $eventId]);
+                $pdo->prepare("UPDATE events SET logo_left = ? WHERE id = ?")->execute(["/swim-meet/uploads/logos/" . $fn, $eventId]);
             }
         }
         if (!empty($_FILES['logo_right']['name'])) {
             $ext = pathinfo($_FILES['logo_right']['name'], PATHINFO_EXTENSION);
             $fn = "LOGO_R_" . $eventId . "_" . time() . "." . $ext;
             if(move_uploaded_file($_FILES['logo_right']['tmp_name'], $targetDir . $fn)) {
-                $pdo->prepare("UPDATE events SET logo_right = ? WHERE id = ?")->execute(["uploads/logos/" . $fn, $eventId]);
+                $pdo->prepare("UPDATE events SET logo_right = ? WHERE id = ?")->execute(["/swim-meet/uploads/logos/" . $fn, $eventId]);
             }
         }
 
@@ -103,11 +133,49 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     $ext = pathinfo($_FILES['sponsor_files']['name'][$i], PATHINFO_EXTENSION);
                     $newFileName = "SPONSOR_" . $eventId . "_" . time() . "_$i." . $ext;
                     if(move_uploaded_file($_FILES['sponsor_files']['tmp_name'][$i], $targetDir . $newFileName)) {
-                        $stmtSponsor->execute([$eventId, "uploads/logos/" . $newFileName]);
+                        $stmtSponsor->execute([$eventId, "/swim-meet/uploads/logos/" . $newFileName]);
                     }
                 }
             }
         }
+
+        // --- 🚀 HANDLE POSTER (Fisik + URL Akurat) ---
+        if (!empty($_FILES['poster_file']['name'])) {
+            $ext = pathinfo($_FILES['poster_file']['name'], PATHINFO_EXTENSION);
+            $fn = "POSTER_" . $eventId . "_" . time() . "." . $ext;
+            if(move_uploaded_file($_FILES['poster_file']['tmp_name'], $posterDir . $fn)) {
+                $pdo->prepare("UPDATE events SET poster_image = ? WHERE id = ?")->execute(["/swim-meet/uploads/posters/" . $fn, $eventId]);
+            }
+        }
+
+        // Fungsi Bantuan untuk Upload Juknis & Form ke tabel `documents`
+        function handleDocUpload($fileInput, $kategori, $judulPrefix, $eventId, $uid, $eventName, $pdo, $docDir) {
+            if (!empty($_FILES[$fileInput]['name'])) {
+                $ext = pathinfo($_FILES[$fileInput]['name'], PATHINFO_EXTENSION);
+                $fn = $kategori . "_" . $eventId . "_" . time() . "." . $ext;
+                
+                if(move_uploaded_file($_FILES[$fileInput]['tmp_name'], $docDir . $fn)) {
+                    $filePath = "/swim-meet/uploads/documents/" . $fn;
+                    $judulFile = $judulPrefix . " " . $eventName;
+                    
+                    $stmtCek = $pdo->prepare("SELECT id FROM documents WHERE event_id = ? AND kategori = ?");
+                    $stmtCek->execute([$eventId, $kategori]);
+                    $exist = $stmtCek->fetch();
+
+                    if ($exist) {
+                        $pdo->prepare("UPDATE documents SET file_path = ?, judul_file = ?, created_at = NOW() WHERE id = ?")->execute([$filePath, $judulFile, $exist['id']]);
+                    } else {
+                        $pdo->prepare("INSERT INTO documents (user_id, event_id, judul_file, file_path, kategori) VALUES (?, ?, ?, ?, ?)")->execute([$uid, $eventId, $judulFile, $filePath, $kategori]);
+                    }
+                }
+            }
+        }
+
+        // 2. Upload Juknis (PDF)
+        handleDocUpload('juknis_file', 'JUKNIS', 'Buku Panduan', $eventId, $uid, $eventName, $pdo, $docDir);
+        // 3. Upload Form A3 (Excel)
+        handleDocUpload('form_file', 'FORMULIR', 'Formulir Pendaftaran', $eventId, $uid, $eventName, $pdo, $docDir);
+
 
         $pdo->commit();
         $_SESSION['swal_type'] = "success";
@@ -118,12 +186,16 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         if ($pdo->inTransaction()) $pdo->rollBack();
         $_SESSION['swal_type'] = "error";
         $_SESSION['swal_msg']  = "Gagal: " . $e->getMessage();
+        header("Location: event_profile.php?event_id=" . $eventId); exit;
     }
 }
 
 // --- 4. AMBIL DATA ---
 $row = []; 
 $sponsors = [];
+$docJuknis = null;
+$docForm = null;
+
 if ($eventId > 0) {
     $stmt = $pdo->prepare("SELECT * FROM events WHERE id = ? AND user_id = ?");
     $stmt->execute([$eventId, $uid]);
@@ -132,9 +204,26 @@ if ($eventId > 0) {
     $stmtS = $pdo->prepare("SELECT * FROM event_sponsors WHERE event_id = ? ORDER BY id DESC");
     $stmtS->execute([$eventId]);
     $sponsors = $stmtS->fetchAll(PDO::FETCH_ASSOC);
+
+    $stmtDoc = $pdo->prepare("SELECT * FROM documents WHERE event_id = ?");
+    $stmtDoc->execute([$eventId]);
+    $docs = $stmtDoc->fetchAll(PDO::FETCH_ASSOC);
+    foreach($docs as $d) {
+        if($d['kategori'] === 'JUKNIS') $docJuknis = $d;
+        if($d['kategori'] === 'FORMULIR') $docForm = $d;
+    }
 }
 
 function val($data, $key, $default = '') { return isset($data[$key]) ? htmlspecialchars($data[$key]) : $default; }
+
+// --- FUNGSI BANTUAN URL PREVIEW ---
+function getUrlPreview($dbPath) {
+    if (empty($dbPath)) return '';
+    if (strpos($dbPath, 'http') === 0) return $dbPath;
+    $cleanPath = ltrim(preg_replace('/^(\.\.\/)+/', '', $dbPath), '/');
+    if (strpos($cleanPath, 'swim-meet/') === 0) $cleanPath = substr($cleanPath, 10);
+    return '/swim-meet/' . $cleanPath;
+}
 
 include __DIR__ . '/../../../views/layout/topbar.php'; 
 include __DIR__ . '/../../../views/layout/sidebar.php'; 
@@ -215,6 +304,56 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                 </div>
             </div>
 
+            <div class="bg-amber-50 rounded-[2rem] shadow-sm border border-amber-200 p-8">
+                <h3 class="font-black text-amber-900 uppercase italic text-xs tracking-widest mb-6 border-b border-amber-200 pb-2">📂 Kelengkapan Dokumen Publikasi</h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    
+                    <div class="col-span-1 md:col-span-2 border border-dashed border-amber-300 bg-white p-5 rounded-2xl">
+                        <label class="label-text text-amber-700">1. Poster Event (JPG/PNG)</label>
+                        <p class="text-[9px] text-amber-600 mb-3 font-medium">Poster yang akan tampil di halaman utama / explore lomba.</p>
+                        <div class="flex items-center gap-4">
+                            <?php if(!empty($row['poster_image'])): ?>
+                                <a href="<?= getUrlPreview($row['poster_image']) ?>" target="_blank" class="shrink-0 h-16 w-16 bg-slate-100 rounded-xl border border-slate-200 overflow-hidden flex items-center justify-center">
+                                    <img src="<?= getUrlPreview($row['poster_image']) ?>" class="max-h-full max-w-full object-cover">
+                                </a>
+                            <?php endif; ?>
+                            <input type="file" name="poster_file" accept="image/*" class="block w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-amber-100 file:text-amber-800 hover:file:bg-amber-200 transition">
+                        </div>
+                    </div>
+
+                    <div class="border border-dashed border-amber-300 bg-white p-5 rounded-2xl">
+                        <label class="label-text text-amber-700">2. Buku Panduan / Juknis (PDF)</label>
+                        <p class="text-[9px] text-amber-600 mb-3 font-medium">Buku panduan teknis untuk dibaca oleh klub pendaftar.</p>
+                        
+                        <?php if($docJuknis): ?>
+                            <div class="mb-3 flex items-center justify-between bg-green-50 px-3 py-2 rounded-lg border border-green-200">
+                                <span class="text-[10px] font-bold text-green-700">✅ Terunggah</span>
+                                <a href="<?= getUrlPreview($docJuknis['file_path']) ?>" target="_blank" class="text-[10px] font-black text-blue-600 hover:underline">Lihat File</a>
+                            </div>
+                        <?php endif; ?>
+
+                        <input type="file" name="juknis_file" accept=".pdf" class="block w-full text-xs text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-[10px] file:font-bold file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200 transition cursor-pointer">
+                        <span class="text-[8px] text-slate-400 mt-1 block italic">*Upload ulang untuk menimpa Juknis lama.</span>
+                    </div>
+
+                    <div class="border border-dashed border-amber-300 bg-white p-5 rounded-2xl">
+                        <label class="label-text text-amber-700">3. Form Pendaftaran (Opsional)</label>
+                        <p class="text-[9px] text-amber-600 mb-3 font-medium">Formulir pendaftaran manual format Excel / Spreadsheet.</p>
+                        
+                        <?php if($docForm): ?>
+                            <div class="mb-3 flex items-center justify-between bg-green-50 px-3 py-2 rounded-lg border border-green-200">
+                                <span class="text-[10px] font-bold text-green-700">✅ Terunggah</span>
+                                <a href="<?= getUrlPreview($docForm['file_path']) ?>" target="_blank" class="text-[10px] font-black text-blue-600 hover:underline">Lihat File</a>
+                            </div>
+                        <?php endif; ?>
+
+                        <input type="file" name="form_file" accept=".xls,.xlsx" class="block w-full text-xs text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-[10px] file:font-bold file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200 transition cursor-pointer">
+                        <span class="text-[8px] text-slate-400 mt-1 block italic">*Upload ulang untuk menimpa form lama.</span>
+                    </div>
+
+                </div>
+            </div>
+
             <div class="bg-white rounded-[2rem] shadow-sm border border-slate-200 p-8">
                 <h3 class="font-black text-slate-800 uppercase italic text-xs tracking-widest mb-6 border-b pb-2">Rekening Pembayaran</h3>
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -274,7 +413,7 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                     <p class="text-[10px] font-bold text-slate-400 uppercase mb-2">Logo Kiri (Utama)</p>
                     <div class="flex items-center gap-3">
                         <?php if(!empty($row['logo_left'])): ?>
-                            <img src="../../../public/<?= $row['logo_left'] ?>" class="h-12 w-12 object-contain bg-slate-50 rounded-lg border">
+                            <img src="<?= getUrlPreview($row['logo_left']) ?>" class="h-12 w-12 object-contain bg-slate-50 rounded-lg border">
                         <?php endif; ?>
                         <input type="file" name="logo_left" class="block w-full text-[10px] text-slate-500 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-[10px] file:font-bold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
                     </div>
@@ -284,7 +423,7 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                     <p class="text-[10px] font-bold text-slate-400 uppercase mb-2">Logo Kanan</p>
                     <div class="flex items-center gap-3">
                         <?php if(!empty($row['logo_right'])): ?>
-                            <img src="../../../public/<?= $row['logo_right'] ?>" class="h-12 w-12 object-contain bg-slate-50 rounded-lg border">
+                            <img src="<?= getUrlPreview($row['logo_right']) ?>" class="h-12 w-12 object-contain bg-slate-50 rounded-lg border">
                         <?php endif; ?>
                         <input type="file" name="logo_right" class="block w-full text-[10px] text-slate-500 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-[10px] file:font-bold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
                     </div>
@@ -300,7 +439,7 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                         <div class="grid grid-cols-3 gap-2">
                             <?php foreach($sponsors as $sp): ?>
                                 <div class="relative group bg-slate-50 border rounded-md h-12 flex items-center justify-center overflow-hidden">
-                                    <img src="../../../public/<?= $sp['image_path'] ?>" class="max-h-full max-w-full p-1 object-contain">
+                                    <img src="<?= getUrlPreview($sp['image_path']) ?>" class="max-h-full max-w-full p-1 object-contain">
                                     <a href="?event_id=<?= $eventId ?>&del_sponsor=<?= $sp['id'] ?>" onclick="return confirm('Hapus?')" class="absolute inset-0 bg-red-500/80 text-white flex items-center justify-center text-xs font-bold opacity-0 group-hover:opacity-100 transition cursor-pointer">×</a>
                                 </div>
                             <?php endforeach; ?>

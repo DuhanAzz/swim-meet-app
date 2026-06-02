@@ -3,32 +3,41 @@
 session_start();
 require_once __DIR__ . '/../../config/database.php';
 
-// Cek Login User
 if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'user') {
     header("Location: ../../../public/login.php"); exit;
 }
 
-// 1. AMBIL DAFTAR KOMPETISI (ACTIVE EVENTS)
-// PERBAIKAN: Menghapus fallback "Admin = Event" yang berbahaya
-// dan menyesuaikan filter status menggunakan 'Active' (sesuai standar dashboard admin)
+// 1. Ambil Event yang masih Buka/Akan Datang
 try {
-    $sql = "SELECT 
-                e.id as event_id,
-                e.event_name as nama_event,
-                e.logo_left as banner_image,
-                e.event_location as lokasi,
-                e.event_date_start as tanggal_pelaksanaan,
-                e.event_status as status,
-                u.nama_lengkap as penyelenggara
+    $sql = "SELECT e.id as event_id, e.event_name as nama_event, e.poster_image, e.logo_left as banner_image, 
+                   e.event_location as lokasi, e.event_date_start as tanggal_pelaksanaan, e.event_status as status, 
+                   u.nama_lengkap as penyelenggara
             FROM events e
             LEFT JOIN users u ON e.user_id = u.id
-            WHERE e.event_status IN ('Active', 'Open', 'Upcoming')
+            WHERE e.event_status IN ('Active', 'Open', 'Upcoming', 'Registration')
             ORDER BY e.event_date_start ASC";
-            
     $stmt = $pdo->prepare($sql);
     $stmt->execute();
     $competitions = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
+    // 2. Ambil Dokumen Khusus (Juknis & Formulir)
+    $documentsByEvent = [];
+    if (!empty($competitions)) {
+        $eventIds = array_column($competitions, 'event_id');
+        $placeholders = implode(',', array_fill(0, count($eventIds), '?'));
+        
+        $docSql = "SELECT event_id, judul_file, file_path, kategori FROM documents 
+                   WHERE event_id IN ($placeholders) 
+                   AND kategori IN ('JUKNIS', 'FORMULIR') 
+                   ORDER BY kategori DESC";
+        $docStmt = $pdo->prepare($docSql);
+        $docStmt->execute($eventIds);
+        $docs = $docStmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        foreach ($docs as $d) {
+            $documentsByEvent[$d['event_id']][] = $d;
+        }
+    }
 } catch (PDOException $e) {
     die("Error mengambil data event: " . $e->getMessage());
 }
@@ -37,72 +46,92 @@ include __DIR__ . '/../../../views/layout/topbar.php';
 include __DIR__ . '/../../../views/layout/sidebar.php';
 ?>
 
-<div class="p-6 sm:ml-64 pt-24 bg-slate-50 min-h-screen">
-    <div class="mb-8">
-        <h1 class="text-4xl font-black italic uppercase tracking-tighter text-slate-900">Jadwal Lomba</h1>
-        <p class="text-sm font-bold text-slate-500 uppercase tracking-widest mt-1">Temukan dan ikuti kejuaraan renang</p>
-    </div>
-
-    <?php if(empty($competitions)): ?>
-        <div class="bg-white border-2 border-dashed border-slate-200 rounded-3xl p-12 text-center max-w-2xl mx-auto mt-12">
-            <div class="text-6xl mb-4 grayscale opacity-50">🏊‍♂️</div>
-            <h3 class="text-xl font-black text-slate-800 uppercase italic mb-2">Belum Ada Event Lomba</h3>
-            <p class="text-sm text-slate-500 font-bold">Saat ini belum ada kejuaraan renang yang membuka pendaftaran.</p>
+<div class="p-6 sm:ml-64 pt-24 min-h-screen bg-slate-50 font-sans">
+    <div class="max-w-5xl mx-auto">
+        <div class="bg-blue-600 rounded-[2rem] p-8 md:p-10 mb-8 shadow-xl shadow-blue-200 text-white relative overflow-hidden flex flex-col justify-center">
+            <div class="absolute -right-10 -bottom-10 text-9xl opacity-20">🏊‍♂️</div>
+            <div class="relative z-10">
+                <h1 class="text-3xl md:text-4xl font-black uppercase tracking-tighter italic mb-2">Jelajah Kompetisi</h1>
+                <p class="text-blue-100 font-bold text-sm tracking-wide">Pelajari JUKNIS & Daftarkan atlet Anda pada event terbaik.</p>
+            </div>
         </div>
-    <?php else: ?>
-        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-            <?php foreach($competitions as $comp): 
-                $imgSrc = !empty($comp['banner_image']) ? '../../../public/' . $comp['banner_image'] : 'https://images.unsplash.com/photo-1530549387789-4c1017266635?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80';
-                
-                $tgl = '-';
-                if (!empty($comp['tanggal_pelaksanaan']) && $comp['tanggal_pelaksanaan'] != '0000-00-00') {
-                    $tgl = date('d M Y', strtotime($comp['tanggal_pelaksanaan']));
-                }
-            ?>
-            <a href="detail.php?event_id=<?= $comp['event_id'] ?>" class="group bg-white rounded-3xl overflow-hidden shadow-sm hover:shadow-2xl transition-all duration-300 border border-slate-200 flex flex-col hover:-translate-y-1 relative">
-                
-                <div class="absolute top-4 right-4 z-10 bg-emerald-500 text-white px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest shadow-lg">
-                    <?= htmlspecialchars($comp['status']) ?>
-                </div>
 
-                <div class="relative h-48 bg-slate-800 overflow-hidden shrink-0 p-4 flex items-center justify-center">
-                    <div class="absolute inset-0 bg-gradient-to-t from-slate-900 via-transparent to-transparent opacity-60 z-10"></div>
-                    <img src="<?= $imgSrc ?>" alt="Banner" class="absolute inset-0 w-full h-full object-cover opacity-80 group-hover:scale-105 transition duration-500">
+        <?php if(empty($competitions)): ?>
+            <div class="bg-white p-12 text-center rounded-3xl border-2 border-dashed border-slate-200 shadow-sm">
+                <span class="text-6xl block mb-4 opacity-30">📭</span>
+                <p class="text-slate-500 font-black uppercase tracking-widest">Belum ada kompetisi yang dibuka.</p>
+            </div>
+        <?php else: ?>
+            <div class="flex flex-col space-y-6">
+                <?php foreach($competitions as $comp): 
+                    $tgl = !empty($comp['tanggal_pelaksanaan']) ? date('d F Y', strtotime($comp['tanggal_pelaksanaan'])) : 'TBA';
+                    $statusLomba = strtoupper($comp['status'] ?? 'UPCOMING');
                     
-                    <div class="relative z-20 text-center mt-auto">
-                        <h3 class="text-xl font-black text-white uppercase italic tracking-wide text-shadow-sm line-clamp-2">
-                            <?= htmlspecialchars($comp['nama_event']) ?>
-                        </h3>
-                        <p class="text-[10px] text-slate-300 font-bold uppercase tracking-widest mt-1">
-                            By <?= htmlspecialchars($comp['penyelenggara'] ?? 'Penyelenggara') ?>
-                        </p>
+                   // 🚀 LOGIKA GAMBAR ULTIMATE (Auto-Extract)
+                    $imgSrc = 'https://images.unsplash.com/photo-1530549387789-4c100476466c?w=800&auto=format&fit=crop';
+                    $dbPath = !empty($comp['poster_image']) ? $comp['poster_image'] : (!empty($comp['banner_image']) ? $comp['banner_image'] : '');
+                    
+                    if (!empty($dbPath)) {
+                        if (filter_var($dbPath, FILTER_VALIDATE_URL)) {
+                            $imgSrc = $dbPath; // Jika sudah berupa link http/https
+                        } else {
+                            // Cari kata 'uploads', 'assets', atau 'img' dan ambil sisanya
+                            if (preg_match('/(uploads\/.*|assets\/.*|img\/.*)/i', $dbPath, $matches)) {
+                                $imgSrc = '/swim-meet/' . $matches[1];
+                            } else {
+                                // Jika tidak ada kata di atas, bersihkan ../ dan garing di depan
+                                $cleanPath = preg_replace('/^(\.\.\/)+/', '', $dbPath);
+                                $cleanPath = ltrim($cleanPath, '/');
+                                $imgSrc = '/swim-meet/' . $cleanPath;
+                            }
+                        }
+                    }
+                ?>
+                <div class="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm hover:shadow-xl transition-all flex flex-col md:flex-row group">
+                    
+                    <div class="w-full md:w-56 bg-slate-900 relative shrink-0 aspect-[4/3] md:aspect-auto md:min-h-[220px]">
+                        <div class="absolute top-3 left-3 z-20 bg-emerald-500 text-white px-2 py-1 rounded text-[8px] font-black uppercase tracking-widest shadow-md">
+                            <?= $statusLomba ?>
+                        </div>
+                        <img src="<?= htmlspecialchars($imgSrc) ?>" class="w-full h-full object-cover opacity-90 group-hover:opacity-100 group-hover:scale-105 transition-all duration-700">
                     </div>
-                </div>
 
-                <div class="p-6 flex-1 flex flex-col justify-between gap-4">
-                    <div class="space-y-3">
-                        <div class="flex items-start gap-3">
-                            <div class="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-sm">📅</div>
-                            <div>
-                                <p class="text-[10px] text-slate-400 font-bold uppercase">Tanggal</p>
-                                <p class="text-sm font-bold text-slate-800"><?= $tgl ?></p>
+                    <div class="p-5 md:p-6 flex-1 flex flex-col justify-between">
+                        <div>
+                            <h2 class="text-xl font-black uppercase text-slate-800 italic leading-tight mb-2"><?= htmlspecialchars($comp['nama_event']) ?></h2>
+                            <div class="flex flex-wrap gap-4 text-xs font-bold text-slate-500 uppercase tracking-wide mb-4">
+                                <div class="flex items-center gap-1.5"><span class="text-sm">📅</span> <?= $tgl ?></div>
+                                <div class="flex items-center gap-1.5 line-clamp-1"><span class="text-sm">📍</span> <?= htmlspecialchars($comp['lokasi'] ?? 'TBA') ?></div>
+                            </div>
+                            
+                            <div class="border-t border-slate-100 pt-3">
+                                <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">📥 File Pendaftaran:</p>
+                                <div class="flex flex-wrap gap-2">
+                                    <?php if(!empty($documentsByEvent[$comp['event_id']])): ?>
+                                        <?php foreach($documentsByEvent[$comp['event_id']] as $doc): 
+                                            $cat = strtoupper($doc['kategori']);
+                                            $btnStyle = ($cat == 'JUKNIS') ? 'bg-blue-50 text-blue-700 hover:bg-blue-600 hover:text-white border-blue-200' : 'bg-green-50 text-green-700 hover:bg-green-600 hover:text-white border-green-200';
+                                        ?>
+                                            <a href="<?= htmlspecialchars($doc['file_path']) ?>" target="_blank" class="px-2.5 py-1 rounded border text-[9px] font-black tracking-widest uppercase transition-colors <?= $btnStyle ?>">
+                                                📄 <?= htmlspecialchars($doc['judul_file'] ?? $cat) ?>
+                                            </a>
+                                        <?php endforeach; ?>
+                                    <?php else: ?>
+                                        <span class="text-[9px] font-black text-slate-300 uppercase tracking-widest">Belum ada Juknis</span>
+                                    <?php endif; ?>
+                                </div>
                             </div>
                         </div>
-                        <div class="flex items-start gap-3">
-                            <div class="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-sm">📍</div>
-                            <div>
-                                <p class="text-[10px] text-slate-400 font-bold uppercase">Lokasi</p>
-                                <p class="text-sm font-bold text-slate-800 line-clamp-1"><?= htmlspecialchars($comp['lokasi'] ?? 'TBA') ?></p>
-                            </div>
+
+                        <div class="mt-4 flex justify-end">
+                            <a href="detail.php?event_id=<?= $comp['event_id'] ?>" class="px-6 py-2.5 rounded-xl bg-slate-900 text-white font-black uppercase text-[10px] tracking-widest hover:bg-blue-600 transition shadow-lg whitespace-nowrap">
+                                Info Lomba & Daftar &rarr;
+                            </a>
                         </div>
                     </div>
-
-                    <button class="w-full py-3 rounded-xl bg-slate-900 text-white font-black uppercase text-xs tracking-widest hover:bg-blue-600 transition shadow-lg mt-2">
-                        Lihat & Daftar →
-                    </button>
                 </div>
-            </a>
-            <?php endforeach; ?>
-        </div>
-    <?php endif; ?>
+                <?php endforeach; ?>
+            </div>
+        <?php endif; ?>
+    </div>
 </div>

@@ -7,14 +7,30 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
     header("Location: ../../../public/login.php"); exit;
 }
 
-// 1. AMBIL NOMOR LOMBA (Gunakan nama kolom 'jenis_kelamin')
+$admin_id = $_SESSION['user_id'];
+
+// --- 1. AMBIL ID EVENT TARGET (YANG SEDANG DIBUKA) ---
+$targetEventId = $_GET['event_id'] ?? 0;
+if ($targetEventId == 0) {
+    // Jika tidak ada di URL, ambil event terakhir milik admin ini
+    $stmtLastEvt = $pdo->prepare("SELECT id FROM events WHERE user_id = ? ORDER BY id DESC LIMIT 1");
+    $stmtLastEvt->execute([$admin_id]);
+    $targetEventId = $stmtLastEvt->fetchColumn() ?: 0;
+}
+
+if ($targetEventId == 0) {
+    die("Error: Tidak ada event yang aktif atau ditemukan.");
+}
+
+// --- 2. AMBIL NOMOR LOMBA HANYA UNTUK EVENT INI ---
 try {
     $sql = "SELECT id, distance, stroke, age_group, jenis_kelamin 
             FROM event_numbers 
-            ORDER BY id ASC"; 
+            WHERE event_id = ?
+            ORDER BY CAST(event_number AS UNSIGNED) ASC"; 
             
     $stmt = $pdo->prepare($sql);
-    $stmt->execute();
+    $stmt->execute([$targetEventId]);
     $events = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 } catch (PDOException $e) {
@@ -35,23 +51,31 @@ try {
     <div class="bg-white p-10 rounded-[2rem] shadow-2xl max-w-md w-full text-center border border-slate-100">
         
         <div class="mb-6 relative">
-            <div class="w-20 h-20 border-8 border-indigo-100 border-t-indigo-600 rounded-full animate-spin mx-auto"></div>
-            <div class="absolute inset-0 flex items-center justify-center font-black text-indigo-600 text-xl" id="progressText">0%</div>
-        </div>
-
-        <h1 class="text-2xl font-black uppercase italic text-slate-800 mb-2">Auto Seeding</h1>
-        <p class="text-slate-500 text-sm font-bold mb-6">Sedang menyusun lintasan & menghitung waktu...</p>
-
-        <div class="bg-slate-900 text-left p-4 rounded-xl h-48 overflow-y-auto relative mb-6">
-            <div id="logContainer" class="text-[10px] font-mono text-emerald-400 space-y-1">
-                <p>> System Ready.</p>
+            <div class="w-20 h-20 border-8 border-indigo-50 border-t-indigo-600 rounded-full animate-spin mx-auto"></div>
+            <div class="absolute inset-0 flex items-center justify-center">
+                <span class="text-indigo-600 font-black text-sm" id="progressText">0%</span>
             </div>
         </div>
 
-        <iframe id="processorFrame" style="display:none;"></iframe>
+        <h2 class="text-2xl font-black text-slate-800 uppercase italic mb-2">Memproses Seeding</h2>
+        <p class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-8">Mohon jangan tutup halaman ini</p>
+
+        <div class="bg-slate-900 rounded-2xl p-4 h-48 overflow-y-auto text-left flex flex-col-reverse custom-scrollbar" id="logContainer">
+            <p class="text-[10px] font-mono text-emerald-400 opacity-50">> Inisialisasi engine seeding...</p>
+        </div>
+
     </div>
 
-<script>
+    <iframe id="processorFrame" class="hidden"></iframe>
+
+    <style>
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background-color: #334155; border-radius: 10px; }
+        #logContainer p { margin-bottom: 4px; font-size: 10px; font-family: monospace; color: #4ade80; }
+    </style>
+
+    <script>
     const events = <?= json_encode($events) ?>;
     let currentIndex = 0;
     const total = events.length;
@@ -69,7 +93,8 @@ try {
         if (currentIndex >= total) {
             addLog("SELESAI! Semua nomor telah di-seeding.");
             setTimeout(() => {
-                window.location.href = 'index.php'; 
+                // Redirect kembali ke event yang tepat
+                window.location.href = 'index.php?event_id=<?= $targetEventId ?>'; 
             }, 1500);
             return;
         }
@@ -78,7 +103,6 @@ try {
         const percent = Math.round(((currentIndex + 1) / total) * 100);
         progressText.innerText = percent + "%";
         
-        // PERBAIKAN: Gunakan ev.jenis_kelamin
         let eventName = ev.distance + "M " + ev.stroke + " " + ev.jenis_kelamin + " (" + ev.age_group + ")";
         addLog("Processing: " + eventName + "...");
 
@@ -94,11 +118,16 @@ try {
 
     window.onload = function() {
         if(total > 0) {
+            addLog("Ditemukan " + total + " nomor lomba untuk di-seeding.");
             processNext();
         } else {
-            addLog("Tidak ada data lomba.");
+            addLog("TIDAK ADA NOMOR LOMBA UNTUK EVENT INI!");
+            progressText.innerText = "100%";
+            setTimeout(() => {
+                window.location.href = 'index.php?event_id=<?= $targetEventId ?>'; 
+            }, 2000);
         }
     };
-</script>
+    </script>
 </body>
 </html>

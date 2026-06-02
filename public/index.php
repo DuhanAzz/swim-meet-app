@@ -63,8 +63,12 @@ try { $sliders = $pdo->query("SELECT * FROM hero_slides ORDER BY id DESC")->fetc
 catch (Exception $e) {}
 if (empty($sliders)) $sliders[] = ['image_path' => 'https://images.unsplash.com/photo-1530549387789-4c1017266635'];
 
-// PREVIEW JADWAL (4 Event Terdekat)
-$sql = "SELECT e.id, e.event_name, e.event_location, e.event_date_start, e.event_status FROM events e WHERE e.event_status != 'Draft' ORDER BY e.event_date_start ASC LIMIT 4";
+// 🚀 PERBAIKAN: PREVIEW JADWAL (4 Event TERBARU)
+$sql = "SELECT e.id, e.event_name, e.event_location, e.event_date_start, e.event_status, e.poster_image, e.logo_left, e.is_result_published 
+        FROM events e 
+        WHERE e.event_status != 'Draft' 
+        ORDER BY e.id DESC 
+        LIMIT 4";
 $upcoming_preview = $pdo->query($sql)->fetchAll();
 ?>
 <!DOCTYPE html>
@@ -89,7 +93,7 @@ $upcoming_preview = $pdo->query($sql)->fetchAll();
         .load-text { margin-top: 30px; color: white; font-weight: 900; letter-spacing: 0.4em; font-size: 12px; text-transform: uppercase; }
         .loader-finish { opacity: 0; visibility: hidden; transition: opacity 0.5s ease, visibility 0.5s; }
 
-        /* --- NAV & HEADER STYLE (BARU - SESUAI REFERENCE) --- */
+        /* --- NAV & HEADER STYLE --- */
         #navbar { transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1); height: 110px; display: flex; align-items: center; }
         #navbar.scrolled { background-color: #0F172A; height: 85px; border-bottom: 1px solid #1e293b; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }
         .nav-link { position: relative; color: white; transition: all 0.3s ease; font-size: 0.95rem; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; }
@@ -97,7 +101,7 @@ $upcoming_preview = $pdo->query($sql)->fetchAll();
         .nav-link:hover::after, .nav-link.active::after { width: 100%; }
         .nav-link:hover { color: #3b82f6; }
 
-        /* --- HERO SLIDER STYLE (LAMA - TETAP DIPERTAHANKAN) --- */
+        /* --- HERO SLIDER STYLE --- */
         .hero-slide { position: absolute; inset: 0; width: 100%; height: 100%; background-size: cover; background-position: center; opacity: 0; transition: opacity 1.5s ease-in-out; z-index: -1; }
         .hero-slide.active { opacity: 1; }
         .hero-overlay { background: linear-gradient(to bottom, rgba(15, 23, 42, 0.85), rgba(15, 23, 42, 0.4), rgba(15, 23, 42, 0.9)); }
@@ -118,16 +122,14 @@ $upcoming_preview = $pdo->query($sql)->fetchAll();
                 <div class="hidden lg:flex items-center space-x-10">
                     <a href="#home" class="nav-link active text-blue-400">Home</a>
                     <a href="events.php" class="nav-link">Jadwal Lomba</a>
-                    <a href="results.php" class="nav-link">Hasil & Dokumen</a> 
+                    <a href="results.php" class="nav-link">Hasil Lomba</a> 
                     <a href="#instruction" class="nav-link text-yellow-400">Panduan</a>
                 </div>
                 <div class="flex items-center border-l border-white/20 pl-10">
                     <?php if(isset($_SESSION['user_id'])): 
-                        // Logic Dashboard Link
-                        $dashLink = 'dashboard.php';
+                        $dashLink = '../src/user/dashboard.php';
                         if($_SESSION['role'] == 'master') $dashLink = '../src/master/dashboard.php';
                         if($_SESSION['role'] == 'admin') $dashLink = '../src/admin/dashboard.php';
-                        if($_SESSION['role'] == 'user') $dashLink = '../src/user/dashboard.php';
                     ?>
                         <a href="<?= $dashLink ?>" class="bg-blue-600 hover:bg-blue-700 text-white px-10 py-3 rounded-full font-black text-xs uppercase tracking-widest shadow-xl transition transform hover:scale-105">Dashboard</a>
                     <?php else: ?>
@@ -164,36 +166,88 @@ $upcoming_preview = $pdo->query($sql)->fetchAll();
                 <?php endif; ?>
 
                 <div class="flex gap-6 mt-10">
-                    <a href="register.php" class="bg-blue-600 px-12 py-5 rounded-2xl font-black uppercase shadow-2xl hover:bg-blue-700 transition tracking-widest">Mulai Daftar</a>
-                    <a href="#schedule" class="bg-white/10 backdrop-blur-md border border-white/20 px-12 py-5 rounded-2xl font-black uppercase hover:bg-white hover:text-slate-900 transition tracking-widest">Lihat Jadwal</a>
+                    <a href="register.php" class="bg-blue-600 px-12 py-5 rounded-2xl font-black uppercase shadow-2xl hover:bg-blue-700 transition tracking-widest">Mulai Daftar Klub</a>
+                    <a href="#schedule" class="bg-white/10 backdrop-blur-md border border-white/20 px-12 py-5 rounded-2xl font-black uppercase hover:bg-white hover:text-slate-900 transition tracking-widest">Lihat Kompetisi Terbaru</a>
                 </div>
             </div>
         </div>
     </section>
 
     <section id="schedule" class="py-32 px-6 max-w-screen-xl mx-auto section-scroll">
-        <div class="flex justify-between items-end mb-16">
-            <h2 class="text-5xl font-black uppercase italic text-slate-900 tracking-tighter">Competition Preview</h2>
-            <a href="events.php" class="text-blue-600 font-bold uppercase underline">Lihat Semua &rarr;</a>
+        <div class="flex flex-col md:flex-row md:justify-between md:items-end mb-16 gap-6">
+            <div>
+                <span class="text-blue-600 font-black tracking-[0.3em] uppercase text-sm mb-2 block">Upcoming Action</span>
+                <h2 class="text-5xl font-black uppercase italic text-slate-900 tracking-tighter">Competition Preview</h2>
+            </div>
+            <a href="events.php" class="inline-flex items-center gap-2 bg-slate-900 text-white px-6 py-3 rounded-full font-black uppercase text-xs tracking-widest hover:bg-blue-600 transition shadow-lg">
+                Jelajahi Semua Lomba &rarr;
+            </a>
         </div>
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-10">
+        
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
             <?php foreach($upcoming_preview as $e): 
                 $status = $e['event_status'] ?? 'Registration';
                 $badge = ($status == 'Running') ? "bg-red-600 animate-pulse" : (($status == 'Finished') ? "bg-slate-600" : "bg-emerald-500");
+                
+                // Prioritas gambar: poster -> logo -> default
+                $imgSrc = 'https://images.unsplash.com/photo-1530549387789-4c100476466c?w=800&auto=format&fit=crop';
+                if (!empty($e['poster_image'])) {
+                    $imgSrc = $e['poster_image'];
+                } elseif (!empty($e['logo_left'])) {
+                    $imgSrc = $e['logo_left'];
+                }
             ?>
-            <div class="bg-white rounded-[3rem] border border-slate-200 overflow-hidden hover:shadow-2xl transition group flex flex-col relative">
-                <div class="absolute top-6 right-8 z-10 <?= $badge ?> text-white px-4 py-1.5 rounded-full font-black text-[9px] uppercase tracking-widest"><?= strtoupper($status) ?></div>
-                <div class="p-10 flex-1">
-                    <h3 class="text-3xl font-black uppercase text-slate-800 mb-6 italic"><?= htmlspecialchars($e['event_name']) ?></h3>
-                    <div class="flex gap-8 text-slate-500 text-xs font-bold uppercase">
-                        <span>📅 <?= date('d M Y', strtotime($e['event_date_start'])) ?></span>
-                        <span>📍 <?= htmlspecialchars($e['event_location']) ?></span>
+            <div class="bg-white rounded-3xl border border-slate-200 overflow-hidden hover:shadow-2xl transition-all duration-300 group flex flex-col sm:flex-row relative">
+                
+                <div class="absolute top-4 left-4 z-20 <?= $badge ?> text-white px-3 py-1 rounded-full font-black text-[9px] uppercase tracking-widest shadow-lg">
+                    <?= strtoupper($status) ?>
+                </div>
+
+                <div class="w-full sm:w-2/5 aspect-[1/1.4] sm:aspect-auto sm:min-h-[350px] bg-slate-900 relative overflow-hidden shrink-0">
+                    <img src="<?= htmlspecialchars($imgSrc) ?>" class="w-full h-full object-cover opacity-90 group-hover:opacity-100 group-hover:scale-105 transition-all duration-700">
+                    <div class="absolute inset-0 bg-gradient-to-t from-slate-900/80 sm:bg-gradient-to-r sm:from-transparent sm:to-slate-900/10 to-transparent"></div>
+                </div>
+                
+                <div class="w-full sm:w-3/5 p-6 md:p-8 flex flex-col justify-between relative z-10">
+                    <div>
+                        <h3 class="text-2xl font-black uppercase text-slate-800 mb-5 italic leading-tight line-clamp-2">
+                            <?= htmlspecialchars($e['event_name']) ?>
+                        </h3>
+                        <div class="space-y-4 text-slate-500 text-xs font-bold uppercase tracking-wide">
+                            <div class="flex items-start gap-3">
+                                <span class="bg-slate-50 border border-slate-100 p-2.5 rounded-xl text-lg shadow-sm">📅</span> 
+                                <div class="mt-1">
+                                    <span class="block text-[9px] text-slate-400 mb-0.5">Tanggal Pelaksanaan</span>
+                                    <span class="text-slate-700 text-sm"><?= date('d F Y', strtotime($e['event_date_start'])) ?></span>
+                                </div>
+                            </div>
+                            <div class="flex items-start gap-3">
+                                <span class="bg-slate-50 border border-slate-100 p-2.5 rounded-xl text-lg shadow-sm">📍</span> 
+                                <div class="mt-1">
+                                    <span class="block text-[9px] text-slate-400 mb-0.5">Lokasi / Kolam</span>
+                                    <span class="text-slate-700 text-sm line-clamp-2"><?= htmlspecialchars($e['event_location']) ?></span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-3 mt-8">
+                        <a href="events.php?id=<?= $e['id'] ?>" class="py-3.5 px-2 rounded-xl border-2 border-slate-100 flex items-center justify-center gap-2 hover:border-slate-800 hover:bg-slate-800 hover:text-white transition-all uppercase text-[10px] font-black tracking-widest text-slate-600">
+                            <span>📖</span> Info Lomba
+                        </a>
+                        
+                        <?php if ($e['is_result_published'] == 1): ?>
+                            <a href="results.php?event_id=<?= $e['id'] ?>" class="py-3.5 px-2 rounded-xl flex items-center justify-center gap-2 bg-blue-50 border-2 border-blue-100 text-blue-600 hover:bg-blue-600 hover:text-white transition-all uppercase text-[10px] font-black tracking-widest">
+                                <span class="animate-bounce">🏆</span> Hasil
+                            </a>
+                        <?php else: ?>
+                            <div class="py-3.5 px-2 rounded-xl flex items-center justify-center gap-2 text-slate-400 uppercase text-[10px] font-black tracking-widest cursor-not-allowed bg-slate-50 border-2 border-slate-100" title="Hasil Belum Dipublikasikan">
+                                <span>🔒</span> Tertutup
+                            </div>
+                        <?php endif; ?>
                     </div>
                 </div>
-                <div class="grid grid-cols-2 border-t bg-slate-50">
-                    <a href="results.php?event_id=<?= $e['id'] ?>&cat=StartList" class="py-6 border-r flex flex-col items-center hover:bg-slate-900 hover:text-white transition uppercase text-[10px] font-black"><span>📖</span> Buku Acara</a>
-                    <a href="results.php?event_id=<?= $e['id'] ?>&cat=Result" class="py-6 flex flex-col items-center hover:bg-blue-600 hover:text-white transition uppercase text-[10px] font-black"><span>🏆</span> Hasil</a>
-                </div>
+
             </div>
             <?php endforeach; ?>
         </div>
