@@ -77,6 +77,12 @@ else $dashLink = '/swim-meet/public/login.php';
             <span class="w-6 text-center mr-3 text-lg">⚙️</span> 
             <span class="font-bold text-[11px] tracking-widest uppercase">Global Config</span>
          </a>
+         
+         <!-- MENU BARU: DATA MASTER DQ -->
+         <a href="/swim-meet/src/master/settings/dq_rules.php" class="<?= (strpos($req,"dq_rules")!==false) ? $activeLink : $baseLink ?>">
+            <span class="w-6 text-center mr-3 text-lg">⚖️</span> 
+            <span class="font-bold text-[11px] tracking-widest uppercase">Data Master DQ</span>
+         </a>
       <?php endif; ?>
 
       <?php if($role == 'admin'): ?>

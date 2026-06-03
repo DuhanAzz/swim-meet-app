@@ -274,8 +274,13 @@ foreach($rawData as $row) {
                                                 <td class="col-waktu-awal"><?= (!$s['entry_time'] || $s['entry_time']=='99.99.99') ? 'NT' : $s['entry_time'] ?></td>
                                                 <td class="col-hasil">
                                                     <?php 
-                                                        if ($s['is_dq_final'] == 1) { echo '<span style="color:red;">' . ($s['dq_reason_final'] ?? 'DQ') . '</span>'; } 
-                                                        else { echo $s['time_final'] ?? '-'; }
+                                                    if ($s['is_dq_final'] == 1) { 
+                                                        $reason = $s['dq_reason_final'] ?? 'DQ';
+                                                        // Logika: Jika DNF atau DNS, tetap tampilkan DNF/DNS. Jika pasal, jadikan "DQ"
+                                                        $print_text = (in_array($reason, ['DNS', 'DNF'])) ? $reason : 'DQ';
+                                                        echo '<span style="color:red;">' . $print_text . '</span>'; 
+                                                    } 
+                                                    else { echo $s['time_final'] ?? '-'; }
                                                     ?>
                                                 </td>
                                             </tr>

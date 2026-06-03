@@ -55,6 +55,15 @@ $stmtRes = $pdo->prepare($sql);
 $stmtRes->execute([$event_id]);
 $results = $stmtRes->fetchAll(PDO::FETCH_ASSOC);
 
+// --- 🌟 FASE 4: AMBIL DATA PASAL DQ UNTUK POP-UP ---
+$stmtDqRules = $pdo->query("SELECT pasal, deskripsi FROM dq_rules");
+$dqRulesArray = [];
+while ($row = $stmtDqRules->fetch(PDO::FETCH_ASSOC)) {
+    $dqRulesArray[$row['pasal']] = $row['deskripsi'];
+}
+$dqRulesJson = json_encode($dqRulesArray);
+// ---------------------------------------------------
+
 // 4. Kelompokkan berdasarkan Nomor Acara
 $groupedResults = [];
 foreach ($results as $r) {
@@ -167,11 +176,23 @@ include __DIR__ . '/../../views/layout/sidebar.php';
                                             <?= htmlspecialchars($waktuDaftar) ?>
                                         </td>
                                         
+                                        <!-- 🌟 FASE 4: TOMBOL BADGE DQ & WAKTU FINAL -->
                                         <td class="py-3 px-4 text-right font-mono text-sm font-black text-slate-800">
-                                            <?php if($isDQ): ?>
-                                                <span class="text-red-500 text-xs font-black"><?= htmlspecialchars($atlet['dq_reason_final'] ?? 'DQ') ?></span>
+                                            <?php if($isDQ): 
+                                                $reason = $atlet['dq_reason_final'] ?? 'DQ';
+                                                if (in_array($reason, ['DNS', 'DNF'])):
+                                            ?>
+                                                <span class="bg-slate-100 text-slate-500 border border-slate-300 px-2 py-1 rounded text-[10px] uppercase font-sans tracking-wider">
+                                                    <?= htmlspecialchars($reason) ?>
+                                                </span>
                                             <?php else: ?>
-                                                <?= htmlspecialchars($atlet['time_final']) ?>
+                                                <!-- TOMBOL DIPERBAIKI: Hanya menampilkan ⚠️ DQ di tabel -->
+                                                <button onclick="showDqDetail('<?= htmlspecialchars($reason) ?>')" class="bg-red-50 text-red-600 border border-red-300 px-2 py-1 rounded text-[10px] uppercase hover:bg-red-100 transition inline-flex items-center justify-end gap-1 ml-auto cursor-pointer shadow-sm animate-pulse font-sans tracking-wider">
+                                                    ⚠️ DQ
+                                                </button>
+                                            <?php endif; ?>
+                                            <?php else: ?>
+                                                <?= htmlspecialchars($atlet['time_final'] ?? '-') ?>
                                             <?php endif; ?>
                                         </td>
                                         
@@ -187,7 +208,42 @@ include __DIR__ . '/../../views/layout/sidebar.php';
     </div>
 </div>
 
+<!-- 🌟 FASE 4: SWEETALERT & FUNGSI POP-UP -->
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
+// Ambil data JSON dari PHP ke JavaScript
+const dqRulesData = <?= $dqRulesJson ?>;
+
+function showDqDetail(pasal) {
+    // Cari deskripsi pasal, jika tidak ada berikan teks default
+    let deskripsi = dqRulesData[pasal] || "Penjelasan detail untuk pasal ini belum tersedia di sistem.";
+    
+    // Tampilkan SweetAlert
+    Swal.fire({
+        title: '<span class="text-red-600 font-black italic">DISKUALIFIKASI!</span>',
+        html: `
+            <div class="text-left mt-2 p-4 bg-slate-50 border border-slate-200 rounded-lg">
+                <div class="mb-2">
+                    <span class="bg-red-100 border border-red-300 text-red-700 font-black px-2 py-1 rounded text-xs">
+                        ${pasal}
+                    </span>
+                </div>
+                <p class="text-slate-700 text-sm font-medium leading-relaxed font-sans">
+                    ${deskripsi}
+                </p>
+            </div>
+        `,
+        icon: 'warning',
+        iconColor: '#ef4444',
+        confirmButtonText: 'Tutup',
+        confirmButtonColor: '#3b82f6',
+        customClass: {
+            popup: 'rounded-2xl',
+            confirmButton: 'rounded-lg font-bold px-6'
+        }
+    });
+}
+
 document.getElementById('searchInput').addEventListener('keyup', function() {
     let filter = this.value.toLowerCase();
     let cards = document.querySelectorAll('.result-card');

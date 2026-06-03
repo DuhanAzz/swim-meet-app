@@ -108,7 +108,7 @@ include __DIR__ . '/../../views/layout/sidebar.php';
 
                             <div class="border-t border-slate-100 pt-3">
                                 <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">📥 Berkas Perlombaan:</p>
-                                <div class="flex flex-wrap gap-2">
+                                <div class="flex flex-wrap gap-2 mb-3">
                                     <?php if(!empty($documentsByEvent[$e['event_id']])): ?>
                                         <?php foreach($documentsByEvent[$e['event_id']] as $doc): 
                                             $cat = strtoupper($doc['kategori']);
@@ -122,6 +122,11 @@ include __DIR__ . '/../../views/layout/sidebar.php';
                                         <span class="text-[9px] font-black text-slate-300 uppercase tracking-widest">Belum ada berkas hasil/startlist</span>
                                     <?php endif; ?>
                                 </div>
+
+                                <!-- 🚀 TEROBOSAN: TOMBOL REKAP JADWAL ANAK DI BAWAH BERKAS -->
+                                <a href="recap_starting_list.php?event_id=<?= $e['event_id'] ?>" target="_blank" class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-600 hover:text-white border border-blue-200 hover:border-blue-600 rounded text-[10px] font-black uppercase tracking-widest shadow-sm transition-colors">
+                                    📝 Rekap Starting List Personal
+                                </a>
                             </div>
                         </div>
 

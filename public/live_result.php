@@ -50,6 +50,15 @@ $stmtRes = $pdo->prepare($sql);
 $stmtRes->execute([$event_id]);
 $results = $stmtRes->fetchAll(PDO::FETCH_ASSOC);
 
+// --- 🌟 FASE 4: AMBIL DATA PASAL DQ UNTUK POP-UP ---
+$stmtDqRules = $pdo->query("SELECT pasal, deskripsi FROM dq_rules");
+$dqRulesArray = [];
+while ($row = $stmtDqRules->fetch(PDO::FETCH_ASSOC)) {
+    $dqRulesArray[$row['pasal']] = $row['deskripsi'];
+}
+$dqRulesJson = json_encode($dqRulesArray);
+// ---------------------------------------------------
+
 // Kelompokkan hasil berdasarkan nomor acara
 foreach ($results as $r) {
     $judulAcara = "ACARA #" . $r['event_number'] . " - " . $r['distance'] . "M " . strtoupper($r['stroke']) . " " . strtoupper($r['jenis_kelamin']) . " (" . $r['age_group'] . ")";
@@ -64,6 +73,8 @@ foreach ($results as $r) {
     <title>Live Result - <?= htmlspecialchars($event['event_name']) ?></title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,400;0,700;0,800;0,900;1,400;1,700;1,800;1,900&display=swap" rel="stylesheet">
+    <!-- 🌟 Tambahan SweetAlert -->
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style>
         body { 
             font-family: 'Plus Jakarta Sans', sans-serif; 
@@ -204,10 +215,19 @@ foreach ($results as $r) {
                                             <?= htmlspecialchars($waktuDaftar) ?>
                                         </td>
                                         <td class="py-3.5 px-4 text-right font-mono text-sm font-black text-white">
-                                            <?php if($isDQ): ?>
-                                                <span class="text-red-400 text-[10px] font-black px-2 py-0.5 bg-red-950/80 border border-red-900 rounded uppercase tracking-wider">
-                                                    ⚠️ <?= htmlspecialchars($atlet['dq_reason_final'] ?? 'DQ') ?>
+                                            <?php if($isDQ): 
+                                                $reason = $atlet['dq_reason_final'] ?? 'DQ';
+                                                if (in_array($reason, ['DNS', 'DNF'])):
+                                            ?>
+                                                <span class="text-slate-400 text-[10px] font-black px-2 py-1 bg-slate-800 border border-slate-700 rounded uppercase tracking-wider font-sans">
+                                                    <?= htmlspecialchars($reason) ?>
                                                 </span>
+                                            <?php else: ?>
+                                                <!-- 🌟 FASE 4: TOMBOL BUTTON DQ YANG DAPAT DIKLIK -->
+                                                <button onclick="showDqDetail('<?= htmlspecialchars($reason) ?>')" class="bg-red-950/80 text-red-400 border border-red-900 hover:bg-red-900 transition-colors px-2 py-1 rounded text-[10px] uppercase cursor-pointer inline-flex items-center justify-end gap-1 ml-auto shadow-sm animate-pulse font-sans tracking-wider">
+                                                    ⚠️ DQ
+                                                </button>
+                                            <?php endif; ?>
                                             <?php else: ?>
                                                 <span>
                                                     <?= htmlspecialchars($atlet['time_final']) ?>
@@ -226,6 +246,37 @@ foreach ($results as $r) {
     </div>
 
     <script>
+        // 🌟 DATA PASAL DQ UNTUK POP-UP
+        const dqRulesData = <?= $dqRulesJson ?>;
+
+        function showDqDetail(pasal) {
+            let deskripsi = dqRulesData[pasal] || "Penjelasan detail untuk pasal ini belum tersedia di sistem.";
+            
+            Swal.fire({
+                title: '<span class="text-red-600 font-black italic">DISKUALIFIKASI!</span>',
+                html: `
+                    <div class="text-left mt-2 p-4 bg-slate-50 border border-slate-200 rounded-lg">
+                        <div class="mb-2">
+                            <span class="bg-red-100 border border-red-300 text-red-700 font-black px-2 py-1 rounded text-xs">
+                                ${pasal}
+                            </span>
+                        </div>
+                        <p class="text-slate-700 text-sm font-medium leading-relaxed font-sans">
+                            ${deskripsi}
+                        </p>
+                    </div>
+                `,
+                icon: 'warning',
+                iconColor: '#ef4444',
+                confirmButtonText: 'Tutup',
+                confirmButtonColor: '#3b82f6',
+                customClass: {
+                    popup: 'rounded-2xl',
+                    confirmButton: 'rounded-lg font-bold px-6'
+                }
+            });
+        }
+
         const navbar = document.getElementById('navbar');
         const logoItems = document.querySelectorAll('.nav-logo-item');
         const navContainer = document.getElementById('nav-container');

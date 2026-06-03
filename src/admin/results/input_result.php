@@ -32,12 +32,15 @@ function getTeamName($row, $type) {
     return $club ?: ($school ?: '-');
 }
 
+// AMBIL MASTER DATA DQ RULES UNTUK POPUP
+$stmtDq = $pdo->query("SELECT * FROM dq_rules ORDER BY CAST(SUBSTRING(pasal, 4) AS UNSIGNED) ASC, pasal ASC");
+$dq_rules_list = $stmtDq->fetchAll(PDO::FETCH_ASSOC);
+
 $stmtRace = $pdo->prepare("SELECT * FROM event_numbers WHERE id = ?");
 $stmtRace->execute([$cat_id]);
 $raceInfo = $stmtRace->fetch(PDO::FETCH_ASSOC);
 if (!$raceInfo) die("Nomor lomba tidak ditemukan.");
 
-// PERBAIKAN 1: Gunakan event_id langsung
 $eventId = $raceInfo['event_id'] ?? 0; 
 if (empty($eventId)) { die("Error: Nomor lomba ini tidak terikat pada Event manapun."); }
 
@@ -81,7 +84,6 @@ function getAgeGroupLabel($dob, $eventYear, $ageGroups) {
     return "DILUAR KATEGORI ($age TH)"; 
 }
 
-// PERBAIKAN 2: Mengubah proses POST untuk menargetkan kolom "FINAL" (time_final, is_dq_final, rank_final)
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
         $pdo->beginTransaction();
@@ -93,9 +95,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmtUpd = $pdo->prepare("UPDATE event_seeding SET time_final = ?, is_dq_final = ?, dq_reason_final = ? WHERE entry_id = ?");
         foreach ($entries as $id => $data) {
             $time = trim($data['time'] ?? '');
-            $status = $data['status']; 
+            $status = $data['status']; // "", "DQ", "DNF", "DNS"
+            $dqReasonInput = $data['dq_reason'] ?? ''; // Menangkap pasal DQ
+            
             $is_dq = ($status !== '') ? 1 : 0;
-            $reason = ($status !== '') ? $status : NULL;
+            
+            // Penentuan Alasan Diskualifikasi
+            $reason = NULL;
+            if ($status === 'DQ') {
+                $reason = !empty($dqReasonInput) ? $dqReasonInput : 'DQ'; 
+            } elseif ($status !== '') {
+                $reason = $status; // Untuk DNF atau DNS
+            }
+
             if ($is_dq) $time = NULL; 
             if ($time === '') $time = NULL;
             $stmtUpd->execute([$time, $is_dq, $reason, $id]);
@@ -152,7 +164,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } catch (Exception $e) { $pdo->rollBack(); $msg_error = "Error: " . $e->getMessage(); }
 }
 
-// PERBAIKAN 3: Tombol Navigasi Next & Prev disesuaikan dengan event_id
 $currentEventId = $raceInfo['event_id'];
 $stmtPrev = $pdo->prepare("SELECT id FROM event_numbers WHERE event_id = ? AND id < ? ORDER BY id DESC LIMIT 1");
 $stmtPrev->execute([$currentEventId, $cat_id]);
@@ -232,7 +243,6 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Roboto+Condensed:wght@400;700;900&family=Courier+Prime:wght@400;700&display=swap');
     
-    /* STYLE UNTUK LAYAR (INPUT MODE) */
     .toggle-checkbox { display: none; }
     .toggle-label { width: 44px; height: 24px; background-color: #cbd5e1; border-radius: 9999px; position: relative; cursor: pointer; transition: background-color 0.3s ease; box-shadow: inset 0 2px 4px rgba(0,0,0,0.1); }
     .toggle-label::after { content: ''; position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; background-color: white; border-radius: 50%; transition: transform 0.3s cubic-bezier(0.4, 0.0, 0.2, 1); box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
@@ -254,7 +264,6 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
         .print-only { display: block !important; }
         .page-wrapper { margin: 0; width: 100%; padding: 0 10mm; position: relative; }
 
-        /* KOP SURAT SINKRON 100% DENGAN BUKU ACARA */
         .header-fixed { position: fixed; top: 0; left: 0; right: 0; height: 35mm; background: white; border-bottom: 3px double #000; display: grid; grid-template-columns: 110px 1fr 110px; align-items: flex-end; padding: 5px 10mm 3px 10mm; z-index: 999; }
         .header-center { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; text-align: center; line-height: 1.2; color: #000; }
         .header-line-1 { font-size: 14pt; font-weight: 900; text-transform: uppercase; margin-bottom: 2px; }
@@ -264,7 +273,6 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
         .header-line-5 { font-size: 18pt; font-weight: 900; text-transform: uppercase; letter-spacing: 2px; color: #000; margin-top: 2px; margin-bottom: 0px; line-height: 1; }
         .logo-img { max-height: 100px; max-width: 100%; object-fit: contain; margin-bottom: 2px; }
 
-        /* FOOTER BERWARNA */
         .footer-fixed { position: fixed; bottom: 0; left: 0; right: 0; height: 20mm; background: white; border-top: 2px double #000; display: flex; justify-content: space-between; align-items: center; padding: 0 10mm; z-index: 999; }
         .footer-sponsors { display: flex; gap: 10px; align-items: center; justify-content: center; flex: 1; }
         .footer-sponsors img { height: 45px; object-fit: contain; } 
@@ -274,7 +282,6 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
         .layout-header-space { height: 40mm; } 
         .layout-footer-space { height: 22mm; }
 
-        /* HEADER ACARA & QR CODE KANAN ATAS */
         .event-header { display: flex; justify-content: space-between; align-items: flex-end; border-top: none; border-bottom: 2px solid #000; padding: 2px 0; margin-top: 5px; margin-bottom: 2px; background: #fff; font-family: 'Arial', sans-serif; min-height: 35px; }
         .eh-left { width: 150px; }
         .eh-number { font-size: 14pt; font-weight: 900; }
@@ -283,7 +290,6 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
         .eh-right { width: 150px; text-align: right; display: flex; justify-content: flex-end; }
         .qr-header { width: 45px; height: 45px; object-fit: contain; margin-bottom: 2px; }
 
-        /* TABEL DATA & GRUP KU */
         .data-table { width: 100%; border-collapse: collapse; table-layout: fixed; margin-bottom: 10px; font-family: 'Courier New', Courier, monospace; font-size: 8pt; }
         .data-table th { background-color: #e5e7eb !important; color: #000; font-family: 'Arial Narrow', sans-serif; font-weight: bold; font-size: 8pt; text-transform: uppercase; padding: 4px; border-top: 1px solid #000; border-bottom: 2px solid #000; text-align: center; }
         .data-table td { padding: 4px; border-bottom: 1px solid #ccc; vertical-align: middle; }
@@ -304,7 +310,7 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
     }
 </style>
 
-<div class="p-4 sm:ml-64 pt-24 min-h-screen bg-slate-100 text-slate-900 font-sans">
+<div class="p-4 sm:ml-64 pt-24 min-h-screen bg-slate-100 text-slate-900 font-sans relative">
 
     <?php if(isset($msg_success)): ?>
         <div class="alert-box max-w-3xl mx-auto mb-4 bg-emerald-100 border border-emerald-400 text-emerald-800 px-4 py-3 rounded-lg flex items-center gap-2 shadow-sm sticky top-20 z-50 no-print">
@@ -374,20 +380,31 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                             <?php for($ln = 1; $ln <= $total_lintasan; $ln++): $s = $lanesData[$ln] ?? null; ?>
                             <tr class="border-b hover:bg-slate-50">
                                 <td class="px-2 py-2 text-center font-bold"><?= $ln ?></td>
-                                <?php if($s): ?>
+                                <?php if($s): 
+                                    // Logika membedakan DQ (dengan pasal) dan DNS/DNF
+                                    $is_real_dq = (($s['is_dq']??0) == 1 && !in_array($s['dq_reason'], ['DNF', 'DNS', '']));
+                                    $dq_text = $is_real_dq ? ($s['dq_reason'] ?? '') : '';
+                                ?>
                                     <td class="px-2 py-2 font-bold"><?= shortenName($s['nama_atlet']) ?></td>
                                     <td class="px-2 py-2 text-center text-xs text-slate-500"><?= getAgeGroupLabel($s['tanggal_lahir'], $eventYear, $ageGroups) ?></td>
                                     <td class="px-2 py-2 text-xs"><?= shortenName(getTeamName($s, $participationType)) ?></td>
                                     <td class="px-2 py-2 text-right">
-                                        <input type="text" name="entries[<?= $s['id'] ?>][time]" value="<?= htmlspecialchars($s['final_time'] ?? '') ?>" class="input-time" id="time_<?= $s['id'] ?>" autocomplete="off" <?= ($s['is_dq']??0) == 1 ? 'disabled style="background:#eee;color:#ccc;"' : '' ?>>
+                                        <input type="text" name="entries[<?= $s['id'] ?>][time]" value="<?= htmlspecialchars($s['final_time'] ?? '') ?>" class="input-time" id="time_<?= $s['id'] ?>" autocomplete="off" <?= (($s['is_dq']??0) == 1) ? 'disabled style="background:#eee;color:#ccc;"' : '' ?>>
                                     </td>
-                                    <td class="px-2 py-2 text-center">
-                                        <select name="entries[<?= $s['id'] ?>][status]" class="input-status" onchange="toggleTimeInput(this, '<?= $s['id'] ?>')">
+                                    <td class="px-2 py-2 text-center relative">
+                                        <select name="entries[<?= $s['id'] ?>][status]" id="status_<?= $s['id'] ?>" class="input-status" onchange="handleStatusChange(this, '<?= $s['id'] ?>')">
                                             <option value="" <?= empty($s['dq_reason']) ? 'selected' : '' ?>></option>
-                                            <option value="DQ" class="text-red-600 font-black" <?= ($s['dq_reason']=='DQ') ? 'selected' : '' ?>>DQ</option>
+                                            <option value="DQ" class="text-red-600 font-black" <?= $is_real_dq ? 'selected' : '' ?>>DQ</option>
                                             <option value="DNF" class="text-orange-600 font-black" <?= ($s['dq_reason']=='DNF') ? 'selected' : '' ?>>DNF</option>
                                             <option value="DNS" class="text-gray-500 font-black" <?= ($s['dq_reason']=='DNS') ? 'selected' : '' ?>>DNS</option>
                                         </select>
+                                        <!-- Input Tersembunyi untuk menyimpan nilai pasal -->
+                                        <input type="hidden" name="entries[<?= $s['id'] ?>][dq_reason]" id="dq_reason_<?= $s['id'] ?>" value="<?= htmlspecialchars($dq_text) ?>">
+                                        
+                                        <!-- Tampilan Teks Pasal di bawah Select -->
+                                        <div id="dq_display_<?= $s['id'] ?>" class="text-[9px] text-red-600 font-bold mt-0.5 text-center truncate w-full" title="<?= htmlspecialchars($dq_text) ?>">
+                                            <?= htmlspecialchars($dq_text) ?>
+                                        </div>
                                     </td>
                                 <?php else: ?>
                                     <td colspan="5" class="px-2 py-2 text-slate-300 italic text-xs">&lt; KOSONG &gt;</td>
@@ -400,6 +417,41 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                 <?php endforeach; ?>
             <?php endif; ?>
         </div>
+
+        <!-- ======================= MODAL DQ RULES ======================= -->
+        <!-- PERBAIKAN: Mengganti class 'screen-only' menjadi 'no-print' agar tidak terpaksa menjadi display: block -->
+        <div id="dqModal" class="fixed inset-0 z-[1000] hidden bg-slate-900/50 backdrop-blur-sm items-center justify-center p-4 no-print">
+            <div class="bg-white rounded-2xl shadow-xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
+                <div class="px-6 py-4 border-b flex justify-between items-center bg-slate-50">
+                    <div>
+                        <h3 class="font-black text-slate-800 text-lg uppercase italic">Pilih Regulasi DQ</h3>
+                        <p class="text-xs font-bold text-slate-500">Pilih pasal pelanggaran dari federasi.</p>
+                    </div>
+                    <button type="button" onclick="closeDqModal()" class="text-slate-400 hover:text-red-500 transition"><span class="text-2xl">&times;</span></button>
+                </div>
+                
+                <div class="p-4 border-b bg-white">
+                     <input type="text" id="searchDq" class="w-full border-slate-300 rounded-lg text-sm bg-slate-50 font-medium focus:ring-blue-500 focus:border-blue-500" placeholder="🔍 Cari pasal atau deskripsi pelanggaran..." onkeyup="filterDq()">
+                </div>
+
+                <div class="flex-1 overflow-y-auto p-4 bg-slate-50">
+                    <div class="grid gap-2" id="dqList">
+                        <?php foreach($dq_rules_list as $rule): ?>
+                        <button type="button" onclick="selectDqRule('<?= htmlspecialchars($rule['pasal']) ?>')" class="dq-item text-left w-full bg-white border border-slate-200 hover:border-blue-500 hover:shadow-md p-3 rounded-xl transition flex gap-3 group">
+                            <span class="bg-red-50 border border-red-200 text-red-700 font-black px-2 py-1 rounded text-xs h-fit whitespace-nowrap group-hover:bg-blue-100 group-hover:text-blue-700 transition">
+                                <?= htmlspecialchars($rule['pasal']) ?>
+                            </span>
+                            <div>
+                                <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5"><?= htmlspecialchars($rule['kategori_gaya']) ?></div>
+                                <div class="text-xs font-medium text-slate-700 leading-snug dq-desc"><?= htmlspecialchars($rule['deskripsi']) ?></div>
+                            </div>
+                        </button>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <!-- ======================= END MODAL DQ ======================= -->
 
         <div class="print-only">
             
@@ -487,9 +539,18 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                                                     <td class="col-tim"><?= shortenName(getTeamName($p, $participationType)) ?></td>
                                                     <td class="col-waktu-awal"><?= $seedTime ?></td>
                                                     <td class="col-hasil">
-                                                        <?php if (($p['is_dq']??0) == 1) { echo '<span style="color:red;">'.($p['dq_reason'] ?? 'DQ').'</span>'; } 
-                                                              elseif ($is_valid) { echo $p['final_time']; } else { echo '-'; } ?>
-                                                    </td>
+                                                        <?php 
+                                                        if (($p['is_dq']??0) == 1) { 
+                                                            $reason = $p['dq_reason'] ?? 'DQ';
+                                                            $print_text = (in_array($reason, ['DNS', 'DNF'])) ? $reason : 'DQ';
+                                                            echo '<span style="color:red;">' . $print_text . '</span>'; 
+                                                        } elseif ($is_valid) { 
+                                                            echo $p['final_time']; 
+                                                        } else { 
+                                                            echo '-'; 
+                                                        } 
+                                                        ?>
+                                                </td>
                                                 </tr>
                                                 <?php endforeach; ?>
                                             <?php endforeach; ?>
@@ -506,33 +567,133 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
 </div>
 
 <script>
+// --- LOGIKA MODAL DQ ---
+let currentDqSwimmerId = null;
+const modalDq = document.getElementById('dqModal');
+const searchInput = document.getElementById('searchDq');
+
+function handleStatusChange(selectElem, id) {
+    if (selectElem.value === 'DQ') {
+        // Jika pilih DQ, buka modal
+        currentDqSwimmerId = id;
+        
+        // Tampilkan modal dengan menghapus 'hidden' dan menambah 'flex'
+        modalDq.classList.remove('hidden');
+        modalDq.classList.add('flex');
+        
+        // Reset input pencarian
+        searchInput.value = '';
+        filterDq();
+        setTimeout(() => searchInput.focus(), 100); // Beri sedikit jeda sebelum fokus
+        
+    } else {
+        // Jika pilih opsi lain (DNS, DNF, KOSONG), reset text DQ
+        document.getElementById('dq_reason_' + id).value = '';
+        document.getElementById('dq_display_' + id).innerText = '';
+        toggleTimeInput(selectElem, id);
+    }
+}
+
+function selectDqRule(pasal) {
+    if (currentDqSwimmerId) {
+        // Simpan pasal ke input hidden
+        document.getElementById('dq_reason_' + currentDqSwimmerId).value = pasal;
+        // Tampilkan pasal di bawah select box
+        document.getElementById('dq_display_' + currentDqSwimmerId).innerText = pasal;
+        
+        let selectElem = document.getElementById('status_' + currentDqSwimmerId);
+        toggleTimeInput(selectElem, currentDqSwimmerId);
+    }
+    closeDqModal();
+}
+
+function closeDqModal() {
+    // Sembunyikan modal
+    modalDq.classList.remove('flex');
+    modalDq.classList.add('hidden');
+    
+    // Jika user menutup modal dengan tombol X (tanpa memilih pasal), kembalikan status ke kosong
+    if (currentDqSwimmerId) {
+        let hiddenInput = document.getElementById('dq_reason_' + currentDqSwimmerId);
+        let selectElem = document.getElementById('status_' + currentDqSwimmerId);
+        
+        // Cek jika hidden value kosong (berarti batal pilih)
+        if (!hiddenInput.value || hiddenInput.value.trim() === '') {
+            selectElem.value = ""; // Kembalikan opsi ke kosong
+            toggleTimeInput(selectElem, currentDqSwimmerId);
+        }
+    }
+    
+    // Reset ID agar tidak bocor ke atlet lain
+    currentDqSwimmerId = null;
+}
+
+function filterDq() {
+    let input = searchInput.value.toLowerCase();
+    let items = document.querySelectorAll('.dq-item');
+    items.forEach(item => {
+        let text = item.innerText.toLowerCase();
+        // Gunakan flex karena awalnya display flex
+        item.style.display = text.includes(input) ? 'flex' : 'none'; 
+    });
+}
+// --- END LOGIKA MODAL DQ ---
+
 function toggleTimeInput(selectElem, id) {
     const timeInput = document.getElementById('time_' + id);
     if (selectElem.value !== "") {
-        timeInput.disabled = true; timeInput.style.backgroundColor = "#eee"; timeInput.style.color = "#ccc"; timeInput.value = ""; 
+        timeInput.disabled = true; 
+        timeInput.style.backgroundColor = "#eee"; 
+        timeInput.style.color = "#ccc"; 
+        timeInput.value = ""; 
     } else {
-        timeInput.disabled = false; timeInput.style.backgroundColor = "#f9f9f9"; timeInput.style.color = "blue";
+        timeInput.disabled = false; 
+        timeInput.style.backgroundColor = "#f9f9f9"; 
+        timeInput.style.color = "blue";
     }
 }
+
 function updateModeInput() {
     const checkbox = document.getElementById('modeToggle');
     const hiddenInput = document.getElementById('rankModeInput');
     const label = document.getElementById('modeLabel');
-    if (checkbox.checked) { hiddenInput.value = 'overall'; label.innerText = 'GABUNGAN (OVERALL)'; label.classList.remove('text-slate-600'); label.classList.add('text-blue-600');
-    } else { hiddenInput.value = 'split'; label.innerText = 'PER KELOMPOK UMUR (SPLIT)'; label.classList.remove('text-blue-600'); label.classList.add('text-slate-600'); }
+    if (checkbox.checked) { 
+        hiddenInput.value = 'overall'; 
+        label.innerText = 'GABUNGAN (OVERALL)'; 
+        label.classList.remove('text-slate-600'); 
+        label.classList.add('text-blue-600');
+    } else { 
+        hiddenInput.value = 'split'; 
+        label.innerText = 'PER KELOMPOK UMUR (SPLIT)'; 
+        label.classList.remove('text-blue-600'); 
+        label.classList.add('text-slate-600'); 
+    }
 }
+
 document.addEventListener("DOMContentLoaded", function() {
     const inputLink = document.getElementById("driveLink");
     const qrImage = document.getElementById("qrResultImage");
     const storageKey = "qr_link_cat_<?= $cat_id ?>"; 
     const defaultLink = "<?= $default_target_link ?>";
+    
     function updateQR(url) {
-        let finalUrl = url; if (!url || url.trim() === "") { finalUrl = defaultLink; }
+        let finalUrl = url; 
+        if (!url || url.trim() === "") { finalUrl = defaultLink; }
         qrImage.src = "https://api.qrserver.com/v1/create-qr-code/?size=100x100&margin=0&data=" + encodeURIComponent(finalUrl);
     }
+    
     const savedLink = localStorage.getItem(storageKey);
-    if (savedLink) { inputLink.value = savedLink; updateQR(savedLink); } else { updateQR(""); }
-    inputLink.addEventListener("input", function() { localStorage.setItem(storageKey, this.value); updateQR(this.value); });
+    if (savedLink) { 
+        inputLink.value = savedLink; 
+        updateQR(savedLink); 
+    } else { 
+        updateQR(""); 
+    }
+    
+    inputLink.addEventListener("input", function() { 
+        localStorage.setItem(storageKey, this.value); 
+        updateQR(this.value); 
+    });
     
     document.querySelectorAll('.input-time').forEach(function(input) {
         input.addEventListener('input', function(e) {
