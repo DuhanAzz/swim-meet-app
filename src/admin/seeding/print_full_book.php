@@ -7,11 +7,8 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') { die("Akses Dit
 
 // === LOGIKA CONFIG ===
 $usePost = ($_SERVER['REQUEST_METHOD'] === 'POST');
-
-// Mendeteksi request konfigurasi dari GET maupun POST
 $isSubmitted = $usePost || isset($_REQUEST['print_trigger']) || isset($_REQUEST['cfg_event_name']) || isset($_REQUEST['cfg_event_no']) || isset($_REQUEST['col_uid']);
 
-// 1. Konfigurasi Komponen Judul
 $pc = [
     'show_event_no'   => $isSubmitted ? isset($_REQUEST['cfg_event_no']) : true,
     'show_date'       => $isSubmitted ? isset($_REQUEST['cfg_date']) : true,
@@ -19,10 +16,10 @@ $pc = [
     'show_group'      => $isSubmitted ? isset($_REQUEST['cfg_group']) : true,
     'show_gender'     => $isSubmitted ? isset($_REQUEST['cfg_gender']) : true,
     'show_pool'       => $isSubmitted ? isset($_REQUEST['cfg_pool']) : true,
-    'show_round'      => $isSubmitted ? isset($_REQUEST['cfg_round']) : true
+    'show_round'      => $isSubmitted ? isset($_REQUEST['cfg_round']) : true,
+    'show_records'    => $isSubmitted ? isset($_REQUEST['cfg_show_records']) : true
 ];
 
-// 🚀 2. Konfigurasi Visibilitas Kolom Tabel (Fitur Baru)
 $cc = [
     'uid'   => $isSubmitted ? isset($_REQUEST['col_uid']) : true,
     'lahir' => $isSubmitted ? isset($_REQUEST['col_lahir']) : true,
@@ -32,8 +29,7 @@ $cc = [
     'hasil' => $isSubmitted ? isset($_REQUEST['col_hasil']) : true,
 ];
 
-// 🚀 3. Hitung Jumlah Kolom yang Aktif untuk keperluan colspan jika baris kosong
-$activeColumnsCount = 2; // LN & NAMA ATLET selalu aktif (default)
+$activeColumnsCount = 2; 
 if ($cc['uid'])   $activeColumnsCount++;
 if ($cc['lahir']) $activeColumnsCount++;
 if ($cc['ku'])    $activeColumnsCount++;
@@ -57,7 +53,7 @@ if ($usePost && !empty($_FILES['cover_image']['tmp_name'])) {
 }
 
 // === AMBIL DATA ===
-$eventId = $_GET['event_id'] ?? 0;
+$eventId = $_GET['event_id'] ?? ($_POST['event_id'] ?? 0);
 if ($eventId == 0) {
     $uid = $_SESSION['user_id'];
     $stmtLast = $pdo->prepare("SELECT id FROM events WHERE user_id = ? ORDER BY id DESC LIMIT 1");
@@ -165,7 +161,11 @@ foreach($rawData as $row) {
             'meta' => [
                 'nomor'  => $row['event_number'],
                 'judul'  => empty($judulParts) ? "EVENT" : implode(" - ", $judulParts),
-                'jadwal' => $tglMain . " | " . $jamMain 
+                'jadwal' => $tglMain . " | " . $jamMain,
+                'distance' => $row['distance'],
+                'stroke' => $row['stroke'],
+                'jenis_kelamin' => $row['jenis_kelamin'],
+                'age_group' => $row['age_group']
             ],
             'heats' => []
         ];
@@ -184,27 +184,16 @@ if ($showScheduleAuto) {
     <meta charset="UTF-8">
     <title>Meet Program Print</title>
     <style>
-        /* RESET */
         * { box-sizing: border-box; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-        body { margin: 0; padding: 0; font-family: 'Arial', sans-serif; background: #ccc; }
+        body { margin: 0; padding: 0; font-family: 'Arial Narrow', sans-serif; background: #ccc; }
         
-        /* CONTAINER HALAMAN BIASA */
         .page-wrapper { background: white; width: 210mm; margin: 20px auto; padding: 0 10mm; min-height: 297mm; position: relative; }
         
         .full-page { 
-            position: relative; 
-            width: 210mm; 
-            height: 297mm; 
-            margin: 0 auto;
-            z-index: 99999; 
-            background: white; 
-            display: flex; 
-            justify-content: center; 
-            align-items: center; 
-            overflow: hidden;
+            position: relative; width: 210mm; height: 297mm; margin: 0 auto;
+            z-index: 99999; background: white; display: flex; justify-content: center; align-items: center; overflow: hidden;
             margin-bottom: -35mm; 
         }
-        
         .full-page-img { width: 100%; height: 100%; object-fit: fill; }
         
         /* HEADER FIXED */
@@ -225,35 +214,41 @@ if ($showScheduleAuto) {
         .layout-footer-space { height: 22mm; }
         
         /* TABEL STYLE */
-        .schedule-title { text-align:center; font-size:14pt; font-weight:900; margin-bottom:15px; text-transform:uppercase; font-family: 'Arial', sans-serif; text-decoration: underline; }
+        .schedule-title { text-align:center; font-size:14pt; font-weight:900; margin-bottom:15px; text-transform:uppercase; font-family: 'Arial Narrow', sans-serif; text-decoration: underline; }
         .schedule-table { width: 100%; border-collapse: collapse; border: none; font-family: 'Courier New', Courier, monospace; font-size: 8pt; }
         .schedule-table th { border: none; border-bottom: 1px solid #000; text-align: left; padding: 2px 4px; text-transform: uppercase; font-weight: bold; }
-        .schedule-table td { border: none; padding: 1px 4px; vertical-align: top; }
+        .schedule-table td { border: none; padding: 1px 4px; vertical-align: top; font-weight: bold !important; }
         .schedule-date-header { font-weight: 900; padding-top: 15px; padding-bottom: 5px; font-size: 9pt; text-decoration: underline; }
         
-        .event-header { position: relative; display: flex; justify-content: space-between; align-items: flex-end; border-top: none; border-bottom: 2px solid #000; padding: 2px 0; margin-top: 5px; margin-bottom: 2px; background: #fff; font-family: 'Arial', sans-serif; min-height: 35px; }
+        .event-header { position: relative; display: flex; justify-content: space-between; align-items: flex-end; border-top: none; border-bottom: 2px solid #000; padding: 2px 0; margin-top: 5px; margin-bottom: 0px; background: #fff; min-height: 35px; }
         .eh-left-group { display: flex; flex-direction: column; justify-content: center; width: 180px; line-height: 1.1; z-index: 2; position: relative; background: white; }
         .eh-number { font-size: 14pt; font-weight: 900; margin-bottom: 2px; }
         .eh-date { font-size: 8pt; font-weight: bold; font-style: normal; }
         .eh-center { position: absolute; left: 50%; bottom: 3px; transform: translateX(-50%); text-align: center; width: 60%; z-index: 1; }
         .eh-title  { font-size: 11pt; font-weight: 800; text-transform: uppercase; }
         .eh-right  { font-size: 10pt; font-weight: 900; width: 80px; text-align: right; z-index: 2; position: relative; background: white; }
-        .heat-title { text-align: right; font-size: 9pt; font-weight: bold; font-family: 'Arial', sans-serif; text-transform: uppercase; margin-top: 12px; margin-bottom: 2px; }
+        
+        /* REKOR CONTAINER DI ANTARA 2 LINES */
+        .event-records-container { border-bottom: 1px solid #000; padding: 4px 0; margin-bottom: 10px; font-size: 8pt; font-weight: bold; line-height: 1.3; text-align: left; }
+        .rec-row { display: flex; justify-content: flex-start; text-transform: uppercase; }
+        .rec-label { width: 140px; font-weight: 900; }
+        .rec-details { flex: 1; }
+
+        .heat-title { text-align: right; font-size: 9pt; font-weight: bold; text-transform: uppercase; margin-top: 12px; margin-bottom: 2px; }
         .event-header + .heat-title { margin-top: 2px !important; }
         
-        /* DATA TABLE DINAMIS */
-        .data-table { width: 100%; border-collapse: collapse; table-layout: fixed; margin-bottom: 2px; font-family: 'Courier New', Courier, monospace; font-size: 8pt; }
-        .data-table th { background-color: #e5e7eb; color: #000; font-family: 'Arial Narrow', sans-serif; font-weight: bold; font-size: 8pt; text-transform: uppercase; padding: 2px 2px; border-top: 1px solid #000; border-bottom: 2px solid #000; text-align: center; }
-        .data-table td { padding: 4px 4px; border-bottom: 1px solid #ccc; vertical-align: middle; }
+        /* DATA TABLE DINAMIS - BOLD */
+        .data-table { width: 100%; border-collapse: collapse; table-layout: fixed; margin-bottom: 2px; font-size: 8pt; }
+        .data-table th { background-color: #e5e7eb; color: #000; font-weight: bold; font-size: 8pt; text-transform: uppercase; padding: 2px 2px; border-top: 1px solid #000; border-bottom: 2px solid #000; text-align: center; }
+        .data-table td { padding: 4px 4px; border-bottom: 1px solid #ccc; vertical-align: middle; font-weight: bold !important; } 
         
-        /* Ukuran Kolom Default */
         .col-ln { width: 5%; text-align: center; background: #f8f9fa; border-right: 1px solid #eee; font-weight: bold; white-space: nowrap; }
-        .col-uid { width: 12%; text-align: center; white-space: nowrap; }
+        .col-uid { width: 12%; text-align: center; white-space: nowrap; font-family: 'Courier New', monospace; }
         .col-nama { text-align: left; padding-left: 5px; white-space: normal; line-height: 1.1; }
         .col-lahir { width: 8%; text-align: center; white-space: nowrap; }
         .col-ku { width: 10%; text-align: center; white-space: nowrap; }
         .col-tim { width: 22%; text-align: left; padding-left: 5px; white-space: normal; line-height: 1.1; }
-        .col-waktu { width: 10%; text-align: right; padding-right: 5px; white-space: nowrap; }
+        .col-waktu { width: 10%; text-align: right; padding-right: 5px; white-space: nowrap; font-family: 'Courier New', monospace; }
         .col-hasil { width: 12%; text-align: right; color: #000; letter-spacing: 0px; white-space: nowrap; }
         
         .data-table tr:nth-child(even) { background-color: #f9fafb; }
@@ -262,18 +257,7 @@ if ($showScheduleAuto) {
         @media print {
             @page { size: A4; margin: 0; }
             body { background: white; margin: 0; }
-            
-            .full-page { 
-                position: relative; 
-                width: 100%; 
-                height: 100vh; 
-                margin: 0; 
-                page-break-after: always; 
-                break-after: always;
-                z-index: 99999;
-                background: white;
-            }
-            
+            .full-page { position: relative; width: 100%; height: 100vh; margin: 0; page-break-after: always; break-after: always; z-index: 99999; background: white; }
             .schedule-section { break-after: always; page-break-after: always; }
             .page-wrapper { margin: 0; width: 100%; box-shadow: none; padding: 0 10mm; min-height: auto; position: relative; }
             .layout-table > thead { display: table-header-group !important; }
@@ -282,24 +266,13 @@ if ($showScheduleAuto) {
         }
     </style>
     <script>
-        window.onload = function() {
-            setTimeout(function() { window.print(); }, 800);
-        };
+        window.onload = function() { setTimeout(function() { window.print(); }, 800); };
     </script>
 </head>
 <body>
     
-    <?php if ($coverImage): ?>
-        <div class="full-page">
-            <img src="<?= $coverImage ?>" class="full-page-img">
-        </div>
-    <?php endif; ?>
-
-    <?php if ($scheduleImage): ?>
-        <div class="full-page">
-            <img src="<?= $scheduleImage ?>" class="full-page-img">
-        </div>
-    <?php endif; ?>
+    <?php if ($coverImage): ?><div class="full-page"><img src="<?= $coverImage ?>" class="full-page-img"></div><?php endif; ?>
+    <?php if ($scheduleImage): ?><div class="full-page"><img src="<?= $scheduleImage ?>" class="full-page-img"></div><?php endif; ?>
 
     <div class="header-fixed">
         <div style="text-align: left;"><?php if($logoLeft): ?><img src="<?= $logoLeft ?>" class="logo-img"><?php endif; ?></div>
@@ -314,11 +287,9 @@ if ($showScheduleAuto) {
     </div>
 
     <div class="footer-fixed">
-        <?php if(!empty($sponsors)): ?>
-            <?php foreach($sponsors as $img): ?>
-                <img src="../../../public/<?= $img ?>" style="height:45px; margin:0 10px;">
-            <?php endforeach; ?>
-        <?php endif; ?>
+        <?php if(!empty($sponsors)): foreach($sponsors as $img): ?>
+            <img src="../../../public/<?= $img ?>" style="height:45px; margin:0 10px;">
+        <?php endforeach; endif; ?>
     </div>
 
     <?php if ($showScheduleAuto && empty($scheduleImage) && !empty($scheduleData)): ?>
@@ -369,7 +340,7 @@ if ($showScheduleAuto) {
                 <tr>
                     <td>
                         <?php if(empty($fullBook)): ?>
-                            <div style="text-align:center; padding: 50px;">DATA KOSONG</div>
+                            <div style="text-align:center; padding: 50px; font-weight:bold;">DATA KOSONG</div>
                         <?php else: ?>
                             <?php foreach($fullBook as $catId => $data): ?>
                                 <div class="event-header">
@@ -380,6 +351,35 @@ if ($showScheduleAuto) {
                                     <div class="eh-center"><div class="eh-title"><?= $data['meta']['judul'] ?></div></div>
                                     <div class="eh-right"><?= $pc['show_round'] ? 'FINAL' : '' ?></div>
                                 </div>
+
+                                <div class="event-records-container">
+                                    <?php 
+                                    if($pc['show_records']): 
+                                        $stmtRec = $pdo->prepare("SELECT record_type, holder_name, record_time, location, record_year FROM master_records WHERE distance = ? AND stroke = ? AND jenis_kelamin = ? AND age_group = ? ORDER BY id ASC");
+                                        $stmtRec->execute([$data['meta']['distance'], $data['meta']['stroke'], $data['meta']['jenis_kelamin'], $data['meta']['age_group']]);
+                                        $records = $stmtRec->fetchAll(PDO::FETCH_ASSOC);
+                                        
+                                        if(!empty($records)):
+                                            foreach($records as $rec):
+                                                $tipeLabel = strtoupper(str_replace('_', ' ', $rec['record_type']));
+                                                $lokasiDisplay = !empty($rec['location']) ? ' '.$rec['location'] : '';
+                                                $tahunDisplay = !empty($rec['record_year']) ? ' '.$rec['record_year'] : '';
+                                                ?>
+                                                <div class="rec-row">
+                                                    <span class="rec-label"><?= $tipeLabel ?></span>
+                                                    <span class="rec-details"><?= $rec['record_time'] ?> <?= strtoupper($rec['holder_name']) ?><?= strtoupper($lokasiDisplay) ?><?= $tahunDisplay ?></span>
+                                                </div>
+                                                <?php 
+                                            endforeach;
+                                        else:
+                                            echo "<div style='color:#aaa; font-style:italic;'>NO MASTER RECORD DATA FOUND</div>";
+                                        endif;
+                                    else:
+                                        echo "<div style='height:2px;'></div>";
+                                    endif; 
+                                    ?>
+                                </div>
+
                                 <?php foreach($data['heats'] as $heatNo => $lanes): ?>
                                     <div class="heat-title">SERI <?= $heatNo ?></div>
                                     <table class="data-table">
