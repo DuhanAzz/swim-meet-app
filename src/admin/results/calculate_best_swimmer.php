@@ -14,42 +14,45 @@ function getBestSwimmerRanking($pdo, $event_id) {
             JOIN event_numbers en ON ee.category_id = en.id
             JOIN event_seeding es ON ee.id = es.entry_id
             WHERE en.event_id = ? AND es.rank_final IN (1,2,3) AND es.is_dq_final = 0
-            GROUP BY s.id
-            ORDER BY emas DESC, perak DESC, perunggu DESC";
+            GROUP BY s.id";
             
     $stmt = $pdo->prepare($sql);
     $stmt->execute([$event_id]);
     $athletes = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    // 2. Evaluasi aturan ketajaman rekor jika medali sama persis
-    for ($i = 0; $i < count($athletes) - 1; $i++) {
-        for ($j = $i + 1; $j < count($athletes); $j++) {
-            
-            if ($athletes[$i]['emas'] == $athletes[$j]['emas'] && 
-                $athletes[$i]['perak'] == $athletes[$j]['perak'] && 
-                $athletes[$i]['perunggu'] == $athletes[$j]['perunggu']) {
-                
-                $ketajamanI = calculateTotalSharpness($pdo, $event_id, $athletes[$i]['swimmer_id']);
-                $ketajamanJ = calculateTotalSharpness($pdo, $event_id, $athletes[$j]['swimmer_id']);
-                
-                if ($ketajamanJ > $ketajamanI) {
-                    $temp = $athletes[$i];
-                    $athletes[$i] = $athletes[$j];
-                    $athletes[$j] = $temp;
-                }
-            }
-        }
+    // 2. Hitung ketajaman rekor SEKALI SAJA untuk setiap atlet (Optimasi Performa)
+    foreach ($athletes as &$athlete) {
+        $athlete['total_sharpness'] = calculateTotalSharpness($pdo, $event_id, $athlete['swimmer_id']);
     }
+    unset($athlete); // Memutus referensi memori pointer &
+
+    // 3. Urutkan menggunakan urutan prioritas: Emas -> Perak -> Perunggu -> Ketajaman Rekor
+    usort($athletes, function($a, $b) {
+        if ($a['emas'] != $b['emas']) {
+            return $b['emas'] - $a['emas']; // Emas terbanyak di atas
+        }
+        if ($a['perak'] != $b['perak']) {
+            return $b['perak'] - $a['perak']; // Jika emas sama, perak terbanyak di atas
+        }
+        if ($a['perunggu'] != $b['perunggu']) {
+            return $b['perunggu'] - $a['perunggu']; // Jika perak sama, perunggu terbanyak di atas
+        }
+        
+        // TIE-BREAKER MUTLAK: Jika semua medali sama, bandingkan % ketajaman rekor
+        if ($a['total_sharpness'] == $b['total_sharpness']) return 0;
+        return ($b['total_sharpness'] > $a['total_sharpness']) ? 1 : -1;
+    });
+
     return $athletes;
 }
 
 function timeToSeconds($timeStr) {
-    if (empty($timeStr) || $timeStr === 'NT' || $timeStr === 'DQ') return 0;
-    $parts = explode(':', $timeStr);
+    if (empty($timeStr) || in_array(strtoupper(trim($timeStr)), ['NT', 'DQ'])) return 0;
+    $parts = explode(':', trim($timeStr));
     if (count($parts) == 2) {
         return ((float)$parts[0] * 60) + (float)$parts[1];
     } else {
-        return (float)$timeStr;
+        return (float)$parts[0];
     }
 }
 
@@ -84,6 +87,5 @@ function calculateTotalSharpness($pdo, $event_id, $swimmer_id) {
             }
         }
     }
-    return $totalSharpness;
+    return round($totalSharpness, 2);
 }
-?>
