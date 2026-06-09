@@ -139,6 +139,11 @@ else $dashLink = '/swim-meet/public/login.php';
             <span class="font-bold text-[11px] tracking-widest uppercase">Rekap Medali</span>
          </a>
 
+         <a href="/swim-meet/src/admin/results/best_swimmer.php" class="<?= (strpos($req,"best_swimmer")!==false) ? $activeLink : $baseLink ?>">
+            <span class="w-6 text-xl mr-3 text-center opacity-80">🏆</span>
+            <span class="font-bold text-[11px] tracking-widest uppercase">Perenang Terbaik</span>
+         </a>
+
          <?php endif; ?>
 
 <?php if($role == 'user'): ?>
