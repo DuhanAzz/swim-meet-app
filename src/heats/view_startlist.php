@@ -69,7 +69,7 @@ include __DIR__ . '/../../views/layout/sidebar.php';
 <div class="p-6 sm:ml-64 mt-16">
     <div class="flex justify-between items-center mb-6">
         <div>
-            <a href="/swim-meet/src/events/index.php" class="text-blue-600 hover:underline mb-2 block no-print">&larr; Kembali ke Daftar Event</a>
+            <a href="/src/events/index.php" class="text-blue-600 hover:underline mb-2 block no-print">&larr; Kembali ke Daftar Event</a>
             <h1 class="text-2xl font-bold text-gray-800">Start List: <?= htmlspecialchars($event['nama_event']) ?></h1>
             <p class="text-gray-500">Jarak: <?= $event['jarak'] ?>m | Gaya: <?= $event['gaya'] ?> | Kolam: <?= $totalLanes ?> Lintasan</p>
         </div>

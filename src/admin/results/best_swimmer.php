@@ -6,7 +6,7 @@ require_once __DIR__ . '/calculate_best_swimmer.php';
 
 // Proteksi akses hanya untuk admin/master
 if (!isset($_SESSION['role']) || !in_array($_SESSION['role'], ['admin', 'master'])) {
-    header("Location: /swim-meet/public/login.php"); exit;
+    header("Location: /public/login.php"); exit;
 }
 
 // 1. Ambil Parameter Filter

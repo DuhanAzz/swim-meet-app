@@ -77,12 +77,12 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                         } else {
                             // Cari kata 'uploads', 'assets', atau 'img' dan ambil sisanya
                             if (preg_match('/(uploads\/.*|assets\/.*|img\/.*)/i', $dbPath, $matches)) {
-                                $imgSrc = '/swim-meet/' . $matches[1];
+                                $imgSrc = '/' . $matches[1];
                             } else {
                                 // Jika tidak ada kata di atas, bersihkan ../ dan garing di depan
                                 $cleanPath = preg_replace('/^(\.\.\/)+/', '', $dbPath);
                                 $cleanPath = ltrim($cleanPath, '/');
-                                $imgSrc = '/swim-meet/' . $cleanPath;
+                                $imgSrc = '/' . $cleanPath;
                             }
                         }
                     }

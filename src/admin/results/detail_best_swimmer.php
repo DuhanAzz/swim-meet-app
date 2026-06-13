@@ -5,7 +5,7 @@ require_once __DIR__ . '/../../../src/config/database.php';
 require_once __DIR__ . '/calculate_best_swimmer.php';
 
 if (!isset($_SESSION['role']) || !in_array($_SESSION['role'], ['admin', 'master'])) {
-    header("Location: /swim-meet/public/login.php"); exit;
+    header("Location: /public/login.php"); exit;
 }
 
 $event_id = isset($_GET['event_id']) ? (int)$_GET['event_id'] : 0;

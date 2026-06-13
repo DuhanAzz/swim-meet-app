@@ -113,14 +113,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $ext = pathinfo($_FILES['logo_left']['name'], PATHINFO_EXTENSION);
             $fn = "LOGO_L_" . $eventId . "_" . time() . "." . $ext;
             if(move_uploaded_file($_FILES['logo_left']['tmp_name'], $targetDir . $fn)) {
-                $pdo->prepare("UPDATE events SET logo_left = ? WHERE id = ?")->execute(["/swim-meet/uploads/logos/" . $fn, $eventId]);
+                $pdo->prepare("UPDATE events SET logo_left = ? WHERE id = ?")->execute(["/uploads/logos/" . $fn, $eventId]);
             }
         }
         if (!empty($_FILES['logo_right']['name'])) {
             $ext = pathinfo($_FILES['logo_right']['name'], PATHINFO_EXTENSION);
             $fn = "LOGO_R_" . $eventId . "_" . time() . "." . $ext;
             if(move_uploaded_file($_FILES['logo_right']['tmp_name'], $targetDir . $fn)) {
-                $pdo->prepare("UPDATE events SET logo_right = ? WHERE id = ?")->execute(["/swim-meet/uploads/logos/" . $fn, $eventId]);
+                $pdo->prepare("UPDATE events SET logo_right = ? WHERE id = ?")->execute(["/uploads/logos/" . $fn, $eventId]);
             }
         }
 
@@ -133,7 +133,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     $ext = pathinfo($_FILES['sponsor_files']['name'][$i], PATHINFO_EXTENSION);
                     $newFileName = "SPONSOR_" . $eventId . "_" . time() . "_$i." . $ext;
                     if(move_uploaded_file($_FILES['sponsor_files']['tmp_name'][$i], $targetDir . $newFileName)) {
-                        $stmtSponsor->execute([$eventId, "/swim-meet/uploads/logos/" . $newFileName]);
+                        $stmtSponsor->execute([$eventId, "/uploads/logos/" . $newFileName]);
                     }
                 }
             }
@@ -144,7 +144,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $ext = pathinfo($_FILES['poster_file']['name'], PATHINFO_EXTENSION);
             $fn = "POSTER_" . $eventId . "_" . time() . "." . $ext;
             if(move_uploaded_file($_FILES['poster_file']['tmp_name'], $posterDir . $fn)) {
-                $pdo->prepare("UPDATE events SET poster_image = ? WHERE id = ?")->execute(["/swim-meet/uploads/posters/" . $fn, $eventId]);
+                $pdo->prepare("UPDATE events SET poster_image = ? WHERE id = ?")->execute(["/uploads/posters/" . $fn, $eventId]);
             }
         }
 
@@ -155,7 +155,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 $fn = $kategori . "_" . $eventId . "_" . time() . "." . $ext;
                 
                 if(move_uploaded_file($_FILES[$fileInput]['tmp_name'], $docDir . $fn)) {
-                    $filePath = "/swim-meet/uploads/documents/" . $fn;
+                    $filePath = "/uploads/documents/" . $fn;
                     $judulFile = $judulPrefix . " " . $eventName;
                     
                     $stmtCek = $pdo->prepare("SELECT id FROM documents WHERE event_id = ? AND kategori = ?");
@@ -222,7 +222,7 @@ function getUrlPreview($dbPath) {
     if (strpos($dbPath, 'http') === 0) return $dbPath;
     $cleanPath = ltrim(preg_replace('/^(\.\.\/)+/', '', $dbPath), '/');
     if (strpos($cleanPath, 'swim-meet/') === 0) $cleanPath = substr($cleanPath, 10);
-    return '/swim-meet/' . $cleanPath;
+    return '/' . $cleanPath;
 }
 
 include __DIR__ . '/../../../views/layout/topbar.php'; 

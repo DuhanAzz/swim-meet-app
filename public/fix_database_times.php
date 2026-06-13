@@ -53,11 +53,11 @@ try {
 } catch (Exception $e) {
     echo "<h3 style='color:red'>❌ ERROR: " . $e->getMessage() . "</h3>";
 }
-?>      <a href="/swim-meet/src/admin/results/index.php" class="<?= (strpos($req,"results/index")!==false) ? $activeLink : $baseLink ?>">
+?>      <a href="/src/admin/results/index.php" class="<?= (strpos($req,"results/index")!==false) ? $activeLink : $baseLink ?>">
             <span class="w-6 text-xl mr-3 text-center opacity-80">📊</span>
             <span class="font-bold text-[11px] tracking-widest uppercase">Hasil Lomba</span>
          </a>
-         <a href="/swim-meet/src/admin/awards/index.php" class="<?= (strpos($req,"awards/index")!==false) ? $activeLink : $baseLink ?>">
+         <a href="/src/admin/awards/index.php" class="<?= (strpos($req,"awards/index")!==false) ? $activeLink : $baseLink ?>">
             <span class="w-6 text-xl mr-3 text-center opacity-80">🏅</span>
             <span class="font-bold text-[11px] tracking-widest uppercase">Penghargaan</span>
          </a>
@@ -65,13 +65,13 @@ try {
 
       <?php if($role == 'master'): ?>
          <div class="px-8 mt-8 mb-2 text-[10px] font-black text-slate-600 uppercase tracking-widest">Master Data</div>
-         <a href="/swim-meet/src/master/clubs/index.php" class="<?= (strpos($req,"clubs")!==false) ? $activeLink : $baseLink ?>">
+         <a href="/src/master/clubs/index.php" class="<?= (strpos($req,"clubs")!==false) ? $activeLink : $baseLink ?>">
             <span class="w-6 text-center mr-3 text-lg">🏊‍♂️</span> 
             <span class="font-bold text-[11px] tracking-widest uppercase">Data Klub</span>
          </a>
-         <a href="/swim-meet/src/master/swimmers/index.php" class="<?= (strpos($req,"swimmers")!==false) ? $activeLink : $baseLink ?>">
+         <a href="/src/master/swimmers/index.php" class="<?= (strpos($req,"swimmers")!==false) ? $activeLink : $baseLink ?>">
             <span class="w-6 text-center mr-3 text-lg">🤽‍♀️</span> 
             <span class="font-bold text-[11px] tracking-widest uppercase">Data Atlet</span>
          </a>
-         <a href="/swim-meet/src/master/club_mutations/index.php" class="<?= (strpos($req,"club_mutations")!==false) ? $activeLink : $baseLink ?>">
+         <a href="/src/master/club_mutations/index.php" class="<?= (strpos($req,"club_mutations")!==false) ? $activeLink : $baseLink ?>">
             <span class="w-6 text-center mr-3 text-lg">🔄</span>

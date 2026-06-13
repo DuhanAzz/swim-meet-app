@@ -380,11 +380,11 @@ CREATE TABLE `documents` (
 INSERT INTO `documents` (`id`, `user_id`, `event_id`, `judul_file`, `file_path`, `kategori`, `created_at`) VALUES
 (2, 27, 24, 'Buku Panduan SELEKSI O2SN SD - SMP TINGKAT KOTA YOGYAKARTA 2026', 'uploads/documents/JUKNIS_24_1780196506.pdf', 'JUKNIS', '2026-05-31 03:01:46'),
 (3, 27, 24, 'Formulir Pendaftaran SELEKSI O2SN SD - SMP TINGKAT KOTA YOGYAKARTA 2026', 'uploads/documents/FORMULIR_24_1780196506.xlsx', 'FORMULIR', '2026-05-31 03:01:46'),
-(4, 27, 24, 'Meet Program', '/swim-meet/uploads/documents/1780213541_2070.pdf', 'buku_acara', '2026-05-31 07:45:41'),
-(5, 27, 24, 'Result Race', '/swim-meet/uploads/documents/1780215112_3677.pdf', 'buku_hasil', '2026-05-31 08:11:52'),
-(6, 7, 7, 'meet program', '/swim-meet/uploads/documents/1780225160_2884.pdf', 'buku_acara', '2026-05-31 10:59:20'),
-(7, 7, 7, 'Result Race', '/swim-meet/uploads/documents/1780227136_5589.pdf', 'buku_hasil', '2026-05-31 11:32:16'),
-(8, 20, 20, 'Result Race', '/swim-meet/uploads/documents/1780227829_1375.pdf', 'buku_hasil', '2026-05-31 11:43:49');
+(4, 27, 24, 'Meet Program', '/uploads/documents/1780213541_2070.pdf', 'buku_acara', '2026-05-31 07:45:41'),
+(5, 27, 24, 'Result Race', '/uploads/documents/1780215112_3677.pdf', 'buku_hasil', '2026-05-31 08:11:52'),
+(6, 7, 7, 'meet program', '/uploads/documents/1780225160_2884.pdf', 'buku_acara', '2026-05-31 10:59:20'),
+(7, 7, 7, 'Result Race', '/uploads/documents/1780227136_5589.pdf', 'buku_hasil', '2026-05-31 11:32:16'),
+(8, 20, 20, 'Result Race', '/uploads/documents/1780227829_1375.pdf', 'buku_hasil', '2026-05-31 11:43:49');
 
 -- --------------------------------------------------------
 

@@ -66,7 +66,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['upload_doc'])) {
         $dest = $uploadDir . $filename;
         
         // Jalur url yang disimpan ke database untuk kebutuhan tag <a href="...">
-        $db_path = '/swim-meet/uploads/documents/' . $filename; 
+        $db_path = '/uploads/documents/' . $filename; 
 
         if (move_uploaded_file($_FILES['dokumen']['tmp_name'], $dest)) {
             // Hapus dokumen lama untuk kategori yang sama agar tidak menumpuk

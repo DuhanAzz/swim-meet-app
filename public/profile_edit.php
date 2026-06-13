@@ -113,7 +113,7 @@ include __DIR__ . '/../views/layout/sidebar.php';
                     <div class="flex items-center gap-6 pb-6 border-b border-slate-100">
                         <div class="relative group">
                             <?php if(!empty($photoVal)): ?>
-                                <img id="previewPhoto" src="/swim-meet/public/<?= $photoVal ?>?t=<?= time() ?>" class="w-28 h-28 rounded-full object-cover border-4 border-slate-50 shadow-lg">
+                                <img id="previewPhoto" src="/public/<?= $photoVal ?>?t=<?= time() ?>" class="w-28 h-28 rounded-full object-cover border-4 border-slate-50 shadow-lg">
                             <?php else: ?>
                                 <div id="previewPlaceholder" class="w-28 h-28 rounded-full bg-blue-100 flex items-center justify-center text-3xl text-blue-600 font-bold border-4 border-slate-50 shadow-lg">
                                     <?= strtoupper(substr($u['nama_lengkap'], 0, 1)) ?>

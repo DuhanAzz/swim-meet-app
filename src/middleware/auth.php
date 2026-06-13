@@ -7,7 +7,7 @@ if (session_status() === PHP_SESSION_NONE) {
 function require_role($roles)
 {
     if (!isset($_SESSION['user'])) {
-        header("Location: /swim-meet/public/login.php");
+        header("Location: /public/login.php");
         exit;
     }
 
