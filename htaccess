@@ -1,0 +1,19 @@
+# 1. Matikan fitur intip folder (Wajib untuk mencegah 403 di beberapa server)
+Options -Indexes
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # 2. Jika user hanya mengetik nama domain, langsung tembak ke public/index.php
+    RewriteRule ^$ public/index.php [L]
+
+    # 3. Izinkan pembacaan file asli (CSS, JS, Gambar) di dalam folder public
+    RewriteCond %{DOCUMENT_ROOT}/public/$1 -f [OR]
+    RewriteCond %{DOCUMENT_ROOT}/public/$1 -d
+    RewriteRule ^(.*)$ public/$1 [L]
+
+    # 4. Arahkan semua request URL sisanya (seperti /login, /dashboard) ke gerbang utama
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^(.*)$ public/index.php [L,QSA]
+</IfModule>

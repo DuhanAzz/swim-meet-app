@@ -5,7 +5,7 @@ require_once __DIR__ . '/../../config/database.php';
 
 // 1. PROTEKSI HALAMAN (HANYA MASTER)
 if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'master') {
-    header("Location: ../../../public/login.php"); exit;
+    header("Location: /public/login.php"); exit;
 }
 
 // 2. SETUP VARIABEL
@@ -64,7 +64,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['save_user'])) {
         // Data Akun (Tabel Users)
         $namaAkun = trim($_POST['nama_lengkap']); 
         $email    = trim($_POST['email']);
-        $phone    = trim($_POST['phone']); // AMBIL DATA PHONE DARI FORM
+        $phone    = trim($_POST['phone']); 
         $username = $email; 
         $pass     = $_POST['password'];
 
@@ -161,6 +161,9 @@ if (isset($_GET['delete'])) {
     } else {
         try {
             $pdo->beginTransaction();
+            // REVISI: Bersihkan data Atlet dulu untuk menghindari Error Relasi Foreign Key
+            $pdo->prepare("DELETE FROM swimmers WHERE user_id = ?")->execute([$id]); 
+            
             $pdo->prepare("DELETE FROM events WHERE user_id = ?")->execute([$id]); 
             $pdo->prepare("DELETE FROM clubs WHERE user_id = ?")->execute([$id]);
             $pdo->prepare("DELETE FROM users WHERE id = ?")->execute([$id]);        
@@ -366,7 +369,7 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                                     ✏️
                                 </button>
                                 
-                                <a href="?delete=<?= $u['id'] ?>&role=<?= $targetRole ?>" onclick="return confirm('Hapus permanen? Data event/klub terkait akan hilang.')" class="w-8 h-8 flex items-center justify-center bg-white border border-slate-200 rounded-lg hover:border-red-500 hover:text-red-600 transition text-slate-400 shadow-sm">🗑️</a>
+                                <a href="?delete=<?= $u['id'] ?>&role=<?= $targetRole ?>" onclick="return confirm('Hapus permanen? Data event/klub (termasuk data atlet mereka) akan hilang permanen.')" class="w-8 h-8 flex items-center justify-center bg-white border border-slate-200 rounded-lg hover:border-red-500 hover:text-red-600 transition text-slate-400 shadow-sm">🗑️</a>
                             </div>
                         </td>
                     </tr>
@@ -461,19 +464,16 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
 <script>
 const modal = document.getElementById('modal-admin');
 
-// 1. Reset Form saat Tambah Baru
 function openModal() {
     document.getElementById('modal-title').innerText = "Tambah <?= strtoupper($targetRole) ?> Baru";
-    document.getElementById('form-id').value = ""; // ID Kosong = Insert
+    document.getElementById('form-id').value = ""; 
     
-    // Reset Data Dasar
     document.getElementById('form-nama').value = "";
     document.getElementById('form-email').value = "";
     document.getElementById('form-phone').value = "";
     document.getElementById('form-pass').required = true;
     document.getElementById('form-pass').value = "";
     
-    // Reset Detail
     document.getElementById('form-nama-detail').value = "";
     
     if(document.getElementById('form-location')) document.getElementById('form-location').value = "";
@@ -484,7 +484,6 @@ function openModal() {
     modal.classList.remove('hidden');
 }
 
-// 2. Isi Form saat Edit (MAPPING DATA)
 function editAdmin(buttonElement) {
     try {
         const jsonString = buttonElement.getAttribute('data-user');
@@ -492,20 +491,16 @@ function editAdmin(buttonElement) {
 
         document.getElementById('modal-title').innerText = "Edit <?= strtoupper($targetRole) ?>";
         
-        // Isi Data Dasar Users
         document.getElementById('form-id').value = data.id; 
-        document.getElementById('form-nama').value = data.nama_lengkap; // Nama User Akun
+        document.getElementById('form-nama').value = data.nama_lengkap; 
         document.getElementById('form-email').value = data.email;
         document.getElementById('form-phone').value = data.phone || '';
         document.getElementById('form-pass').required = false; 
         document.getElementById('form-pass').value = ""; 
 
-        // --- MAPPING DETAIL ---
-        // Prioritas ambil dari tabel detail. Jika kosong, baru ambil dari user.
         const detailName = data.nama_klub || data.event_name || data.nama_lengkap;
         document.getElementById('form-nama-detail').value = detailName;
 
-        // --- ADMIN / EVENT FIELDS ---
         if(document.getElementById('form-mode')) {
             document.getElementById('form-mode').value = data.competition_system || 'Langsung Final';
         }
@@ -516,7 +511,6 @@ function editAdmin(buttonElement) {
             document.getElementById('form-date').value = data.event_date_start || ''; 
         }
         
-        // --- USER / CLUB FIELDS ---
         if(document.getElementById('form-kota')) {
             document.getElementById('form-kota').value = data.kota || '';
         }
