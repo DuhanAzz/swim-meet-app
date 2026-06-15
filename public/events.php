@@ -48,6 +48,7 @@ if (!empty($events)) {
 <!DOCTYPE html>
 <html lang="id" class="scroll-smooth">
 <head>
+    <link rel="icon" type="image/png" href="/public/favicon.png?v=2">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Jadwal Lomba - <?= htmlspecialchars($heroTitle) ?></title>

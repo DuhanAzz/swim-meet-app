@@ -361,13 +361,19 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
 
                         <td class="px-6 py-5 align-top text-right">
                             <div class="flex justify-end gap-2">
-                                <button 
-                                    type="button"
-                                    data-user="<?= htmlspecialchars(json_encode($u), ENT_QUOTES, 'UTF-8') ?>"
-                                    onclick="editAdmin(this)"
-                                    class="w-8 h-8 flex items-center justify-center bg-white border border-slate-200 rounded-lg hover:border-blue-500 hover:text-blue-600 transition text-slate-400 shadow-sm">
-                                    ✏️
-                                </button>
+                                <?php if($status === 'pending'): ?>
+                                    <a href="verify_user.php?id=<?= $u['id'] ?>" class="flex items-center justify-center bg-amber-500 hover:bg-amber-600 text-white px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider transition shadow-sm">
+                                        Verifikasi Akun
+                                    </a>
+                                <?php else: ?>
+                                    <button 
+                                        type="button"
+                                        data-user="<?= htmlspecialchars(json_encode($u), ENT_QUOTES, 'UTF-8') ?>"
+                                        onclick="editAdmin(this)"
+                                        class="w-8 h-8 flex items-center justify-center bg-white border border-slate-200 rounded-lg hover:border-blue-500 hover:text-blue-600 transition text-slate-400 shadow-sm">
+                                        ✏️
+                                    </button>
+                                <?php endif; ?>
                                 
                                 <a href="?delete=<?= $u['id'] ?>&role=<?= $targetRole ?>" onclick="return confirm('Hapus permanen? Data event/klub (termasuk data atlet mereka) akan hilang permanen.')" class="w-8 h-8 flex items-center justify-center bg-white border border-slate-200 rounded-lg hover:border-red-500 hover:text-red-600 transition text-slate-400 shadow-sm">🗑️</a>
                             </div>

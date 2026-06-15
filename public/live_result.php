@@ -68,6 +68,7 @@ foreach ($results as $r) {
 <!DOCTYPE html>
 <html lang="id">
 <head>
+    <link rel="icon" type="image/png" href="/public/favicon.png?v=2">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Live Result - <?= htmlspecialchars($event['event_name']) ?></title>
