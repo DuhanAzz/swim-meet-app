@@ -54,33 +54,62 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
             <div>
                 <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Nama Lengkap</label>
-                <div class="text-sm font-bold text-slate-800 uppercase"><?= htmlspecialchars($user['nama_lengkap']) ?></div>
+                <div class="text-sm font-bold text-slate-800 uppercase flex items-center gap-2">
+                    <span class="text-slate-400 text-lg">👤</span> <?= htmlspecialchars($user['nama_lengkap']) ?>
+                </div>
             </div>
             <div>
                 <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Email</label>
-                <div class="text-sm font-bold text-slate-800"><?= htmlspecialchars($user['email']) ?></div>
+                <div class="text-sm font-bold text-slate-800 flex items-center gap-2">
+                    <span class="text-slate-400 text-lg">✉️</span> <?= htmlspecialchars($user['email']) ?>
+                </div>
             </div>
             <div>
                 <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">No. WhatsApp</label>
-                <div class="text-sm font-bold text-slate-800"><?= htmlspecialchars($user['phone'] ?? '-') ?></div>
+                <div class="text-sm font-bold text-slate-800 flex items-center gap-2">
+                    <span class="text-emerald-500 text-lg">📱</span> <?= htmlspecialchars($user['phone'] ?? '-') ?>
+                </div>
             </div>
             <div>
                 <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Nama Klub / Event</label>
-                <div class="text-sm font-bold text-slate-800 uppercase"><?= htmlspecialchars($entitasName) ?></div>
+                <div class="text-sm font-bold text-slate-800 uppercase flex items-center gap-2">
+                    <span class="text-blue-500 text-lg">🏢</span> <?= htmlspecialchars($entitasName) ?>
+                </div>
             </div>
-            <div>
-                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Tanggal Mendaftar</label>
-                <div class="text-sm font-bold text-slate-800 uppercase"><?= date('d F Y, H:i', strtotime($user['created_at'])) ?></div>
-            </div>
-            <div>
-                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Status Saat Ini</label>
-                <?php if ($user['account_status'] === 'pending'): ?>
-                    <span class="bg-amber-100 text-amber-700 px-3 py-1 rounded-md text-[10px] font-black uppercase tracking-wider inline-block">PENDING</span>
-                <?php elseif ($user['account_status'] === 'active'): ?>
-                    <span class="bg-emerald-100 text-emerald-700 px-3 py-1 rounded-md text-[10px] font-black uppercase tracking-wider inline-block">ACTIVE</span>
-                <?php else: ?>
-                    <span class="bg-red-100 text-red-700 px-3 py-1 rounded-md text-[10px] font-black uppercase tracking-wider inline-block"><?= strtoupper($user['account_status']) ?></span>
-                <?php endif; ?>
+            <div class="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                    <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Tanggal Mendaftar</label>
+                    <div class="text-sm font-bold text-slate-800 uppercase flex items-center gap-2">
+                        <span class="text-slate-400 text-lg">📅</span> 
+                        <?php 
+                            $days = ['Sunday'=>'Minggu','Monday'=>'Senin','Tuesday'=>'Selasa','Wednesday'=>'Rabu','Thursday'=>'Kamis','Friday'=>'Jumat','Saturday'=>'Sabtu'];
+                            $months = ['January'=>'Januari','February'=>'Februari','March'=>'Maret','April'=>'April','May'=>'Mei','June'=>'Juni','July'=>'Juli','August'=>'Agustus','September'=>'September','October'=>'Oktober','November'=>'November','December'=>'Desember'];
+                            $time = strtotime($user['created_at']);
+                            $hari = $days[date('l', $time)];
+                            $tgl = date('d', $time);
+                            $bln = $months[date('F', $time)];
+                            $thn = date('Y', $time);
+                            $jam = date('H:i', $time);
+                            echo "$hari, $tgl $bln $thn | $jam WIB";
+                        ?>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Status Saat Ini</label>
+                    <?php if ($user['account_status'] === 'pending'): ?>
+                        <span class="bg-amber-100 text-amber-700 px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider inline-flex items-center gap-2 animate-pulse shadow-sm border border-amber-200">
+                            <span class="w-2 h-2 rounded-full bg-amber-500 animate-ping"></span> PENDING VERIFICATION
+                        </span>
+                    <?php elseif ($user['account_status'] === 'active'): ?>
+                        <span class="bg-emerald-100 text-emerald-700 px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider inline-flex items-center gap-2 shadow-sm border border-emerald-200">
+                            <span class="w-2 h-2 rounded-full bg-emerald-500"></span> ACTIVE
+                        </span>
+                    <?php else: ?>
+                        <span class="bg-red-100 text-red-700 px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider inline-flex items-center gap-2 shadow-sm border border-red-200">
+                            <span class="w-2 h-2 rounded-full bg-red-500"></span> <?= strtoupper($user['account_status']) ?>
+                        </span>
+                    <?php endif; ?>
+                </div>
             </div>
         </div>
 

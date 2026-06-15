@@ -7,6 +7,8 @@ $success = '';
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $nama = $_POST['nama'];
+    $nama_klub = $_POST['nama_klub'];
+    $phone = $_POST['phone'];
     $email = $_POST['email'];
     $pass = $_POST['password'];
     $userType = 'user'; // Default daftar sebagai user klub
@@ -21,12 +23,24 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         // Buat username simple dari nama
         $username = strtolower(str_replace(' ', '', $nama)) . rand(100,999);
         
-        $ins = $pdo->prepare("INSERT INTO users (username, nama_lengkap, email, password, role, account_status) VALUES (?, ?, ?, ?, ?, 'pending')");
-        if($ins->execute([$username, $nama, $email, $hash, $userType])) {
-            $waNumber = $pdo->query("SELECT contact_wa FROM site_settings WHERE id=1")->fetchColumn() ?: '6281993189787';
-            $success = true;
-        } else {
-            $error = "Gagal mendaftar.";
+        try {
+            $pdo->beginTransaction();
+            $ins = $pdo->prepare("INSERT INTO users (username, nama_lengkap, email, phone, password, role, account_status) VALUES (?, ?, ?, ?, ?, ?, 'pending')");
+            if($ins->execute([$username, $nama, $email, $phone, $hash, $userType])) {
+                $newUserId = $pdo->lastInsertId();
+                $insClub = $pdo->prepare("INSERT INTO clubs (user_id, nama_klub) VALUES (?, ?)");
+                $insClub->execute([$newUserId, $nama_klub]);
+                $pdo->commit();
+                
+                $waNumber = $pdo->query("SELECT contact_wa FROM site_settings WHERE id=1")->fetchColumn() ?: '6281993189787';
+                $success = true;
+            } else {
+                $pdo->rollBack();
+                $error = "Gagal mendaftar.";
+            }
+        } catch (Exception $e) {
+            $pdo->rollBack();
+            $error = "Terjadi kesalahan sistem.";
         }
     }
 }
@@ -67,8 +81,16 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
         <form method="POST" class="space-y-4">
             <div>
-                <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Nama Lengkap / Klub</label>
+                <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Nama Lengkap (Admin Klub)</label>
                 <input type="text" name="nama" class="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-600 outline-none" required>
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Nama Klub Renang</label>
+                <input type="text" name="nama_klub" class="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-600 outline-none" required placeholder="Contoh: Tirta Jaya SC">
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-700 uppercase mb-1">No. WhatsApp</label>
+                <input type="text" name="phone" class="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-600 outline-none" required placeholder="08...">
             </div>
             <div>
                 <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Email</label>
@@ -83,6 +105,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
         <p class="mt-6 text-center text-sm text-slate-500">
             Sudah punya akun? <a href="login.php" class="text-blue-600 font-bold hover:underline">Login</a>
+
         </p>
     </div>
 
