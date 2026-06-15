@@ -24,6 +24,7 @@ if ($isMaintenance && !$isMaster) {
         <title>Sedang Dalam Perbaikan</title>
         <script src="https://cdn.tailwindcss.com"></script>
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;900&display=swap" rel="stylesheet">
+        <link rel="icon" type="image/png" href="favicon.png?v=1">
     </head>
     <body class="bg-slate-900 h-screen flex flex-col items-center justify-center text-center p-6 font-['Inter']">
         <div class="bg-slate-800 p-10 rounded-3xl shadow-2xl border border-slate-700 max-w-lg w-full">
@@ -80,6 +81,7 @@ $upcoming_preview = $pdo->query($sql)->fetchAll();
     
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/png" href="favicon.png?v=1">
     <style>
         body { font-family: 'Inter', sans-serif; }
         
