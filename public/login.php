@@ -28,8 +28,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $user = $stmt->fetch();
 
     if ($user && password_verify($pass, $user['password'])) {
-        $_SESSION['user_id'] = $user['id'];
-        $_SESSION['role'] = $user['role'];
+        if ($user['account_status'] === 'pending') {
+            $waNumber = $pdo->query("SELECT contact_wa FROM site_settings WHERE id=1")->fetchColumn() ?: '6281993189787';
+            $error = "Akun Anda masih PENDING. Silakan <a href='https://wa.me/" . htmlspecialchars($waNumber) . "?text=Halo%20Admin,%20mohon%20approve%20akun%20saya%20(" . urlencode($user['email']) . ")' target='_blank' class='text-blue-600 hover:underline font-bold'>Hubungi Admin via WA</a>.";
+        } else {
+            $_SESSION['user_id'] = $user['id'];
+            $_SESSION['role'] = $user['role'];
         $_SESSION['nama_lengkap'] = $user['nama_lengkap'];
         // --- SINKRONISASI MODE EO ---
         $_SESSION['event_type'] = $user['event_type']; 
@@ -38,6 +42,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         elseif ($user['role'] == 'admin') header("Location: ../src/admin/dashboard.php");
         else header("Location: ../src/user/dashboard.php");
         exit;
+        }
     } else {
         $error = "Akun tidak ditemukan atau password salah.";
     }

@@ -21,9 +21,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         // Buat username simple dari nama
         $username = strtolower(str_replace(' ', '', $nama)) . rand(100,999);
         
-        $ins = $pdo->prepare("INSERT INTO users (username, nama_lengkap, email, password, role) VALUES (?, ?, ?, ?, ?)");
+        $ins = $pdo->prepare("INSERT INTO users (username, nama_lengkap, email, password, role, account_status) VALUES (?, ?, ?, ?, ?, 'pending')");
         if($ins->execute([$username, $nama, $email, $hash, $userType])) {
-            $success = "Pendaftaran berhasil! Silakan login.";
+            $waNumber = $pdo->query("SELECT contact_wa FROM site_settings WHERE id=1")->fetchColumn() ?: '6281993189787';
+            $success = true;
         } else {
             $error = "Gagal mendaftar.";
         }
@@ -51,9 +52,16 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             <div class="bg-red-100 text-red-700 p-3 rounded mb-4 text-sm font-bold text-center"><?= $error ?></div>
         <?php endif; ?>
         <?php if($success): ?>
-            <div class="bg-green-100 text-green-700 p-3 rounded mb-4 text-sm font-bold text-center">
-                <?= $success ?> <br> <a href="login.php" class="underline">Klik disini untuk Login</a>
+            <div class="bg-green-100 text-green-800 p-6 rounded-2xl mb-6 text-center shadow-md border border-green-200">
+                <div class="text-4xl mb-3">✅</div>
+                <h3 class="font-black text-xl mb-1 uppercase tracking-tight">Pendaftaran Berhasil!</h3>
+                <p class="text-sm font-medium mb-5">Akun Anda sedang dalam status <strong>PENDING</strong>. Silakan hubungi Admin via WhatsApp untuk proses verifikasi dan aktivasi.</p>
+                <a href="https://wa.me/<?= htmlspecialchars($waNumber) ?>?text=Halo%20Admin,%20saya%20baru%20saja%20mendaftar%20akun%20di%20Set%20System%20dengan%20email:%20<?= urlencode($email) ?>.%20Mohon%20untuk%20di-approve." target="_blank" class="block w-full bg-[#25D366] hover:bg-[#128C7E] text-white font-black py-3 px-4 rounded-xl transition shadow-lg mb-3">
+                    HUBUNGI ADMIN VIA WA
+                </a>
+                <a href="login.php" class="inline-block text-xs font-bold text-slate-500 hover:text-slate-800 underline">Kembali ke halaman Login</a>
             </div>
+            <style> form { display: none; } </style>
         <?php endif; ?>
 
         <form method="POST" class="space-y-4">
