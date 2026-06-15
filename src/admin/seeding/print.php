@@ -39,8 +39,8 @@ $pool_type    = strtoupper($eventProfile['pool_type'] ?? 'LCM');
 $parentEventId = $eventProfile['id'] ?? 0;
 
 // LOGO
-$logo_left  = !empty($eventProfile['logo_left']) ? '../../../public/' . $eventProfile['logo_left'] : null;
-$logo_right = !empty($eventProfile['logo_right']) ? '../../../public/' . $eventProfile['logo_right'] : null;
+$logo_left  = !empty($eventProfile['logo_left']) ? '/' . ltrim($eventProfile['logo_left'], '/') : null;
+$logo_right = !empty($eventProfile['logo_right']) ? '/' . ltrim($eventProfile['logo_right'], '/') : null;
 
 // TANGGAL
 $display_date = strtoupper(date('d F Y', strtotime($event_date)));
@@ -294,7 +294,7 @@ foreach ($raw_data as $row) $heats[$row['heat_no']][$row['lane_no']] = $row;
     <div class="footer-sponsor">
         <div class="footer-line"></div>
         <?php foreach($sponsors as $img): ?>
-            <img src="../../../public/<?= $img ?>">
+            <img src="<?= '/' . ltrim($img, '/') ?>">
         <?php endforeach; ?>
     </div>
     <?php endif; ?>

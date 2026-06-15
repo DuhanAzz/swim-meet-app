@@ -69,8 +69,8 @@ $raceInfo = $stmtProfile->fetch(PDO::FETCH_ASSOC);
 $eventName  = strtoupper($raceInfo['event_name'] ?? 'EVENT NAME');
 $venueName  = strtoupper($raceInfo['event_location'] ?? '-');
 $eventDate  = $raceInfo['event_date_start'];
-$logoLeft   = !empty($raceInfo['logo_left']) ? '../../../public/' . $raceInfo['logo_left'] : null;
-$logoRight  = !empty($raceInfo['logo_right']) ? '../../../public/' . $raceInfo['logo_right'] : null;
+$logoLeft   = !empty($raceInfo['logo_left']) ? '/' . ltrim($raceInfo['logo_left'], '/') : null;
+$logoRight  = !empty($raceInfo['logo_right']) ? '/' . ltrim($raceInfo['logo_right'], '/') : null;
 $totalLane  = (int)($raceInfo['lane_count'] ?? 8);
 $partType   = $raceInfo['participation_type'] ?? 'club';
 $rawPool = $raceInfo['pool_type'] ?? '50m'; 
@@ -288,7 +288,7 @@ if ($showScheduleAuto) {
 
     <div class="footer-fixed">
         <?php if(!empty($sponsors)): foreach($sponsors as $img): ?>
-            <img src="../../../public/<?= $img ?>" style="height:45px; margin:0 10px;">
+            <img src="<?= '/' . ltrim($img, '/') ?>" style="height:45px; margin:0 10px;">
         <?php endforeach; endif; ?>
     </div>
 
