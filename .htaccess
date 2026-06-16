@@ -1,20 +1,20 @@
 # 1. Matikan fitur intip folder
 Options -Indexes
 
-# [TAMBAHAN BARU] Beritahu Apache bahwa file utamanya ada di dalam public
-DirectoryIndex public/index.php
-
 <IfModule mod_rewrite.c>
     RewriteEngine On
+    
+    # 2. [PENTING] Beritahu Apache bahwa web ini ada di dalam folder swim-meet
+    RewriteBase /swim-meet/
 
-    # 2. Jika user hanya mengetik nama domain, langsung tembak ke public/index.php
+    # 3. Jika user mengetik localhost/swim-meet/, tembak ke public/index.php
     RewriteRule ^$ public/index.php [L]
 
-    # 3. Izinkan pembacaan file asli (CSS, JS, Gambar) di dalam folder public
-    RewriteCond %{REQUEST_URI} !^/public/
+    # 4. Izinkan pembacaan file asli & Cegah Infinite Loop (Error 500)
+    RewriteCond %{REQUEST_URI} !^/swim-meet/public/
     RewriteRule ^(.*)$ public/$1 [L]
 
-    # 4. Arahkan semua request URL sisanya ke gerbang utama
+    # 5. Arahkan semua request URL sisanya ke gerbang utama
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteCond %{REQUEST_FILENAME} !-d
     RewriteRule ^(.*)$ public/index.php [L,QSA]
