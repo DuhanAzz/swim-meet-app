@@ -77,7 +77,7 @@ $upcoming_preview = $pdo->query($sql)->fetchAll();
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?= htmlspecialchars($s['app_name'] ?? 'SwimMeet') ?> - Home</title>
+    <title><?= htmlspecialchars($s['app_name'] ?? 'SET System') ?> - Swim Meet</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet">
