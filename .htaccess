@@ -4,18 +4,19 @@ Options -Indexes
 <IfModule mod_rewrite.c>
     RewriteEngine On
     
-    # 2. [PENTING] Beritahu Apache bahwa web ini ada di dalam folder swim-meet
+    # 2. Beritahu Apache bahwa web ini ada di dalam folder swim-meet
     RewriteBase /swim-meet/
 
-    # 3. Jika user mengetik localhost/swim-meet/, tembak ke public/index.php
+    # 3. Jika user HANYA mengetik localhost/swim-meet/ , tembak ke public/index.php
     RewriteRule ^$ public/index.php [L]
 
-    # 4. Izinkan pembacaan file asli & Cegah Infinite Loop (Error 500)
+    # 4. [PENTING - PERBAIKAN] Jika file/folder yang diakses BENAR-BENAR ADA 
+    # (Contoh: folder src/, file .php di dalamnya), biarkan dan JANGAN dialihkan!
+    RewriteCond %{REQUEST_FILENAME} -f [OR]
+    RewriteCond %{REQUEST_FILENAME} -d
+    RewriteRule ^ - [L]
+
+    # 5. Jika file tidak ada (misal gambar/aset yang seharusnya ada di public), baru arahkan ke public/
     RewriteCond %{REQUEST_URI} !^/swim-meet/public/
     RewriteRule ^(.*)$ public/$1 [L]
-
-    # 5. Arahkan semua request URL sisanya ke gerbang utama
-    RewriteCond %{REQUEST_FILENAME} !-f
-    RewriteCond %{REQUEST_FILENAME} !-d
-    RewriteRule ^(.*)$ public/index.php [L,QSA]
 </IfModule>
