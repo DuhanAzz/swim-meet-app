@@ -5,6 +5,12 @@ if (session_status() === PHP_SESSION_NONE) { session_start(); }
 // 2. Perbaiki jalur pemanggilan database
 require_once __DIR__ . '/../../src/config/database.php';
 
+// 🛡️ FALLBACK PINTAR: Mencegah link error jika web dipindah ke hosting
+if (!defined('BASE_URL')) {
+    $is_localhost = ($_SERVER['SERVER_NAME'] == 'localhost' || $_SERVER['SERVER_NAME'] == '127.0.0.1' || strpos($_SERVER['SERVER_NAME'], 'ngrok') !== false);
+    define('BASE_URL', $is_localhost ? 'http://localhost/swim_meet' : 'https://domainkamu.com'); 
+}
+
 // --- DATA USER ---
 $uid = $_SESSION['user_id'] ?? 0;
 $role = $_SESSION['role'] ?? 'guest';
@@ -14,14 +20,14 @@ $displayRole = strtoupper($role);
 // Default Avatar
 $displayImage = "https://ui-avatars.com/api/?name=" . urlencode($displayName) . "&background=0D8ABC&color=fff&size=128";
 
-// Logic Foto Profil
+// Logic Foto Profil (Menggunakan BASE_URL)
 if ($uid > 0) {
     $stmtU = $pdo->prepare("SELECT photo FROM users WHERE id = ?");
     $stmtU->execute([$uid]);
     $userData = $stmtU->fetch();
 
     if ($userData && !empty($userData['photo'])) {
-        $displayImage = "/public/" . $userData['photo'] . "?t=" . time();
+        $displayImage = BASE_URL . "/public/" . $userData['photo'] . "?t=" . time();
     } elseif ($role == 'user') {
         $stmtC = $pdo->prepare("SELECT nama_klub, logo FROM clubs WHERE user_id = ?");
         $stmtC->execute([$uid]);
@@ -30,7 +36,7 @@ if ($uid > 0) {
             $displayName = $clubData['nama_klub'];
             $displayRole = "CLUB ADMIN";
             if (!empty($clubData['logo'])) {
-                $displayImage = "/public/" . $clubData['logo'] . "?t=" . time();
+                $displayImage = BASE_URL . "/public/" . $clubData['logo'] . "?t=" . time();
             }
         }
     }
@@ -43,7 +49,7 @@ if ($uid > 0) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SET System</title>
-    <link rel="icon" type="image/png" href="/public/favicon.png?v=2">
+    <link rel="icon" type="image/png" href="<?= BASE_URL ?>/public/favicon.png?v=2">
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/flowbite/2.2.0/flowbite.min.css" rel="stylesheet" />
     <script src="https://cdnjs.cloudflare.com/ajax/libs/flowbite/2.2.0/flowbite.min.js"></script>
@@ -100,10 +106,10 @@ if ($uid > 0) {
                   <p class="text-xs font-medium text-gray-500 truncate"><?= $_SESSION['email'] ?? '' ?></p>
                 </div>
                 <ul class="py-2" role="none">
-                  <li><a href="/public/profile_edit.php" class="block px-4 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 font-medium flex items-center gap-2"><span>👤</span> Edit Profil</a></li>
-                  <li><a href="/public/change_password.php" class="block px-4 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 font-medium flex items-center gap-2"><span>🔒</span> Ubah Password</a></li>
+                  <li><a href="<?= BASE_URL ?>/public/profile_edit.php" class="block px-4 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 font-medium flex items-center gap-2"><span>👤</span> Edit Profil</a></li>
+                  <li><a href="<?= BASE_URL ?>/public/change_password.php" class="block px-4 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 font-medium flex items-center gap-2"><span>🔒</span> Ubah Password</a></li>
                   <div class="border-t border-gray-100 my-1"></div>
-                  <li><a href="/public/logout.php" class="block px-4 py-2 text-sm text-red-600 hover:bg-red-50 font-bold flex items-center gap-2"><span>🚪</span> Logout</a></li>
+                  <li><a href="<?= BASE_URL ?>/public/logout.php" class="block px-4 py-2 text-sm text-red-600 hover:bg-red-50 font-bold flex items-center gap-2"><span>🚪</span> Logout</a></li>
                 </ul>
               </div>
           </div>
