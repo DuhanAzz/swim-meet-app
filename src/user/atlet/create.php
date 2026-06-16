@@ -7,6 +7,58 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'user') {
     header("Location: ../../../public/login.php"); exit;
 }
 
+/**
+ * ========================================================
+ * FUNGSI GENERATE UID ATLET
+ * Format: [Inisial1][Inisial2][TahunLahir][Gender][Urutan]
+ * ========================================================
+ */
+function generateSwimmerUID($pdo, $nama_atlet, $tanggal_lahir, $jenis_kelamin) {
+    // 1. Bersihkan nama dari karakter aneh, jadikan huruf besar
+    $nama_bersih = preg_replace('/[^A-Za-z\s]/', '', strtoupper(trim($nama_atlet)));
+    $kata = explode(' ', $nama_bersih);
+    
+    // 2. Kode Inisial 1
+    $huruf1 = isset($kata[0][0]) ? $kata[0][0] : 'A';
+    $kode1 = str_pad(ord($huruf1) - 64, 2, '0', STR_PAD_LEFT); 
+    
+    // 3. Kode Inisial 2 (Jika namanya cuma 1 kata, set jadi 00)
+    if (isset($kata[1]) && !empty($kata[1])) {
+        $huruf2 = $kata[1][0];
+        $kode2 = str_pad(ord($huruf2) - 64, 2, '0', STR_PAD_LEFT);
+    } else {
+        $kode2 = '00'; 
+    }
+    
+    // 4. Tahun Lahir
+    $tahun = date('Y', strtotime($tanggal_lahir));
+    
+    // 5. Kode Jenis Kelamin (L = 1, P = 9)
+    $kode_jk = (strtoupper($jenis_kelamin) == 'L' || strtoupper($jenis_kelamin) == 'M') ? '1' : '9';
+    
+    // BASE UID SEMENTARA
+    $base_uid = $kode1 . $kode2 . $tahun . $kode_jk;
+    
+    // 6. Cek ke database untuk mencegah bentrok
+    $stmt = $pdo->prepare("SELECT uid FROM swimmers WHERE uid LIKE ? ORDER BY uid DESC LIMIT 1");
+    $stmt->execute([$base_uid . '%']);
+    $last_uid = $stmt->fetchColumn();
+    
+    $digit_akhir = 0;
+    if ($last_uid) {
+        $last_digit = (int) substr($last_uid, -1);
+        $digit_akhir = $last_digit + 1;
+        if ($digit_akhir > 9) {
+            $digit_akhir = 9; 
+        }
+    }
+    
+    return $base_uid . $digit_akhir;
+}
+
+// ========================================================
+// PROSES FORM SUBMIT
+// ========================================================
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $userId       = $_SESSION['user_id'];
     $nama_atlet   = trim(strtoupper($_POST['nama_atlet']));
@@ -16,10 +68,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if (!empty($nama_atlet) && !empty($jenis_kelamin) && !empty($tanggal_lahir)) {
         try {
-            $sql = "INSERT INTO swimmers (user_id, nama_atlet, jenis_kelamin, tanggal_lahir, asal_sekolah, created_at) 
-                    VALUES (?, ?, ?, ?, ?, NOW())";
+            // 🔥 Generate UID Baru disini 🔥
+            $uid_baru = generateSwimmerUID($pdo, $nama_atlet, $tanggal_lahir, $jenis_kelamin);
+
+            // Perubahan: Tambahkan kolom "uid" pada query INSERT
+            $sql = "INSERT INTO swimmers (uid, user_id, nama_atlet, jenis_kelamin, tanggal_lahir, asal_sekolah, created_at) 
+                    VALUES (?, ?, ?, ?, ?, ?, NOW())";
             $stmt = $pdo->prepare($sql);
-            $stmt->execute([$userId, $nama_atlet, $jenis_kelamin, $tanggal_lahir, $asal_sekolah]);
+            
+            // Masukkan variabel $uid_baru di urutan paling depan sesuai tanda "?"
+            $stmt->execute([$uid_baru, $userId, $nama_atlet, $jenis_kelamin, $tanggal_lahir, $asal_sekolah]);
+            
             header("Location: index.php?msg=added"); exit;
         } catch (PDOException $e) {
             $error = "Gagal menyimpan data: " . $e->getMessage();
