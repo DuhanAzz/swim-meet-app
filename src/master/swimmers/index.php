@@ -8,7 +8,107 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'master') {
     header("Location: ../../../public/login.php"); exit;
 }
 
-// 1. QUERY UTAMA
+// ============================================================
+// ⚡ LOGIKA GENERATE UID MASSAL (FORMAT CUSTOM)
+// ============================================================
+$success_msg = '';
+$error_msg = '';
+
+// Fungsi mengubah huruf jadi angka (A=01, B=02, dst)
+function getAlphaIndex($char) {
+    $char = strtoupper($char);
+    if ($char >= 'A' && $char <= 'Z') {
+        return str_pad(ord($char) - 64, 2, '0', STR_PAD_LEFT);
+    }
+    return '00';
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['generate_uids'])) {
+    // Cari atlet yang UID-nya kosong ATAU yang masih nyangkut di format 'SW'
+    $stmtGet = $pdo->query("SELECT id, nama_atlet, tanggal_lahir, jenis_kelamin FROM swimmers WHERE uid IS NULL OR uid = '' OR uid LIKE 'SW%'");
+    $unassigned = $stmtGet->fetchAll();
+    
+    if (count($unassigned) > 0) {
+        $pdo->beginTransaction();
+        try {
+            $stmtUpdate = $pdo->prepare("UPDATE swimmers SET uid = ? WHERE id = ?");
+            $count = 0;
+            
+            foreach ($unassigned as $row) {
+                // Bersihkan spasi berlebih
+                $nama = trim($row['nama_atlet']);
+                $words = explode(' ', preg_replace('/\s+/', ' ', $nama));
+                
+                // Ambil inisial
+                $char1 = isset($words[0][0]) ? $words[0][0] : 'A';
+                if (count($words) > 1) {
+                    $char2 = isset($words[1][0]) ? $words[1][0] : 'A';
+                } else {
+                    $char2 = isset($words[0][1]) ? $words[0][1] : 'A'; // Untuk nama 1 kata
+                }
+                
+                $part1 = getAlphaIndex($char1);
+                $part2 = getAlphaIndex($char2);
+                
+                // Ambil Tahun
+                $tahunLahir = '0000';
+                if (!empty($row['tanggal_lahir'])) {
+                    $tahunLahir = date('Y', strtotime($row['tanggal_lahir']));
+                }
+                
+                // Ambil Gender
+                $jk = strtoupper($row['jenis_kelamin'] ?? 'L');
+                $genderDigit = ($jk == 'L' || $jk == 'M') ? '1' : '9';
+                
+                // Format Base UID (contoh: 011820181)
+                $baseUid = $part1 . $part2 . $tahunLahir . $genderDigit;
+                
+                // Pengecekan Anti Bentrok untuk anak kembar / nama inisial sama
+                $stmtCek = $pdo->prepare("SELECT uid FROM swimmers WHERE uid LIKE ? AND id != ? ORDER BY uid DESC LIMIT 1");
+                $stmtCek->execute([$baseUid . '%', $row['id']]);
+                $last_uid = $stmtCek->fetchColumn();
+                
+                $twinDigit = 0;
+                if ($last_uid) {
+                    $last_digit = (int) substr($last_uid, -1);
+                    $twinDigit = $last_digit + 1;
+                    if ($twinDigit > 9) $twinDigit = 9; 
+                }
+                
+                // Gabungkan Base dengan digit akhir
+                $newUid = $baseUid . $twinDigit;
+                
+                // Update ke database
+                $stmtUpdate->execute([$newUid, $row['id']]);
+                $count++;
+            }
+            
+            $pdo->commit();
+            header("Location: index.php?msg=uid_success&count=" . $count);
+            exit;
+        } catch (Exception $e) {
+            $pdo->rollBack();
+            $error_msg = "Gagal generate UID: " . $e->getMessage();
+        }
+    } else {
+        header("Location: index.php?msg=uid_none");
+        exit;
+    }
+}
+
+// Tangkap alert dari URL Redirect
+if (isset($_GET['msg'])) {
+    if ($_GET['msg'] === 'uid_success') {
+        $count = $_GET['count'] ?? 0;
+        $success_msg = "🎉 Berhasil membuat & menimpa <strong>$count UID</strong> menjadi format baru secara otomatis!";
+    } elseif ($_GET['msg'] === 'uid_none') {
+        $error_msg = "Semua atlet sudah memiliki UID dengan format baru. Tidak ada yang perlu di-generate.";
+    }
+}
+
+// ============================================================
+// 1. QUERY UTAMA MENAMPILKAN DATA
+// ============================================================
 $search = $_GET['search'] ?? '';
 $sql = "SELECT s.*, 
                c.nama_klub, 
@@ -25,14 +125,12 @@ if (!empty($search)) {
     $params[] = "%$search%";
 }
 
-// REVISI: MENGHAPUS 'LIMIT 50' AGAR SEMUA DATA MUNCUL
+// Mengurutkan dari yang terbaru, menampilkan semua
 $sql .= " ORDER BY s.created_at DESC"; 
 
 $stmt = $pdo->prepare($sql);
 $stmt->execute($params);
 $swimmers = $stmt->fetchAll();
-
-// ... (lanjut ke fungsi hitungUsia dan HTML di bawahnya tidak perlu diubah) ...
 
 // HELPER FUNCTION (Usia per Tahun Berjalan)
 function hitungUsia($tgl) {
@@ -56,14 +154,36 @@ include __DIR__ . '/../../../views/layout/topbar.php';
 
 <div class="p-4 sm:ml-64">
     <div class="p-4 mt-14">
+
+        <?php if (!empty($success_msg)): ?>
+            <div class="mb-4 p-4 text-xs text-emerald-800 bg-emerald-50 rounded-xl border border-emerald-200 shadow-sm flex items-center gap-2">
+                <span>💡</span> <div><?= $success_msg ?></div>
+            </div>
+        <?php endif; ?>
+        <?php if (!empty($error_msg)): ?>
+            <div class="mb-4 p-4 text-xs text-amber-800 bg-amber-50 rounded-xl border border-amber-200 shadow-sm flex items-center gap-2">
+                <span>⚠️</span> <div><?= $error_msg ?></div>
+            </div>
+        <?php endif; ?>
         
         <div class="flex flex-col md:flex-row justify-between items-end gap-4 mb-6">
             <div>
                 <h1 class="text-3xl font-black text-slate-800 uppercase italic tracking-tighter">Database Atlet</h1>
                 <p class="text-xs text-slate-500 font-medium">Manajemen Data & Status Verifikasi</p>
             </div>
-            <div class="w-full md:w-auto">
-                <form method="GET" class="relative">
+            
+            <div class="w-full md:w-auto flex flex-col sm:flex-row items-center gap-2">
+                
+                <form method="POST" onsubmit="return confirm('Apakah Anda yakin ingin me-reset dan meng-generate ulang UID otomatis (Format AZRIL) untuk semua atlet?');" class="w-full sm:w-auto">
+                    <button type="submit" name="generate_uids" style="background-color: #3b82f6; color: white;" class="w-full sm:w-auto justify-center hover:opacity-80 px-4 py-2.5 rounded-lg shadow-sm text-xs font-bold tracking-wide transition flex items-center gap-2 whitespace-nowrap">
+                        <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                        </svg>
+                        Generate UID Massal
+                    </button>
+                </form>
+
+                <form method="GET" class="relative w-full sm:w-auto">
                     <input type="text" name="search" value="<?= htmlspecialchars($search) ?>" 
                            class="pl-10 pr-4 py-2.5 text-xs font-bold border rounded-lg w-full md:w-80 shadow-sm focus:ring-blue-500 focus:border-blue-500" 
                            placeholder="Cari UID, Nama, atau Klub...">
@@ -71,6 +191,7 @@ include __DIR__ . '/../../../views/layout/topbar.php';
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
                     </div>
                 </form>
+
             </div>
         </div>
 
@@ -164,9 +285,7 @@ include __DIR__ . '/../../../views/layout/topbar.php';
             
             <div class="bg-slate-800 p-6 text-white flex justify-between items-start">
                 <div class="flex gap-4 items-center">
-                    <div id="mAvatar" class="w-16 h-16 rounded-full bg-slate-600 flex items-center justify-center text-2xl font-bold border-4 border-slate-700">
-                        L
-                    </div>
+                    <div id="mAvatar" class="w-16 h-16 rounded-full bg-slate-600 flex items-center justify-center text-2xl font-bold border-4 border-slate-700">L</div>
                     <div>
                         <div class="flex items-center gap-2 mb-1">
                             <h2 class="text-xl font-black uppercase tracking-wide" id="mName">NAMA ATLET</h2>
@@ -258,7 +377,6 @@ include __DIR__ . '/../../../views/layout/topbar.php';
             
             currentSwimmerId = data.id;
 
-            // 1. POPULATE HEADER & DATA DIRI
             document.getElementById('mName').innerText = data.nama_atlet;
             document.getElementById('mClub').innerText = data.nama_klub || 'Unattached';
             document.getElementById('mClubNote').innerText = data.nama_klub || '...';
@@ -267,16 +385,13 @@ include __DIR__ . '/../../../views/layout/topbar.php';
             document.getElementById('mDob').innerText = `${data.tanggal_lahir} (${usia} Th)`;
             document.getElementById('mKU').innerText = ku;
             
-            // Avatar
             const gender = data.jenis_kelamin || 'L';
             const av = document.getElementById('mAvatar');
             av.innerText = gender;
             av.className = `w-16 h-16 rounded-full flex items-center justify-center text-2xl font-bold border-4 ${gender === 'L' ? 'bg-blue-600 border-blue-200 text-white' : 'bg-pink-500 border-pink-200 text-white'}`;
 
-            // Link Edit
             document.getElementById('btnEdit').href = `edit.php?id=${data.id}`;
 
-            // 2. SET TOGGLE VERIFIKASI
             const toggle = document.getElementById('toggleVerify');
             
             if (data.status === 'verified') {
@@ -287,7 +402,6 @@ include __DIR__ . '/../../../views/layout/topbar.php';
                 updateStatusUI('pending');
             }
 
-            // 3. FETCH REKOR (AJAX)
             document.getElementById('manageModal').classList.remove('hidden');
             loadRecords(data.id);
         } catch (e) {
@@ -300,15 +414,12 @@ include __DIR__ . '/../../../views/layout/topbar.php';
         document.getElementById('manageModal').classList.add('hidden');
     }
 
-    // FUNGSI GANTI STATUS
     function toggleStatus() {
         const isChecked = document.getElementById('toggleVerify').checked;
         const newStatus = isChecked ? 'verified' : 'pending';
         
-        // Update UI Dulu (Optimistic UI)
         updateStatusUI(newStatus);
         
-        // Kirim ke Database
         fetch('api_verify.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -318,11 +429,10 @@ include __DIR__ . '/../../../views/layout/topbar.php';
             if (!res.ok) {
                 throw new Error(`HTTP Error! Status: ${res.status}`);
             }
-            return res.json(); // Pastikan server return JSON
+            return res.json();
         })
         .then(data => {
             if(!data.success) {
-                // Jika gagal, kembalikan UI ke status lama
                 alert('Gagal update: ' + (data.message || 'Error tidak diketahui'));
                 document.getElementById('toggleVerify').checked = !isChecked;
                 updateStatusUI(!isChecked ? 'verified' : 'pending');
@@ -331,7 +441,6 @@ include __DIR__ . '/../../../views/layout/topbar.php';
         .catch(err => {
             console.error(err);
             alert('Gagal terhubung ke server.');
-            // Kembalikan UI
             document.getElementById('toggleVerify').checked = !isChecked;
             updateStatusUI(!isChecked ? 'verified' : 'pending');
         });
@@ -354,7 +463,6 @@ include __DIR__ . '/../../../views/layout/topbar.php';
         }
     }
 
-    // FUNGSI LOAD REKOR
     function loadRecords(id) {
         const tbody = document.getElementById('recordTableBody');
         tbody.innerHTML = '<tr><td colspan="3" class="p-4 text-center text-slate-400 animate-pulse">Mengambil data...</td></tr>';
