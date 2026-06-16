@@ -1,198 +1,352 @@
 <?php
+// FILE: public/live_result.php
 require_once __DIR__ . '/../src/config/database.php';
+if (session_status() === PHP_SESSION_NONE) session_start();
 
-// 1. AMBIL PENGATURAN DARI DATABASE MASTER
+// 🚀 TANPA PENGECEKAN LOGIN! Bebas diakses publik.
+
+$event_id = $_GET['event_id'] ?? 0;
+
+// 1. DATA SETTING GLOBAL (Untuk Logo & Judul persis seperti Index)
 $s = $pdo->query("SELECT * FROM site_settings WHERE id=1")->fetch();
+$heroTitle = $s['hero_title'] ?? 'SWIMMEET CHAMPIONSHIP'; 
 
-// 2. SUSUN SLIDE BERDASARKAN DATA DB
-$slides = [];
+// 2. AMBIL INFO EVENT
+$stmtEvt = $pdo->prepare("SELECT * FROM events WHERE id = ?");
+$stmtEvt->execute([$event_id]);
+$event = $stmtEvt->fetch(PDO::FETCH_ASSOC);
 
-// Cek Slide 1 (Utama)
-if ($s && !empty($s['hero_image'])) {
-    $slides[] = [
-        'img'   => $s['hero_image'], 
-        'title' => $s['hero_title'] ?? 'SET SYSTEM', 
-        'sub'   => $s['hero_subtitle'] ?? ''
-    ];
+if (!$event) {
+    echo "<script>alert('Event tidak ditemukan.'); window.location.href='results.php';</script>";
+    exit;
 }
 
-// Cek Slide 2
-if ($s && !empty($s['hero_image_2'])) {
-    $slides[] = [
-        'img'   => $s['hero_image_2'], 
-        'title' => $s['hero_title_2'] ?? '', 
-        'sub'   => $s['hero_subtitle_2'] ?? ''
-    ];
-}
+// Cek Tipe Partisipasi
+$partType = strtolower($event['participation_type'] ?? 'club');
+$isSchoolEvent = (strpos($partType, 'school') !== false || strpos($partType, 'sekolah') !== false);
+$teamHeaderLabel = $isSchoolEvent ? 'SEKOLAH' : 'KLUB / TIM';
 
-// Cek Slide 3
-if ($s && !empty($s['hero_image_3'])) {
-    $slides[] = [
-        'img'   => $s['hero_image_3'], 
-        'title' => $s['hero_title_3'] ?? '', 
-        'sub'   => $s['hero_subtitle_3'] ?? ''
-    ];
-}
+$groupedResults = [];
 
-// Fallback: Jika Master belum atur gambar sama sekali, pakai Default
-if (empty($slides)) {
-    $slides[] = [
-        'img'   => '', // Kosong = Gradient Default
-        'title' => 'SELAMAT DATANG', 
-        'sub'   => 'Sistem Manajemen Lomba Renang Profesional'
-    ];
-}
+// 3. MENGAMBIL HASIL (Hanya yang is_published = 1)
+$sql = "SELECT en.event_number, en.distance, en.stroke, en.jenis_kelamin, en.age_group,
+               s.nama_atlet, c.nama_klub, s.asal_sekolah,
+               ee.entry_time, 
+               es.time_final, es.rank_final, es.is_dq_final, es.dq_reason_final
+        FROM event_numbers en
+        JOIN event_entries ee ON en.id = ee.category_id
+        JOIN event_seeding es ON ee.id = es.entry_id
+        JOIN swimmers s ON ee.swimmer_id = s.id
+        LEFT JOIN clubs c ON s.club_id = c.id
+        WHERE en.event_id = ? 
+          AND en.is_published = 1  
+          AND (es.time_final IS NOT NULL OR es.is_dq_final = 1)
+        ORDER BY 
+            CAST(en.event_number AS UNSIGNED) ASC,
+            es.is_dq_final ASC,
+            es.rank_final ASC";
 
-// 3. AMBIL DATA EVENT/LOMBA
-$search = $_GET['q'] ?? '';
-$sql = "SELECT u.*, (SELECT COUNT(*) FROM events WHERE user_id = u.id) as total_nomor 
-        FROM users u 
-        WHERE u.role = 'admin' AND u.nama_lengkap LIKE ? 
-        ORDER BY u.event_start_date DESC";
-$stmt = $pdo->prepare($sql);
-$stmt->execute(["%$search%"]);
-$events = $stmt->fetchAll();
+$stmtRes = $pdo->prepare($sql);
+$stmtRes->execute([$event_id]);
+$results = $stmtRes->fetchAll(PDO::FETCH_ASSOC);
+
+// --- 🌟 FASE 4: AMBIL DATA PASAL DQ UNTUK POP-UP ---
+$stmtDqRules = $pdo->query("SELECT pasal, deskripsi FROM dq_rules");
+$dqRulesArray = [];
+while ($row = $stmtDqRules->fetch(PDO::FETCH_ASSOC)) {
+    $dqRulesArray[$row['pasal']] = $row['deskripsi'];
+}
+$dqRulesJson = json_encode($dqRulesArray);
+// ---------------------------------------------------
+
+// Kelompokkan hasil berdasarkan nomor acara
+foreach ($results as $r) {
+    $judulAcara = "ACARA #" . $r['event_number'] . " - " . $r['distance'] . "M " . strtoupper($r['stroke']) . " " . strtoupper($r['jenis_kelamin']) . " (" . $r['age_group'] . ")";
+    $groupedResults[$judulAcara][] = $r;
+}
 ?>
 <!DOCTYPE html>
 <html lang="id">
 <head>
+    <link rel="icon" type="image/png" href="/public/favicon.png?v=2">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Live Result - SET System</title>
+    <title>Live Result - <?= htmlspecialchars($event['event_name']) ?></title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/flowbite/2.2.0/flowbite.min.css" rel="stylesheet" />
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/flowbite/2.2.0/flowbite.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,400;0,700;0,800;0,900;1,400;1,700;1,800;1,900&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap');
-        body { font-family: 'Inter', sans-serif; }
+        body { 
+            font-family: 'Plus Jakarta Sans', sans-serif; 
+            letter-spacing: -0.01em;
+        }
+        #navbar { transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1); }
+        .nav-logo-item { transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1); }
+        #navbar.scrolled { background-color: rgba(11, 19, 41, 0.95); backdrop-filter: blur(12px); box-shadow: 0 10px 30px -10px rgba(0,0,0,0.5); border-color: rgba(30, 41, 59, 0.5); }
+        
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #0b1329; }
+        ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 4px; }
+
+        /* Style animasi rotasi panah akordion */
+        .accordion-arrow { transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
     </style>
 </head>
-<body class="bg-slate-50 min-h-screen flex flex-col">
+<body class="bg-[#0b1329] min-h-screen pb-24 text-slate-100">
 
-    <nav class="bg-[#0F172A] text-white shadow-lg sticky top-0 z-50">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div class="flex justify-between h-16">
-                <div class="flex items-center gap-3">
-                    <img src="img/logo.png" class="h-10 w-auto" onerror="this.style.display='none'">
-                    <div>
-                        <h1 class="text-xl font-black tracking-widest">SET SYSTEM</h1>
-                        <p class="text-[10px] text-cyan-400 font-bold tracking-wider">LIVE RESULT CENTER</p>
-                    </div>
-                </div>
-                <div class="flex items-center">
-                    <a href="login.php" class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg text-sm font-bold transition">Login</a>
+   <nav id="navbar" class="fixed w-full z-50 top-0 start-0 transparent px-10">
+        <div class="max-w-screen-2xl flex items-center justify-between mx-auto w-full">
+            <a href="index.php"><img src="img/logo.png" class="h-24 w-auto object-contain transition-all duration-300" id="nav-logo"></a>
+            
+            <div class="flex justify-between items-center h-24 transition-all duration-300" id="nav-container">
+                <div>
+                    <a href="results.php" class="inline-flex items-center gap-2 px-4 py-2 border border-slate-700/60 hover:border-blue-500 rounded-xl bg-slate-900/80 text-xs font-black text-slate-300 hover:text-white uppercase tracking-widest transition-all shadow-md">
+                        &larr; Kembali
+                    </a>
                 </div>
             </div>
         </div>
     </nav>
 
-    <div id="hero-carousel" class="relative w-full h-[500px] bg-slate-900" data-carousel="slide">
+    <div class="max-w-5xl mx-auto p-4 sm:p-6 lg:p-8 pt-32">
         
-        <div class="relative h-full overflow-hidden">
-            <?php foreach($slides as $index => $slide): ?>
-            <div class="hidden duration-1000 ease-in-out" data-carousel-item>
-                
-                <?php if(!empty($slide['img'])): ?>
-                    <img src="<?= $slide['img'] ?>?t=<?= time() ?>" class="absolute block w-full h-full object-cover opacity-50" alt="Banner Slide">
-                <?php else: ?>
-                    <div class="absolute block w-full h-full bg-gradient-to-br from-slate-800 via-blue-900 to-slate-900 opacity-90"></div>
-                <?php endif; ?>
-                
-                <div class="absolute inset-0 flex flex-col items-center justify-center text-center px-4 z-20">
-                    <h2 class="text-4xl md:text-6xl font-black text-white uppercase tracking-tight drop-shadow-lg mb-4">
-                        <?= htmlspecialchars($slide['title']) ?>
-                    </h2>
-                    <p class="text-blue-100 text-lg md:text-xl font-medium max-w-2xl drop-shadow-md mb-8 bg-black/20 px-4 py-1 rounded backdrop-blur-sm">
-                        <?= htmlspecialchars($slide['sub']) ?>
+        <div class="bg-gradient-to-br from-slate-900 via-[#111c44] to-[#0b1329] text-white p-6 sm:p-8 rounded-[2rem] shadow-2xl mb-8 relative overflow-hidden border border-slate-800/80">
+            <div class="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(59,130,246,0.08),transparent_45%)]"></div>
+            
+            <div class="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+                <div class="flex-1">
+                    <div class="flex items-center gap-2 mb-3">
+                        <span class="inline-block px-3 py-1 bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-[9px] font-black uppercase tracking-widest rounded-full shadow-md shadow-blue-500/20 animate-pulse">🔴 LIVE RESULT</span>
+                        <span class="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Hasil Resmi</span>
+                    </div>
+                    <h1 class="text-xl sm:text-3xl font-black uppercase italic leading-tight mb-2 tracking-tight text-white">
+                        <?= htmlspecialchars($event['event_name']) ?>
+                    </h1>
+                    <p class="text-xs text-blue-300 font-bold uppercase tracking-widest flex items-center gap-x-4 gap-y-1 flex-wrap opacity-90">
+                        <span class="flex items-center gap-1.5">📍 <?= htmlspecialchars($event['event_location']) ?></span>
+                        <span class="flex items-center gap-1.5">📅 <?= date('d F Y', strtotime($event['event_date_start'])) ?></span>
                     </p>
-                    
-                    <?php if($index == 0): ?>
-                    <form class="w-full max-w-lg flex gap-2 animate-fade-in-up">
-                        <input type="text" name="q" value="<?= htmlspecialchars($search) ?>" placeholder="Cari nama kompetisi..." class="flex-1 px-5 py-3 rounded-xl text-slate-800 font-bold focus:outline-none focus:ring-4 focus:ring-blue-400 shadow-xl">
-                        <button type="submit" class="bg-blue-600 text-white px-8 py-3 rounded-xl font-bold hover:bg-blue-500 transition shadow-xl">Cari</button>
-                    </form>
-                    <?php endif; ?>
                 </div>
+
+                <?php if(!empty($event['logo_left']) && file_exists('../' . $event['logo_left'])): ?>
+                    <div class="hidden md:block shrink-0 bg-slate-950/40 p-3 rounded-2xl border border-slate-800/60">
+                        <img src="../<?= htmlspecialchars($event['logo_left']) ?>" alt="Logo Event" class="h-14 w-14 object-contain">
+                    </div>
+                <?php endif; ?>
             </div>
-            <?php endforeach; ?>
-        </div>
-        
-        <?php if(count($slides) > 1): ?>
-        <div class="absolute z-30 flex space-x-3 -translate-x-1/2 bottom-5 left-1/2">
-            <?php foreach($slides as $i => $s): ?>
-                <button type="button" class="w-3 h-3 rounded-full bg-white/50 hover:bg-white" aria-current="<?= $i==0?'true':'false' ?>" aria-label="Slide <?= $i+1 ?>" data-carousel-slide-to="<?= $i ?>"></button>
-            <?php endforeach; ?>
-        </div>
-        
-        <button type="button" class="absolute top-0 start-0 z-30 flex items-center justify-center h-full px-4 cursor-pointer group focus:outline-none" data-carousel-prev>
-            <span class="inline-flex items-center justify-center w-10 h-10 rounded-full bg-white/20 group-hover:bg-white/40 group-focus:ring-4 group-focus:ring-white">
-                <svg class="w-4 h-4 text-white rtl:rotate-180" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 6 10"><path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 1 1 5l4 4"/></svg>
-            </span>
-        </button>
-        <button type="button" class="absolute top-0 end-0 z-30 flex items-center justify-center h-full px-4 cursor-pointer group focus:outline-none" data-carousel-next>
-            <span class="inline-flex items-center justify-center w-10 h-10 rounded-full bg-white/20 group-hover:bg-white/40 group-focus:ring-4 group-focus:ring-white">
-                <svg class="w-4 h-4 text-white rtl:rotate-180" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 6 10"><path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m1 9 4-4-4-4"/></svg>
-            </span>
-        </button>
-        <?php endif; ?>
-    </div>
-
-    <div class="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 w-full">
-        <div class="flex items-center gap-4 mb-8">
-            <div class="h-10 w-2 bg-blue-600 rounded-full"></div>
-            <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight">Daftar Kompetisi</h3>
         </div>
 
-        <?php if(empty($events)): ?>
-            <div class="text-center py-20 bg-white rounded-2xl border border-dashed border-slate-300">
-                <div class="text-6xl mb-4">📭</div>
-                <h3 class="text-xl font-bold text-slate-700">Tidak ada kompetisi ditemukan.</h3>
-                <p class="text-slate-500">Coba kata kunci lain atau kembali nanti.</p>
+        <div class="bg-slate-900/80 backdrop-blur p-2 rounded-full shadow-2xl border border-slate-800 mb-8 flex items-center gap-2 sticky top-24 z-40 focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-950/50 transition-all">
+            <span class="text-lg ml-4 opacity-40">🔍</span>
+            <input type="text" id="searchInput" placeholder="Cari nama atlet atau tim..." class="w-full bg-transparent border-none focus:outline-none focus:ring-0 text-sm font-bold text-slate-100 uppercase placeholder:text-slate-500 placeholder:normal-case placeholder:font-medium py-2">
+        </div>
+
+        <?php if (empty($groupedResults)): ?>
+            <div class="bg-slate-900/60 p-12 text-center rounded-3xl border border-slate-800 shadow-xl">
+                <span class="text-5xl block mb-5 opacity-20">⏳</span>
+                <p class="text-sm font-bold text-slate-400 uppercase tracking-widest">Hasil Belum Tersedia</p>
+                <p class="text-[10px] text-slate-500 mt-2">Panitia belum menerbitkan hasil resmi untuk nomor perlombaan di event ini.</p>
             </div>
         <?php else: ?>
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                <?php foreach($events as $e): ?>
-                <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-xl transition group duration-300 transform hover:-translate-y-1">
-                    <div class="h-40 bg-slate-800 relative overflow-hidden">
-                        <?php if(!empty($e['photo'])): ?>
-                            <img src="<?= $e['photo'] ?>" class="w-full h-full object-cover opacity-60 group-hover:scale-105 transition duration-700">
-                        <?php else: ?>
-                            <div class="absolute inset-0 bg-gradient-to-br from-blue-600 to-slate-900 opacity-90"></div>
-                        <?php endif; ?>
+            <div id="resultContainer" class="space-y-4">
+                <?php foreach ($groupedResults as $judul => $atletList): ?>
+                    
+                    <div class="bg-slate-900 rounded-2xl border border-slate-800 shadow-xl overflow-hidden result-card transition-all duration-300 hover:border-slate-700">
                         
-                        <div class="absolute bottom-0 left-0 w-full p-5 bg-gradient-to-t from-black/90 to-transparent">
-                            <h3 class="font-black text-lg text-white uppercase leading-tight line-clamp-2"><?= htmlspecialchars($e['nama_lengkap']) ?></h3>
-                            <p class="text-xs text-blue-300 flex items-center gap-1 mt-1 font-bold">
-                                📍 <?= htmlspecialchars($e['location'] ?? 'Indonesia') ?>
-                            </p>
+                        <button onclick="toggleAccordion(this)" class="w-full flex items-center justify-between px-5 sm:px-6 py-4 bg-gradient-to-r from-slate-800/40 to-slate-800/5 text-left focus:outline-none transition-colors hover:bg-slate-800/60 group">
+                            <h2 class="text-xs sm:text-sm font-black text-white uppercase italic tracking-tight flex items-center gap-3">
+                                <span class="w-1.5 h-3 bg-blue-500 rounded-full block group-hover:bg-blue-400 transition-colors"></span>
+                                <?= $judul ?>
+                            </h2>
+                            <svg class="w-5 h-5 text-slate-400 group-hover:text-white accordion-arrow transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 9l-7 7-7-7"></path>
+                            </svg>
+                        </button>
+                        
+                        <div class="accordion-body hidden border-t border-slate-800/60 transition-all duration-300">
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-left border-collapse min-w-[650px]">
+                                    <thead>
+                                        <tr class="bg-slate-950/50 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-800">
+                                            <th class="py-4 px-4 w-14 text-center">Rank</th>
+                                            <th class="py-4 px-4">Nama Atlet</th>
+                                            <th class="py-4 px-4 text-center w-20">KU</th>
+                                            <th class="py-4 px-4"><?= $teamHeaderLabel ?></th>
+                                            <th class="py-4 px-4 text-center w-28 text-slate-500">Wkt. Daftar</th>
+                                            <th class="py-4 px-4 text-right w-28">Wkt. Final</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-slate-800/40">
+                                        <?php 
+                                        foreach ($atletList as $atlet): 
+                                            $isDQ = ($atlet['is_dq_final'] == 1);
+                                            if ($isSchoolEvent) {
+                                                $displayTeam = !empty($atlet['asal_sekolah']) ? $atlet['asal_sekolah'] : '-';
+                                            } else {
+                                                $displayTeam = !empty($atlet['nama_klub']) ? $atlet['nama_klub'] : 'UNATTACHED';
+                                            }
+
+                                            $rankBadge = '-';
+                                            $rankClass = 'text-slate-500';
+                                            if (!$isDQ && !empty($atlet['rank_final'])) {
+                                                $rankBadge = $atlet['rank_final'];
+                                                if($rankBadge == 1) { $rankBadge = '🥇 1'; $rankClass = 'text-amber-400'; }
+                                                elseif($rankBadge == 2) { $rankBadge = '🥈 2'; $rankClass = 'text-slate-300'; }
+                                                elseif($rankBadge == 3) { $rankBadge = '🥉 3'; $rankClass = 'text-orange-400'; }
+                                            }
+
+                                            $waktuDaftar = $atlet['entry_time'];
+                                            if (empty($waktuDaftar) || $waktuDaftar === '00:00.00' || $waktuDaftar === '00:00:00') {
+                                                $waktuDaftar = 'NT';
+                                            }
+                                        ?>
+                                        <tr class="searchable-row hover:bg-slate-800/30 transition-colors">
+                                            <td class="py-3.5 px-4 text-center text-xs font-bold <?= $rankClass ?>">
+                                                <?= $rankBadge ?>
+                                            </td>
+                                            <td class="py-3.5 px-4">
+                                                <span class="text-xs sm:text-sm font-extrabold uppercase athlete-name text-slate-100 tracking-tight">
+                                                    <?= htmlspecialchars($atlet['nama_atlet']) ?>
+                                                </span>
+                                            </td>
+                                            <td class="py-3.5 px-4 text-center text-[10px] font-black uppercase tracking-widest text-slate-400">
+                                                <?= htmlspecialchars($atlet['age_group']) ?>
+                                            </td>
+                                            <td class="py-3.5 px-4 text-[10px] font-bold uppercase tracking-widest team-name text-slate-400">
+                                                <?= htmlspecialchars($displayTeam) ?>
+                                            </td>
+                                            <td class="py-3.5 px-4 text-center font-mono text-xs text-slate-600 font-medium">
+                                                <?= htmlspecialchars($waktuDaftar) ?>
+                                            </td>
+                                            <td class="py-3.5 px-4 text-right font-mono text-sm font-black text-white">
+                                                <?php if($isDQ): 
+                                                    $reason = $atlet['dq_reason_final'] ?? 'DQ';
+                                                    if (in_array($reason, ['DNS', 'DNF'])):
+                                                ?>
+                                                    <span class="text-slate-400 text-[10px] font-black px-2 py-1 bg-slate-800 border border-slate-700 rounded uppercase tracking-wider font-sans">
+                                                        <?= htmlspecialchars($reason) ?>
+                                                    </span>
+                                                <?php else: ?>
+                                                    <button onclick="showDqDetail('<?= htmlspecialchars($reason) ?>')" class="bg-red-950/80 text-red-400 border border-red-900 hover:bg-red-900 transition-colors px-2 py-1 rounded text-[10px] uppercase cursor-pointer inline-flex items-center justify-end gap-1 ml-auto shadow-sm animate-pulse font-sans tracking-wider">
+                                                        ⚠️ DQ
+                                                    </button>
+                                                <?php endif; ?>
+                                                <?php else: ?>
+                                                    <span>
+                                                        <?= htmlspecialchars($atlet['time_final']) ?>
+                                                    </span>
+                                                <?php endif; ?>
+                                            </td>
+                                        </tr>
+                                        <?php endforeach; ?>
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
+
                     </div>
-                    <div class="p-6">
-                        <div class="flex justify-between items-center text-sm mb-6">
-                            <?php if($e['event_start_date'] > date('Y-m-d')): ?>
-                                <span class="bg-blue-50 text-blue-700 font-bold px-3 py-1 rounded-full text-[10px] uppercase border border-blue-100">Segera Datang</span>
-                            <?php else: ?>
-                                <span class="bg-green-50 text-green-700 font-bold px-3 py-1 rounded-full text-[10px] uppercase border border-green-100 flex items-center gap-1">
-                                    <span class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span> Live / Selesai
-                                </span>
-                            <?php endif; ?>
-                            <span class="text-slate-500 font-bold text-xs">
-                                📅 <?= date('d M Y', strtotime($e['event_start_date'])) ?>
-                            </span>
-                        </div>
-                        <a href="../src/results/print_result.php?event_id=<?= $e['id'] ?>" class="block w-full text-center bg-slate-900 hover:bg-blue-600 text-white font-bold py-3 rounded-xl transition shadow-lg">
-                            Lihat Hasil Lengkap
-                        </a>
-                    </div>
-                </div>
                 <?php endforeach; ?>
             </div>
         <?php endif; ?>
     </div>
 
-    <footer class="bg-slate-900 text-slate-500 py-8 text-center text-sm mt-auto border-t border-slate-800">
-        &copy; <?= date('Y') ?> SET System. All rights reserved.
-    </footer>
+    <script>
+        // DATA PASAL DQ UNTUK POP-UP
+        const dqRulesData = <?= $dqRulesJson ?>;
 
+        function showDqDetail(pasal) {
+            let deskripsi = dqRulesData[pasal] || "Penjelasan detail untuk pasal ini belum tersedia di sistem.";
+            Swal.fire({
+                title: '<span class="text-red-600 font-black italic">DISKUALIFIKASI!</span>',
+                html: `
+                    <div class="text-left mt-2 p-4 bg-slate-50 border border-slate-200 rounded-lg">
+                        <div class="mb-2">
+                            <span class="bg-red-100 border border-red-300 text-red-700 font-black px-2 py-1 rounded text-xs">
+                                ${pasal}
+                            </span>
+                        </div>
+                        <p class="text-slate-700 text-sm font-medium leading-relaxed font-sans">
+                            ${deskripsi}
+                        </p>
+                    </div>
+                `,
+                icon: 'warning',
+                iconColor: '#ef4444',
+                confirmButtonText: 'Tutup',
+                confirmButtonColor: '#3b82f6',
+                customClass: { popup: 'rounded-2xl', confirmButton: 'rounded-lg font-bold px-6' }
+            });
+        }
+
+        // FUNGSI TOGGLE KLIK AKORDION (BUKA/TUTUP)
+        function toggleAccordion(headerButton) {
+            const card = headerButton.closest('.result-card');
+            const body = card.querySelector('.accordion-body');
+            const arrow = card.querySelector('.accordion-arrow');
+            
+            // Toggle class hidden pada tabel
+            body.classList.toggle('hidden');
+            
+            // Animasi putar panah indikator
+            if (body.classList.contains('hidden')) {
+                arrow.style.transform = 'rotate(0deg)';
+            } else {
+                arrow.style.transform = 'rotate(180deg)';
+            }
+        }
+
+        // NAVBAR SCROLL CONTROL
+        const navbar = document.getElementById('navbar');
+        const navContainer = document.getElementById('nav-container');
+        window.addEventListener('scroll', () => { 
+            if(window.scrollY > 50) { 
+                navbar.classList.add('scrolled'); 
+                if(navContainer) navContainer.classList.replace('h-24', 'h-16');
+            } else { 
+                navbar.classList.remove('scrolled'); 
+                if(navContainer) navContainer.classList.replace('h-16', 'h-24');
+            }
+        });
+
+        // SCRIPT PENCARIAN REALTIME (PINTAR: JIKA MATCH, OTOMATIS AKORDION TERBUKA)
+        document.getElementById('searchInput')?.addEventListener('keyup', function() {
+            let filter = this.value.toLowerCase();
+            let cards = document.querySelectorAll('.result-card');
+
+            cards.forEach(card => {
+                let rows = card.querySelectorAll('.searchable-row');
+                let body = card.querySelector('.accordion-body');
+                let arrow = card.querySelector('.accordion-arrow');
+                let cardHasVisibleRow = false;
+
+                rows.forEach(row => {
+                    let athleteName = row.querySelector('.athlete-name').textContent.toLowerCase();
+                    let teamName = row.querySelector('.team-name').textContent.toLowerCase();
+
+                    if (athleteName.includes(filter) || teamName.includes(filter)) {
+                        row.style.display = '';
+                        cardHasVisibleRow = true;
+                    } else {
+                        row.style.display = 'none';
+                    }
+                });
+
+                if (filter === "") {
+                    // Kembalikan ke posisi semula (tertutup semua) saat search dihapus kosong
+                    body.classList.add('hidden');
+                    if(arrow) arrow.style.transform = 'rotate(0deg)';
+                    card.style.display = '';
+                } else {
+                    if (cardHasVisibleRow) {
+                        card.style.display = '';
+                        body.classList.remove('hidden'); // Otomatis bongkar isi jika nama ketemu
+                        if(arrow) arrow.style.transform = 'rotate(180deg)';
+                    } else {
+                        card.style.display = 'none'; // Sembunyikan bar jika tidak ada nama yang cocok
+                    }
+                }
+            });
+        });
+    </script>
 </body>
 </html>
