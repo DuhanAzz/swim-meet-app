@@ -17,30 +17,36 @@ try {
     exit;
 }
 
-$event_id = isset($_GET['event_id']) ? $_GET['event_id'] : '';
+// category_id = nomor lomba (event_numbers.id)
+// heat = heat_prelim dari event_seeding
+$category_id = isset($_GET['event_id']) ? $_GET['event_id'] : '';
 $heat = isset($_GET['heat']) ? $_GET['heat'] : '';
 
-if ($event_id && $heat) {
+if ($category_id && $heat) {
     try {
-        // QUERY CANGGIH:
-        // Mengambil data entry DAN Nama Atlet dari tabel 'swimmers'
-        // Kita hubungkan (JOIN) event_entries.swimmer_id dengan swimmers.id
+        // QUERY DIPERBAIKI:
+        // - Kolom lane & heat ada di tabel event_seeding (lane_prelim, heat_prelim)
+        // - Nama atlet: swimmers.nama_atlet
+        // - Nama klub: clubs.nama_klub
         
         $sql = "SELECT 
                     ee.id, 
                     ee.swimmer_id, 
-                    ee.lane, 
-                    ee.event_id, 
-                    ee.heat,
-                    s.name as swimmer_name,   -- Ambil nama atlet
-                    c.name as club_name       -- (Opsional) Ambil nama klub jika ada relasi
+                    es.lane_prelim as lane, 
+                    ee.category_id as event_id, 
+                    es.heat_prelim as heat,
+                    s.nama_atlet as swimmer_name,
+                    c.nama_klub as club_name,
+                    es.time_prelim as time_result
                 FROM event_entries ee
+                INNER JOIN event_seeding es ON es.entry_id = ee.id
                 LEFT JOIN swimmers s ON ee.swimmer_id = s.id
                 LEFT JOIN clubs c ON ee.club_id = c.id
-                WHERE ee.event_id = ? AND ee.heat = ?";
+                WHERE ee.category_id = ? AND es.heat_prelim = ?
+                ORDER BY es.lane_prelim ASC";
                 
         $stmt = $pdo->prepare($sql);
-        $stmt->execute([$event_id, $heat]);
+        $stmt->execute([$category_id, $heat]);
         
         $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
         

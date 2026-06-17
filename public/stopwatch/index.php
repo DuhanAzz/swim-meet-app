@@ -22,7 +22,7 @@ if (isset($_GET['action'])) {
         $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
         if ($_GET['action'] == 'get_events') {
-            $stmt = $pdo->query("SELECT id, nama_event FROM events ORDER BY id DESC");
+            $stmt = $pdo->query("SELECT id, event_name FROM events ORDER BY id DESC");
             echo json_encode(['status' => 'success', 'data' => $stmt->fetchAll(PDO::FETCH_ASSOC)]);
             exit;
         }
@@ -41,9 +41,11 @@ if (isset($_GET['action'])) {
 
         if ($_GET['action'] == 'get_heats') {
             $raceId = $_GET['race_id'];
-            $sql = "SELECT DISTINCT heat FROM event_entries 
-                    WHERE category_id = ? AND heat IS NOT NULL 
-                    ORDER BY heat ASC";
+            $sql = "SELECT DISTINCT es.heat_prelim as heat 
+                    FROM event_seeding es
+                    INNER JOIN event_entries ee ON es.entry_id = ee.id
+                    WHERE ee.category_id = ? AND es.heat_prelim IS NOT NULL 
+                    ORDER BY es.heat_prelim ASC";
             $stmt = $pdo->prepare($sql);
             $stmt->execute([$raceId]);
             $heats = $stmt->fetchAll(PDO::FETCH_COLUMN);
@@ -55,10 +57,12 @@ if (isset($_GET['action'])) {
         if ($_GET['action'] == 'get_participants') {
             $raceId = $_GET['race_id'];
             $heat   = $_GET['heat'];
-            $sql = "SELECT ee.lane, s.nama_atlet as swimmer_name, ee.id as entry_id, ee.final_time
+            $sql = "SELECT es.lane_prelim as lane, s.nama_atlet as swimmer_name, ee.id as entry_id, es.time_prelim as final_time, es.id as seeding_id
                     FROM event_entries ee
+                    INNER JOIN event_seeding es ON es.entry_id = ee.id
                     LEFT JOIN swimmers s ON ee.swimmer_id = s.id
-                    WHERE ee.category_id = :rid AND ee.heat = :heat";
+                    WHERE ee.category_id = :rid AND es.heat_prelim = :heat
+                    ORDER BY es.lane_prelim ASC";
             $stmt = $pdo->prepare($sql);
             $stmt->execute(['rid' => $raceId, 'heat' => $heat]);
             echo json_encode(['status' => 'success', 'data' => $stmt->fetchAll(PDO::FETCH_ASSOC)]);
@@ -69,7 +73,7 @@ if (isset($_GET['action'])) {
             $json = file_get_contents('php://input');
             $data = json_decode($json, true);
             if (!$data) { throw new Exception("Data tidak valid"); }
-            $sql = "UPDATE event_entries SET final_time = :waktu WHERE id = :id";
+            $sql = "UPDATE event_seeding SET time_prelim = :waktu WHERE entry_id = :id";
             $stmt = $pdo->prepare($sql);
             $count = 0;
             foreach ($data as $row) {
@@ -286,7 +290,7 @@ if (isset($_GET['action'])) {
         select.innerHTML = '<option value="">-- Pilih Kejuaraan --</option>';
         if(json.status === 'success') {
           json.data.forEach(e => {
-            const opt = document.createElement('option'); opt.value = e.id; opt.textContent = e.nama_event; select.appendChild(opt);
+            const opt = document.createElement('option'); opt.value = e.id; opt.textContent = e.event_name; select.appendChild(opt);
           });
         }
       } catch (e) { console.error(e); }

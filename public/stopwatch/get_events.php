@@ -16,8 +16,8 @@ try {
     $pdo = new PDO("mysql:host=$host;dbname=$db;charset=utf8mb4", $user, $pass);
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
-    // QUERY DIPERBAIKI: Menggunakan kolom 'nama_event' yang benar-benar ada
-    $sql = "SELECT id, nama_event FROM events ORDER BY id DESC";
+    // QUERY DIPERBAIKI: Menggunakan kolom 'event_name' sesuai skema DB
+    $sql = "SELECT id, event_name FROM events ORDER BY id DESC";
     
     $stmt = $pdo->query($sql);
     $events = $stmt->fetchAll(PDO::FETCH_ASSOC);

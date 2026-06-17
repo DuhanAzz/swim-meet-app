@@ -24,7 +24,7 @@ try {
 
     // Ambil Nomor Lomba dari tabel 'event_numbers'
     // Kita urutkan berdasarkan event_number agar rapi (1, 2, 3...)
-    $sql = "SELECT id, event_number, event_name, gender, age_group 
+    $sql = "SELECT id, event_number, event_name, jenis_kelamin, age_group 
             FROM event_numbers 
             WHERE event_id = :eid 
             ORDER BY CAST(event_number AS UNSIGNED) ASC";
