@@ -50,7 +50,9 @@ $eventProfile = $stmtEvent->fetch(PDO::FETCH_ASSOC);
 
 // Variabel Header
 $eventName  = strtoupper($eventProfile['event_name'] ?? 'EVENT NAME');
-$venueName  = strtoupper($eventProfile['event_location'] ?? '-');
+$loc  = $eventProfile['event_location'] ?? '-';
+if (!empty($eventProfile['event_city'])) $loc .= ' - ' . $eventProfile['event_city'];
+$venueName  = strtoupper($loc);
 $eventDate  = $eventProfile['event_date_start'] ?? date('Y-m-d');
 $eventYear  = date('Y', strtotime($eventDate)); 
 $displayDate = strtoupper(date('d F Y', strtotime($eventDate)));

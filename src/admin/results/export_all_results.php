@@ -25,7 +25,9 @@ $raceInfo = $stmtProfile->fetch(PDO::FETCH_ASSOC);
 if (!$raceInfo) { die("Data Event tidak ditemukan."); }
 
 $eventName  = strtoupper($raceInfo['event_name'] ?? 'EVENT NAME');
-$venueName  = strtoupper($raceInfo['event_location'] ?? '-');
+$loc  = $raceInfo['event_location'] ?? '-';
+if (!empty($raceInfo['event_city'])) $loc .= ' - ' . $raceInfo['event_city'];
+$venueName  = strtoupper($loc);
 $eventDate  = $raceInfo['event_date_start'] ?? date('Y-m-d');
 $logoLeft   = !empty($raceInfo['logo_left']) ? '../../../public/' . $raceInfo['logo_left'] : null;
 $logoRight  = !empty($raceInfo['logo_right']) ? '../../../public/' . $raceInfo['logo_right'] : null;

@@ -44,7 +44,7 @@ if ($cc['hasil']) $activeColumnsCount++;
 
 // 1. INFO EVENT & 1 NOMOR LOMBA SAJA
 $sqlInfo = "SELECT en.*, 
-            e.id as parent_event_id, e.event_name, e.event_location, e.event_date_start, e.event_date_end, 
+            e.id as parent_event_id, e.event_name, e.event_location, e.event_city, e.event_date_start, e.event_date_end, 
             e.lane_count, e.logo_left, e.logo_right, e.participation_type, e.pool_type
             FROM event_numbers en
             JOIN events e ON en.event_id = e.id 
@@ -56,7 +56,9 @@ $raceInfo = $stmtRace->fetch(PDO::FETCH_ASSOC);
 if (!$raceInfo) die("<div style='padding:20px; text-align:center;'>Data nomor lomba tidak ditemukan.</div>");
 
 $eventName  = strtoupper($raceInfo['event_name'] ?? 'EVENT NAME');
-$venueName  = strtoupper($raceInfo['event_location'] ?? '-');
+$loc  = $raceInfo['event_location'] ?? '-';
+if (!empty($raceInfo['event_city'])) $loc .= ' - ' . $raceInfo['event_city'];
+$venueName  = strtoupper($loc);
 $eventDate  = $raceInfo['event_date_start'];
 $logoLeft   = !empty($raceInfo['logo_left']) ? '../../../public/' . $raceInfo['logo_left'] : null;
 $logoRight  = !empty($raceInfo['logo_right']) ? '../../../public/' . $raceInfo['logo_right'] : null;

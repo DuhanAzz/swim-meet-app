@@ -123,7 +123,7 @@ foreach ($results as $r) {
                         <?= htmlspecialchars($event['event_name']) ?>
                     </h1>
                     <p class="text-xs text-blue-300 font-bold uppercase tracking-widest flex items-center gap-x-4 gap-y-1 flex-wrap opacity-90">
-                        <span class="flex items-center gap-1.5">📍 <?= htmlspecialchars($event['event_location']) ?></span>
+                        <span class="flex items-center gap-1.5">📍 <?= htmlspecialchars($event['event_location']) ?><?= !empty($event['event_city']) ? ' - ' . htmlspecialchars($event['event_city']) : '' ?></span>
                         <span class="flex items-center gap-1.5">📅 <?= date('d F Y', strtotime($event['event_date_start'])) ?></span>
                     </p>
                 </div>

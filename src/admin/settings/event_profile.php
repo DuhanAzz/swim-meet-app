@@ -77,6 +77,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         // MAPPING INPUT
         $eventName   = $_POST['nama_event'] ?? '';
         $eventLoc    = $_POST['lokasi'] ?? '';
+        $eventCity   = $_POST['kota'] ?? '';
         $dateStart   = !empty($_POST['event_start_date']) ? $_POST['event_start_date'] : NULL;
         $dateEnd     = !empty($_POST['event_end_date']) ? $_POST['event_end_date'] : NULL;
         $laneCount   = (int)($_POST['lane_count'] ?? 8);
@@ -91,21 +92,21 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
         if ($eventId == 0) {
             $sql = "INSERT INTO events (
-                        user_id, event_name, event_location, event_date_start, event_date_end, 
+                        user_id, event_name, event_location, event_city, event_date_start, event_date_end, 
                         lane_count, pool_type, age_calculation_type, participation_type, event_status,
                         bank_name, bank_account_number, bank_account_name
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"; 
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"; 
             $stmt = $pdo->prepare($sql);
-            $stmt->execute([$uid, $eventName, $eventLoc, $dateStart, $dateEnd, $laneCount, $poolType, $ageCalc, $partType, $status, $bankName, $bankRek, $bankAtas]);
+            $stmt->execute([$uid, $eventName, $eventLoc, $eventCity, $dateStart, $dateEnd, $laneCount, $poolType, $ageCalc, $partType, $status, $bankName, $bankRek, $bankAtas]);
             $eventId = $pdo->lastInsertId(); 
         } else {
             $sql = "UPDATE events SET 
-                    event_name = ?, event_location = ?, event_date_start = ?, event_date_end = ?, 
+                    event_name = ?, event_location = ?, event_city = ?, event_date_start = ?, event_date_end = ?, 
                     lane_count = ?, pool_type = ?, age_calculation_type = ?, participation_type = ?, event_status = ?,
                     bank_name = ?, bank_account_number = ?, bank_account_name = ?
                     WHERE user_id = ? AND id = ?"; 
             $stmt = $pdo->prepare($sql);
-            $stmt->execute([$eventName, $eventLoc, $dateStart, $dateEnd, $laneCount, $poolType, $ageCalc, $partType, $status, $bankName, $bankRek, $bankAtas, $uid, $eventId]);
+            $stmt->execute([$eventName, $eventLoc, $eventCity, $dateStart, $dateEnd, $laneCount, $poolType, $ageCalc, $partType, $status, $bankName, $bankRek, $bankAtas, $uid, $eventId]);
         }
 
         // --- HANDLE UPLOAD LOGO & BRANDING ---
@@ -263,9 +264,15 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                             <input type="date" name="event_end_date" value="<?= val($row, 'event_date_end') ?>" class="input-field">
                         </div>
                     </div>
-                    <div>
-                        <label class="label-text">Lokasi (Nama Kolam & Kota)</label>
-                        <input type="text" name="lokasi" value="<?= val($row, 'event_location') ?>" class="input-field" placeholder="Contoh: Stadion Akuatik GBK, Jakarta">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <label class="label-text">Lokasi (Nama Kolam)</label>
+                            <input type="text" name="lokasi" value="<?= val($row, 'event_location') ?>" class="input-field" placeholder="Contoh: Stadion Akuatik GBK">
+                        </div>
+                        <div>
+                            <label class="label-text">Kabupaten / Kota</label>
+                            <input type="text" name="kota" value="<?= val($row, 'event_city') ?>" class="input-field" placeholder="Contoh: Jakarta Pusat">
+                        </div>
                     </div>
                 </div>
             </div>

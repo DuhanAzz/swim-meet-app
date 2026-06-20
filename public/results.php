@@ -11,7 +11,7 @@ $heroTitle = $s['hero_title'] ?? 'SWIMMEET CHAMPIONSHIP';
 $search = $_GET['q'] ?? '';
 
 // Ambil event terbaru yang bukan draft
-$sql = "SELECT id, event_name, event_location, event_date_start, event_status, is_result_published 
+$sql = "SELECT id, event_name, event_location, event_city, event_date_start, event_status, is_result_published 
         FROM events 
         WHERE event_status != 'draft'"; 
 $params = [];
@@ -186,7 +186,7 @@ if (!empty($events)) {
                         </h3>
                         
                         <p class="text-slate-500 font-bold text-xs uppercase flex items-center gap-2">
-                            <span>📍</span> <?= htmlspecialchars($e['event_location']) ?>
+                            <span>📍</span> <?= htmlspecialchars($e['event_location']) ?><?= !empty($e['event_city']) ? ' - ' . htmlspecialchars($e['event_city']) : '' ?>
                         </p>
                     </div>
 

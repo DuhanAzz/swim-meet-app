@@ -65,7 +65,7 @@ catch (Exception $e) {}
 if (empty($sliders)) $sliders[] = ['image_path' => 'https://images.unsplash.com/photo-1530549387789-4c1017266635'];
 
 // 🚀 PERBAIKAN: PREVIEW JADWAL (4 Event TERBARU)
-$sql = "SELECT e.id, e.event_name, e.event_location, e.event_date_start, e.event_status, e.poster_image, e.logo_left, e.is_result_published 
+$sql = "SELECT e.id, e.event_name, e.event_location, e.event_city, e.event_date_start, e.event_status, e.poster_image, e.logo_left, e.is_result_published 
         FROM events e 
         WHERE e.event_status != 'Draft' 
         ORDER BY e.id DESC 
@@ -227,7 +227,7 @@ $upcoming_preview = $pdo->query($sql)->fetchAll();
                                 <span class="bg-slate-50 border border-slate-100 p-2.5 rounded-xl text-lg shadow-sm">📍</span> 
                                 <div class="mt-1">
                                     <span class="block text-[9px] text-slate-400 mb-0.5">Lokasi / Kolam</span>
-                                    <span class="text-slate-700 text-sm line-clamp-2"><?= htmlspecialchars($e['event_location']) ?></span>
+                                    <span class="text-slate-700 text-sm line-clamp-2"><?= htmlspecialchars($e['event_location']) ?><?= !empty($e['event_city']) ? ' - ' . htmlspecialchars($e['event_city']) : '' ?></span>
                                 </div>
                             </div>
                         </div>

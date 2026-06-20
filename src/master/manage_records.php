@@ -131,7 +131,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'preview_import') {
         $sqlRank1 = "SELECT 
                         en.distance, en.stroke, en.jenis_kelamin, en.age_group,
                         s.nama_atlet, es.time_final, es.time_final_ms,
-                        e.event_location, YEAR(e.event_date_start) as event_year
+                        e.event_location, e.event_city, YEAR(e.event_date_start) as event_year
                      FROM event_seeding es
                      JOIN event_entries ee ON es.entry_id = ee.id
                      JOIN event_numbers en ON ee.category_id = en.id
@@ -180,7 +180,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'preview_import') {
                     'holder_name'    => $row['nama_atlet'],
                     'record_time'    => $row['time_final'],
                     'record_time_ms' => $atlet_ms,
-                    'location'       => $row['event_location'],
+                    'location'       => !empty($row['event_city']) ? $row['event_city'] : $row['event_location'],
                     'record_year'    => $row['event_year'],
                     'old_rec'        => $oldRec,
                     'status'         => $status,

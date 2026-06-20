@@ -75,6 +75,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['save_user'])) {
             // Data Events
             $compSystem = $_POST['competition_system'] ?? 'Langsung Final';
             $location   = $_POST['event_location'] ?? null;
+            $city       = $_POST['event_city'] ?? null;
             $eventDate  = !empty($_POST['event_date_start']) ? $_POST['event_date_start'] : date('Y-m-d');
         } else {
             // Data Clubs
@@ -99,11 +100,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['save_user'])) {
                 $check = $pdo->prepare("SELECT id FROM events WHERE user_id = ?");
                 $check->execute([$userId]);
                 if ($check->rowCount() > 0) {
-                    $pdo->prepare("UPDATE events SET event_name=?, competition_system=?, event_location=?, event_date_start=? WHERE user_id=?")
-                        ->execute([$namaEntitas, $compSystem, $location, $eventDate, $userId]);
+                    $pdo->prepare("UPDATE events SET event_name=?, competition_system=?, event_location=?, event_city=?, event_date_start=? WHERE user_id=?")
+                        ->execute([$namaEntitas, $compSystem, $location, $city, $eventDate, $userId]);
                 } else {
-                    $pdo->prepare("INSERT INTO events (user_id, event_name, competition_system, event_location, event_date_start, event_status, event_type, lane_count, pool_type) VALUES (?, ?, ?, ?, ?, 'Upcoming', 'Standard', 8, '50m')")
-                        ->execute([$userId, $namaEntitas, $compSystem, $location, $eventDate]);
+                    $pdo->prepare("INSERT INTO events (user_id, event_name, competition_system, event_location, event_city, event_date_start, event_status, event_type, lane_count, pool_type) VALUES (?, ?, ?, ?, ?, ?, 'Upcoming', 'Standard', 8, '50m')")
+                        ->execute([$userId, $namaEntitas, $compSystem, $location, $city, $eventDate]);
                 }
             } elseif ($role == 'user') {
                 $check = $pdo->prepare("SELECT id FROM clubs WHERE user_id = ?");
@@ -130,8 +131,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['save_user'])) {
             $newUserId = $pdo->lastInsertId();
 
             if ($role == 'admin') {
-                $pdo->prepare("INSERT INTO events (user_id, event_name, competition_system, event_location, event_date_start, event_status, event_type, lane_count, pool_type) VALUES (?, ?, ?, ?, ?, 'Upcoming', 'Standard', 8, '50m')")
-                    ->execute([$newUserId, $namaEntitas, $compSystem, $location, $eventDate]);
+                $pdo->prepare("INSERT INTO events (user_id, event_name, competition_system, event_location, event_city, event_date_start, event_status, event_type, lane_count, pool_type) VALUES (?, ?, ?, ?, ?, ?, 'Upcoming', 'Standard', 8, '50m')")
+                    ->execute([$newUserId, $namaEntitas, $compSystem, $location, $city, $eventDate]);
             } elseif ($role == 'user') {
                 $pdo->prepare("INSERT INTO clubs (user_id, nama_klub, kota) VALUES (?, ?, ?)")
                     ->execute([$newUserId, $namaEntitas, $kota]);
@@ -189,7 +190,7 @@ if (!empty($search)) {
 
 if ($targetRole == 'admin') {
     $sql = "SELECT u.*, 
-                   e.competition_system, e.event_name, e.event_location, e.event_date_start, e.event_status 
+                   e.competition_system, e.event_name, e.event_location, e.event_city, e.event_date_start, e.event_status 
             FROM users u 
             LEFT JOIN events e ON u.id = e.user_id 
             WHERE u.role = :role $searchSql ORDER BY u.created_at DESC";
@@ -303,7 +304,7 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                                     </div>
                                     <div class="flex flex-wrap gap-1 items-center">
                                         <span class="bg-slate-100 px-1.5 py-0.5 rounded text-[9px] font-bold text-slate-500 border border-slate-200">
-                                            📍 <?= htmlspecialchars($u['event_location'] ?? '-') ?>
+                                            📍 <?= htmlspecialchars($u['event_location'] ?? '-') ?> <?= !empty($u['event_city']) ? ' - ' . htmlspecialchars($u['event_city']) : '' ?>
                                         </span>
                                         <span class="text-[9px] text-slate-400 font-medium">
                                             📅 <?= !empty($u['event_date_start']) ? date('d M Y', strtotime($u['event_date_start'])) : '-' ?>
@@ -448,9 +449,15 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                             <input type="date" name="event_date_start" id="form-date" class="w-full px-4 py-3 border border-slate-200 bg-slate-50 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none">
                         </div>
                     </div>
-                    <div>
-                        <label class="text-[10px] font-bold text-slate-500 uppercase">Lokasi (Venue)</label>
-                        <input type="text" name="event_location" id="form-location" class="w-full px-4 py-3 border border-slate-200 bg-slate-50 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none">
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="text-[10px] font-bold text-slate-500 uppercase">Lokasi (Nama Kolam)</label>
+                            <input type="text" name="event_location" id="form-location" class="w-full px-4 py-3 border border-slate-200 bg-slate-50 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none">
+                        </div>
+                        <div>
+                            <label class="text-[10px] font-bold text-slate-500 uppercase">Kab/Kota</label>
+                            <input type="text" name="event_city" id="form-city" class="w-full px-4 py-3 border border-slate-200 bg-slate-50 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none">
+                        </div>
                     </div>
                 <?php else: ?>
                     <div>
@@ -483,6 +490,7 @@ function openModal() {
     document.getElementById('form-nama-detail').value = "";
     
     if(document.getElementById('form-location')) document.getElementById('form-location').value = "";
+    if(document.getElementById('form-city')) document.getElementById('form-city').value = "";
     if(document.getElementById('form-date')) document.getElementById('form-date').value = ""; 
     if(document.getElementById('form-mode')) document.getElementById('form-mode').selectedIndex = 0;
     if(document.getElementById('form-kota')) document.getElementById('form-kota').value = "";
@@ -512,6 +520,9 @@ function editAdmin(buttonElement) {
         }
         if(document.getElementById('form-location')) {
             document.getElementById('form-location').value = data.event_location || '';
+        }
+        if(document.getElementById('form-city')) {
+            document.getElementById('form-city').value = data.event_city || '';
         }
         if(document.getElementById('form-date')) {
             document.getElementById('form-date').value = data.event_date_start || ''; 

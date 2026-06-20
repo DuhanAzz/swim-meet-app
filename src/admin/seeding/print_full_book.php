@@ -67,7 +67,9 @@ $stmtProfile->execute([$eventId]);
 $raceInfo = $stmtProfile->fetch(PDO::FETCH_ASSOC);
 
 $eventName  = strtoupper($raceInfo['event_name'] ?? 'EVENT NAME');
-$venueName  = strtoupper($raceInfo['event_location'] ?? '-');
+$loc  = $raceInfo['event_location'] ?? '-';
+if (!empty($raceInfo['event_city'])) $loc .= ' - ' . $raceInfo['event_city'];
+$venueName  = strtoupper($loc);
 $eventDate  = $raceInfo['event_date_start'];
 $logoLeft   = !empty($raceInfo['logo_left']) ? '/' . ltrim($raceInfo['logo_left'], '/') : null;
 $logoRight  = !empty($raceInfo['logo_right']) ? '/' . ltrim($raceInfo['logo_right'], '/') : null;

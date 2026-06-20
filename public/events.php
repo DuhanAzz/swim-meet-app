@@ -11,7 +11,7 @@ $heroTitle = $s['hero_title'] ?? 'SWIMMEET CHAMPIONSHIP';
 $search = $_GET['q'] ?? '';
 
 // Mengurutkan dari event terbaru yang dimasukkan ke database (ORDER BY e.id DESC)
-$sql = "SELECT id, event_name, event_location, event_date_start, event_status, pool_type, lane_count, poster_image, logo_left, is_result_published 
+$sql = "SELECT id, event_name, event_location, event_city, event_date_start, event_status, pool_type, lane_count, poster_image, logo_left, is_result_published 
         FROM events 
         WHERE event_status != 'draft'"; 
 $params = [];
@@ -196,7 +196,7 @@ if (!empty($events)) {
                                 <div class="flex items-start gap-3">
                                     <span class="bg-slate-50 border border-slate-100 p-2 rounded-xl text-sm shadow-sm">📍</span> 
                                     <div class="mt-0.5">
-                                        <span class="text-slate-700 line-clamp-2"><?= htmlspecialchars($e['event_location'] ?? 'TBA') ?></span>
+                                        <span class="text-slate-700 line-clamp-2"><?= htmlspecialchars($e['event_location'] ?? 'TBA') ?><?= !empty($e['event_city']) ? ' - ' . htmlspecialchars($e['event_city']) : '' ?></span>
                                     </div>
                                 </div>
                             </div>
