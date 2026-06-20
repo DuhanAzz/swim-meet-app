@@ -19,6 +19,9 @@ if (
     $dbname = 'swim_meet';
     $username = 'root';
     $password = '';
+    
+    // Base URL untuk environment lokal
+    define('BASE_URL', '/swim-meet');
 } else {
 // ==========================================
     // KONDISI HOSTING (Production)
