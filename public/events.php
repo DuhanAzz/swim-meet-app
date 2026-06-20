@@ -98,9 +98,9 @@ if (!empty($events)) {
                 </div>
                 <div class="flex items-center border-l border-white/20 pl-10">
                     <?php if(isset($_SESSION['user_id'])): 
-                        $dashLink = '../src/user/dashboard.php';
-                        if($_SESSION['role'] == 'master') $dashLink = '../src/master/dashboard.php';
-                        if($_SESSION['role'] == 'admin') $dashLink = '../src/admin/dashboard.php';
+                        $dashLink = BASE_URL . '/src/user/dashboard.php';
+                        if($_SESSION['role'] == 'master') $dashLink = BASE_URL . '/src/master/dashboard.php';
+                        if($_SESSION['role'] == 'admin') $dashLink = BASE_URL . '/src/admin/dashboard.php';
                     ?>
                         <a href="<?= $dashLink ?>" class="bg-blue-600 hover:bg-blue-700 text-white px-10 py-3 rounded-full font-black text-xs uppercase tracking-widest shadow-xl transition transform hover:scale-105">Dashboard</a>
                     <?php else: ?>
