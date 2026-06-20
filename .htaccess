@@ -8,8 +8,8 @@ Options -Indexes
     RewriteRule ^$ public/index.php [L]
 
     # 3. Jika file/folder yang diminta ADA secara fisik (misal: src/master/dashboard.php), langsung buka!
-    RewriteCond %{REQUEST_FILENAME} -f [OR]
-    RewriteCond %{REQUEST_FILENAME} -d
+    RewriteCond %{DOCUMENT_ROOT}%{REQUEST_URI} -f [OR]
+    RewriteCond %{DOCUMENT_ROOT}%{REQUEST_URI} -d
     RewriteRule ^ - [L]
 
     # 4. Jika file TIDAK ADA, asumsikan itu adalah file public (misal: /login.php -> /public/login.php)

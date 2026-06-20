@@ -9,7 +9,7 @@ require_once __DIR__ . '/../config/database.php';
 // --- 2. CEK AKSES MASTER ---
 if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'master') {
     // Sesuaikan path redirect login jika perlu
-    header("Location: ../../public/login.php"); exit;
+    header("Location: " . BASE_URL . "/public/login.php"); exit;
 }
 
 // --- 3. LOGIC DATA (DATA GATHERING) ---
