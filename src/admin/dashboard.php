@@ -5,7 +5,7 @@ require_once __DIR__ . '/../../src/config/database.php';
 
 // 1. CEK KEAMANAN
 if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
-    header("Location: ../../../public/login.php"); exit;
+    header("Location: " . BASE_URL . "/public/login.php"); exit;
 }
 $uid = $_SESSION['user_id'];
 
