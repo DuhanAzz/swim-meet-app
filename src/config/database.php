@@ -36,6 +36,9 @@ if (
     $dbname = 'u381696286_setsystem';
     $username = 'u381696286_setsystem';
     $password = 'iV6|2KG^';
+    
+    // Base URL untuk environment hosting
+    define('BASE_URL', '');
 }
 
 try {
