@@ -128,9 +128,9 @@ foreach ($results as $r) {
                     </p>
                 </div>
 
-                <?php if(!empty($event['logo_left']) && file_exists('../' . $event['logo_left'])): ?>
+                <?php if(!empty($event['logo_left']) && file_exists(__DIR__ . '/' . $event['logo_left'])): ?>
                     <div class="hidden md:block shrink-0 bg-slate-950/40 p-3 rounded-2xl border border-slate-800/60">
-                        <img src="../<?= htmlspecialchars($event['logo_left']) ?>" alt="Logo Event" class="h-14 w-14 object-contain">
+                        <img src="<?= htmlspecialchars($event['logo_left']) ?>" alt="Logo Event" class="h-14 w-14 object-contain">
                     </div>
                 <?php endif; ?>
             </div>

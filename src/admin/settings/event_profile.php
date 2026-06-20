@@ -223,7 +223,7 @@ function getUrlPreview($dbPath) {
     if (strpos($dbPath, 'http') === 0) return $dbPath;
     $cleanPath = ltrim(preg_replace('/^(\.\.\/)+/', '', $dbPath), '/');
     if (strpos($cleanPath, 'swim-meet/') === 0) $cleanPath = substr($cleanPath, 10);
-    return '/' . $cleanPath;
+    return '../../../public/' . $cleanPath;
 }
 
 include __DIR__ . '/../../../views/layout/topbar.php'; 
