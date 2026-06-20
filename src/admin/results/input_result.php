@@ -509,7 +509,7 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
 
                                 <div class="event-records-container" style="border:none; padding:0; margin-bottom:10px;">
                                     <?php 
-                                    $stmtRec = $pdo->prepare("SELECT record_type, holder_name, record_time, location, record_year FROM master_records WHERE distance = ? AND stroke = ? AND jenis_kelamin = ? AND (age_group = ? OR record_type = 'rekornas') ORDER BY record_type DESC, id ASC");
+                                    $stmtRec = $pdo->prepare("SELECT record_type, holder_name, record_time, location, record_year FROM master_records WHERE distance = ? AND stroke = ? AND jenis_kelamin = ? AND (age_group = ? OR record_type = 'rekornas') ORDER BY record_type ASC, id ASC");
                                     $stmtRec->execute([$raceInfo['distance'], $raceInfo['stroke'], $raceInfo['jenis_kelamin'], $raceInfo['age_group']]);
                                     $records = $stmtRec->fetchAll(PDO::FETCH_ASSOC);
                                     
