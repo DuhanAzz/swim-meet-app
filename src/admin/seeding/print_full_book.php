@@ -352,14 +352,27 @@ if ($showScheduleAuto) {
                                     <div class="eh-right"><?= $pc['show_round'] ? 'FINAL' : '' ?></div>
                                 </div>
 
-                                <div class="event-records-container">
+                                <div class="event-records-container" style="border:none; padding:0; margin-bottom:10px;">
                                     <?php 
                                     if($pc['show_records']): 
-                                        $stmtRec = $pdo->prepare("SELECT record_type, holder_name, record_time, location, record_year FROM master_records WHERE distance = ? AND stroke = ? AND jenis_kelamin = ? AND age_group = ? ORDER BY id ASC");
+                                        $stmtRec = $pdo->prepare("SELECT record_type, holder_name, record_time, location, record_year FROM master_records WHERE distance = ? AND stroke = ? AND jenis_kelamin = ? AND (age_group = ? OR record_type = 'rekornas') ORDER BY record_type DESC, id ASC");
                                         $stmtRec->execute([$data['meta']['distance'], $data['meta']['stroke'], $data['meta']['jenis_kelamin'], $data['meta']['age_group']]);
                                         $records = $stmtRec->fetchAll(PDO::FETCH_ASSOC);
                                         
                                         if(!empty($records)):
+                                            ?>
+                                            <table style="width: 100%; border-collapse: collapse; font-size: 8pt; font-family: 'Arial Narrow', sans-serif; font-weight: bold; border-bottom: 1px solid #000; text-transform: uppercase;">
+                                                <thead>
+                                                    <tr style="border-bottom: 1px solid #000;">
+                                                        <th style="text-align: left; padding: 2px 0; width: 140px;">REKOR</th>
+                                                        <th style="text-align: left; padding: 2px 0;">NAMA ATLET</th>
+                                                        <th style="text-align: left; padding: 2px 0; width: 180px;">LOKASI</th>
+                                                        <th style="text-align: center; padding: 2px 0; width: 60px;">TAHUN</th>
+                                                        <th style="text-align: right; padding: 2px 0; width: 80px;">WAKTU</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                            <?php
                                             foreach($records as $rec):
                                                 $tipeLabel = strtoupper(str_replace('_', ' ', $rec['record_type']));
                                                 if($tipeLabel === 'REKORNAS') $tipeLabel = 'REKOR NAS';
@@ -367,12 +380,19 @@ if ($showScheduleAuto) {
                                                 $lokasiDisplay = !empty($rec['location']) ? strtoupper($rec['location']) : '-';
                                                 $tahunDisplay = !empty($rec['record_year']) ? $rec['record_year'] : '-';
                                                 ?>
-                                                <div class="rec-row">
-                                                    <span class="rec-label"><?= $tipeLabel ?></span>
-                                                    <span class="rec-details"><?= strtoupper($rec['holder_name']) ?>, <?= $lokasiDisplay ?>, <?= $tahunDisplay ?>, <?= $rec['record_time'] ?></span>
-                                                </div>
+                                                <tr>
+                                                    <td style="padding: 2px 0;"><?= $tipeLabel ?></td>
+                                                    <td style="padding: 2px 0;"><?= strtoupper($rec['holder_name']) ?></td>
+                                                    <td style="padding: 2px 0;"><?= $lokasiDisplay ?></td>
+                                                    <td style="text-align: center; padding: 2px 0;"><?= $tahunDisplay ?></td>
+                                                    <td style="text-align: right; padding: 2px 0;"><?= $rec['record_time'] ?></td>
+                                                </tr>
                                                 <?php 
                                             endforeach;
+                                            ?>
+                                                </tbody>
+                                            </table>
+                                            <?php
                                         else:
                                             echo "<div style='color:#aaa; font-style:italic;'>NO MASTER RECORD DATA FOUND</div>";
                                         endif;
