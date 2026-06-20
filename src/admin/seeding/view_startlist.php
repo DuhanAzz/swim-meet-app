@@ -254,12 +254,14 @@ foreach ($rawData as $row) {
                         if(!empty($records)):
                             foreach($records as $rec):
                                 $tipeLabel = strtoupper(str_replace('_', ' ', $rec['record_type']));
-                                $lokasiDisplay = !empty($rec['location']) ? ' '.$rec['location'] : '';
-                                $tahunDisplay = !empty($rec['record_year']) ? ' '.$rec['record_year'] : '';
+                                if($tipeLabel === 'REKORNAS') $tipeLabel = 'REKOR NAS';
+                                
+                                $lokasiDisplay = !empty($rec['location']) ? strtoupper($rec['location']) : '-';
+                                $tahunDisplay = !empty($rec['record_year']) ? $rec['record_year'] : '-';
                                 ?>
                                 <div class="rec-row">
                                     <span class="rec-label"><?= $tipeLabel ?></span>
-                                    <span class="rec-details"><?= $rec['record_time'] ?> <?= strtoupper($rec['holder_name']) ?><?= strtoupper($lokasiDisplay) ?><?= $tahunDisplay ?></span>
+                                    <span class="rec-details"><?= strtoupper($rec['holder_name']) ?>, <?= $lokasiDisplay ?>, <?= $tahunDisplay ?>, <?= $rec['record_time'] ?></span>
                                 </div>
                                 <?php 
                             endforeach;

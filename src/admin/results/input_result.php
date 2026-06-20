@@ -290,6 +290,11 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
         .eh-right { width: 150px; text-align: right; display: flex; justify-content: flex-end; }
         .qr-header { width: 45px; height: 45px; object-fit: contain; margin-bottom: 2px; }
 
+        .event-records-container { border-bottom: 1px solid #000; padding: 4px 0; margin-bottom: 10px; font-size: 8pt; font-family: 'Arial Narrow', sans-serif; font-weight: bold; line-height: 1.3; text-align: left; }
+        .rec-row { display: flex; justify-content: flex-start; text-transform: uppercase; }
+        .rec-label { width: 140px; font-weight: 900; color: #000; }
+        .rec-details { flex: 1; color: #000; }
+
         .data-table { width: 100%; border-collapse: collapse; table-layout: fixed; margin-bottom: 10px; font-family: 'Courier New', Courier, monospace; font-size: 8pt; }
         .data-table th { background-color: #e5e7eb !important; color: #000; font-family: 'Arial Narrow', sans-serif; font-weight: bold; font-size: 8pt; text-transform: uppercase; padding: 4px; border-top: 1px solid #000; border-bottom: 2px solid #000; text-align: center; }
         .data-table td { padding: 4px; border-bottom: 1px solid #ccc; vertical-align: middle; }
@@ -498,6 +503,32 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                                     <div class="eh-right">
                                         <img id="qrResultImage" src="<?= $default_qr_api ?>" class="qr-header" alt="QR Code">
                                     </div>
+                                </div>
+
+                                <div class="event-records-container">
+                                    <?php 
+                                    $stmtRec = $pdo->prepare("SELECT record_type, holder_name, record_time, location, record_year FROM master_records WHERE distance = ? AND stroke = ? AND jenis_kelamin = ? AND age_group = ? ORDER BY id ASC");
+                                    $stmtRec->execute([$raceInfo['distance'], $raceInfo['stroke'], $raceInfo['jenis_kelamin'], $raceInfo['age_group']]);
+                                    $records = $stmtRec->fetchAll(PDO::FETCH_ASSOC);
+                                    
+                                    if(!empty($records)):
+                                        foreach($records as $rec):
+                                            $tipeLabel = strtoupper(str_replace('_', ' ', $rec['record_type']));
+                                            if($tipeLabel === 'REKORNAS') $tipeLabel = 'REKOR NAS';
+                                            
+                                            $lokasiDisplay = !empty($rec['location']) ? strtoupper($rec['location']) : '-';
+                                            $tahunDisplay = !empty($rec['record_year']) ? $rec['record_year'] : '-';
+                                            ?>
+                                            <div class="rec-row">
+                                                <span class="rec-label"><?= $tipeLabel ?></span>
+                                                <span class="rec-details"><?= strtoupper($rec['holder_name']) ?>, <?= $lokasiDisplay ?>, <?= $tahunDisplay ?>, <?= $rec['record_time'] ?></span>
+                                            </div>
+                                            <?php 
+                                        endforeach;
+                                    else:
+                                        echo "<div style='height:2px;'></div>";
+                                    endif; 
+                                    ?>
                                 </div>
 
                                 <?php if(empty($groupedResults)): ?>
