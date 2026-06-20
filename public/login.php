@@ -5,9 +5,9 @@ require_once __DIR__ . '/../src/config/database.php';
 // 1. CEK LOGIN (Jika sudah login, langsung lempar ke dashboard)
 if (isset($_SESSION['user_id'])) {
     $role = $_SESSION['role'];
-    if ($role == 'master') header("Location: ../src/master/dashboard.php");
-    elseif ($role == 'admin') header("Location: ../src/admin/dashboard.php");
-    else header("Location: ../src/user/dashboard.php");
+    if ($role == 'master') header("Location: " . BASE_URL . "/src/master/dashboard.php");
+    elseif ($role == 'admin') header("Location: " . BASE_URL . "/src/admin/dashboard.php");
+    else header("Location: " . BASE_URL . "/src/user/dashboard.php");
     exit;
 }
 
@@ -38,9 +38,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         // --- SINKRONISASI MODE EO ---
         $_SESSION['event_type'] = $user['event_type']; 
         
-        if ($user['role'] == 'master') header("Location: ../src/master/dashboard.php");
-        elseif ($user['role'] == 'admin') header("Location: ../src/admin/dashboard.php");
-        else header("Location: ../src/user/dashboard.php");
+        if ($user['role'] == 'master') header("Location: " . BASE_URL . "/src/master/dashboard.php");
+        elseif ($user['role'] == 'admin') header("Location: " . BASE_URL . "/src/admin/dashboard.php");
+        else header("Location: " . BASE_URL . "/src/user/dashboard.php");
         exit;
         }
     } else {
