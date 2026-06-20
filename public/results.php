@@ -51,7 +51,7 @@ if (!empty($events)) {
 <!DOCTYPE html>
 <html lang="id" class="scroll-smooth">
 <head>
-    <link rel="icon" type="image/png" href="/public/favicon.png?v=2">
+    <link rel="icon" type="image/png" href="<?= BASE_URL ?>/public/favicon.png?v=2">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Hasil & Dokumen - <?= htmlspecialchars($heroTitle) ?></title>
