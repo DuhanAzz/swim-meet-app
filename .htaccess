@@ -4,14 +4,19 @@ Options -Indexes
 <IfModule mod_rewrite.c>
     RewriteEngine On
     
-    # 2. Jika user mengakses folder utama, arahkan ke public/index.php
+    # 2. Jika request adalah root folder (kosong), arahkan ke public/index.php
     RewriteRule ^$ public/index.php [L]
 
-    # 3. Izinkan pembacaan file di dalam folder public/ & Cegah Infinite Loop (Error 500)
+    # 3. Jika file/folder yang diminta ADA secara fisik (misal: src/master/dashboard.php), langsung buka!
+    RewriteCond %{REQUEST_FILENAME} -f [OR]
+    RewriteCond %{REQUEST_FILENAME} -d
+    RewriteRule ^ - [L]
+
+    # 4. Jika file TIDAK ADA, asumsikan itu adalah file public (misal: /login.php -> /public/login.php)
     RewriteCond %{REQUEST_URI} !/public/
     RewriteRule ^(.*)$ public/$1 [L]
 
-    # 4. Arahkan semua request URL sisanya ke gerbang utama
+    # 5. Fallback: Jika setelah dicari di public/ tetap tidak ada, serahkan ke gerbang utama
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteCond %{REQUEST_FILENAME} !-d
     RewriteRule ^(.*)$ public/index.php [L,QSA]
