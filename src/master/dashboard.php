@@ -30,10 +30,19 @@ try {
     $stats['eo']       = $pdo->query("SELECT COUNT(*) FROM users WHERE role = 'admin'")->fetchColumn();
     $stats['clubs']    = $pdo->query("SELECT COUNT(*) FROM users WHERE role = 'user'")->fetchColumn();
     
+    // Hitung User Pending
+    $stats['pending_users'] = 0;
+    try {
+        $stats['pending_users'] = $pdo->query("SELECT COUNT(*) FROM users WHERE account_status = 'pending'")->fetchColumn();
+    } catch (Exception $e) {}
+
     // Cek tabel swimmers
+    $stats['athletes'] = 0;
+    $stats['pending_uids'] = 0;
     try {
         $stats['athletes'] = $pdo->query("SELECT COUNT(*) FROM swimmers")->fetchColumn();
-    } catch (Exception $e) { $stats['athletes'] = 0; }
+        $stats['pending_uids'] = $pdo->query("SELECT COUNT(*) FROM swimmers WHERE uid IS NULL OR trim(uid) = '' OR uid = '-' OR uid LIKE 'SW%' OR uid = '0'")->fetchColumn();
+    } catch (Exception $e) {}
     
     // B. Hitung Entries
     $countActive = 0;
@@ -76,7 +85,7 @@ try {
 
     // F. User Terbaru
     $sqlRecent = "
-        SELECT id, username, role, created_at, nama_lengkap, email
+        SELECT id, username, role, created_at, nama_lengkap, email, account_status
         FROM users 
         ORDER BY created_at DESC 
         LIMIT 5
@@ -112,6 +121,37 @@ include __DIR__ . '/../../views/layout/sidebar.php';
         </div>
     </div>
 
+    <!-- ACTION REQUIRED ALERTS -->
+    <?php if($stats['pending_users'] > 0 || $stats['pending_uids'] > 0): ?>
+    <div class="mb-8 space-y-4">
+        <?php if($stats['pending_users'] > 0): ?>
+        <div class="bg-gradient-to-r from-amber-500 to-orange-500 rounded-2xl p-6 text-white shadow-lg flex items-center justify-between group">
+            <div class="flex items-center gap-4">
+                <div class="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center text-2xl">⚠️</div>
+                <div>
+                    <h3 class="font-black text-lg">Action Required: <?= $stats['pending_users'] ?> Akun Pending</h3>
+                    <p class="text-sm text-orange-100 font-medium mt-1">Ada pengguna (Klub/EO) baru yang menunggu persetujuan Anda untuk bisa login.</p>
+                </div>
+            </div>
+            <a href="users/index.php" class="bg-white text-orange-600 px-6 py-3 rounded-xl font-black text-xs uppercase tracking-widest hover:bg-orange-50 transition transform group-hover:scale-105 shadow-md">Tinjau Sekarang</a>
+        </div>
+        <?php endif; ?>
+
+        <?php if($stats['pending_uids'] > 0): ?>
+        <div class="bg-gradient-to-r from-blue-600 to-indigo-700 rounded-2xl p-6 text-white shadow-lg flex items-center justify-between group">
+            <div class="flex items-center gap-4">
+                <div class="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center text-2xl">🆔</div>
+                <div>
+                    <h3 class="font-black text-lg">System Alert: <?= $stats['pending_uids'] ?> Atlet Tanpa UID</h3>
+                    <p class="text-sm text-blue-100 font-medium mt-1">Ada atlet yang terdaftar namun belum memiliki UID (atau format UID masih lama/salah).</p>
+                </div>
+            </div>
+            <a href="swimmers/index.php" class="bg-white text-blue-700 px-6 py-3 rounded-xl font-black text-xs uppercase tracking-widest hover:bg-blue-50 transition transform group-hover:scale-105 shadow-md">Generate UID</a>
+        </div>
+        <?php endif; ?>
+    </div>
+    <?php endif; ?>
+
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         
         <div class="bg-gradient-to-br from-emerald-600 to-teal-800 rounded-2xl p-6 text-white shadow-lg relative overflow-hidden group">
@@ -125,29 +165,29 @@ include __DIR__ . '/../../views/layout/sidebar.php';
             </div>
         </div>
 
-        <div class="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm hover:border-blue-400 transition">
+        <div class="bg-gradient-to-br from-white to-slate-50 rounded-2xl p-6 border-b-4 border-blue-500 shadow-sm hover:shadow-lg transition-all duration-300 group">
             <div class="flex justify-between items-start">
                 <div>
                     <p class="text-slate-400 text-[10px] font-black uppercase tracking-widest mb-1">Database Atlet</p>
-                    <h2 class="text-3xl font-black text-slate-800"><?= number_format($stats['athletes']) ?></h2>
-                    <p class="text-[10px] text-slate-400 mt-1">Total terdaftar</p>
+                    <h2 class="text-3xl font-black text-slate-800 group-hover:text-blue-600 transition"><?= number_format($stats['athletes']) ?></h2>
+                    <p class="text-[10px] text-slate-400 mt-1">Total terdaftar di sistem</p>
                 </div>
-                <div class="w-10 h-10 bg-blue-50 text-blue-600 rounded-lg flex items-center justify-center text-xl">🏊</div>
+                <div class="w-12 h-12 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center text-2xl shadow-inner">🏊</div>
             </div>
         </div>
 
-        <div class="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm hover:border-purple-400 transition">
+        <div class="bg-gradient-to-br from-white to-slate-50 rounded-2xl p-6 border-b-4 border-purple-500 shadow-sm hover:shadow-lg transition-all duration-300 group">
             <div class="flex justify-between items-start">
                 <div>
                     <p class="text-slate-400 text-[10px] font-black uppercase tracking-widest mb-1">Total User</p>
-                    <h2 class="text-3xl font-black text-slate-800"><?= number_format($stats['eo'] + $stats['clubs']) ?></h2>
+                    <h2 class="text-3xl font-black text-slate-800 group-hover:text-purple-600 transition"><?= number_format($stats['eo'] + $stats['clubs']) ?></h2>
                     <p class="text-[10px] text-slate-400 mt-1"><?= $stats['clubs'] ?> Klub / <?= $stats['eo'] ?> EO</p>
                 </div>
-                <div class="w-10 h-10 bg-purple-50 text-purple-600 rounded-lg flex items-center justify-center text-xl">👥</div>
+                <div class="w-12 h-12 bg-purple-100 text-purple-600 rounded-xl flex items-center justify-center text-2xl shadow-inner">👥</div>
             </div>
         </div>
 
-        <div class="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm hover:border-slate-400 transition">
+        <div class="bg-gradient-to-br from-white to-slate-50 rounded-2xl p-6 border-b-4 border-slate-400 shadow-sm hover:shadow-lg transition-all duration-300 group">
             <div class="flex justify-between items-start">
                 <div>
                     <p class="text-slate-400 text-[10px] font-black uppercase tracking-widest mb-1">Status Server</p>
@@ -225,14 +265,30 @@ include __DIR__ . '/../../views/layout/sidebar.php';
                             <?php foreach($recentUsers as $u): ?>
                             <tr class="hover:bg-blue-50/30 transition">
                                 <td class="px-8 py-4">
-                                    <div class="font-bold text-slate-700"><?= htmlspecialchars($u['nama_lengkap']) ?></div>
+                                    <div class="flex items-center gap-2">
+                                        <div class="font-bold text-slate-700"><?= htmlspecialchars($u['nama_lengkap']) ?></div>
+                                        <?php if(($u['account_status']??'') == 'pending'): ?>
+                                            <span class="w-2 h-2 rounded-full bg-orange-500 animate-pulse" title="Menunggu Verifikasi"></span>
+                                        <?php endif; ?>
+                                    </div>
                                     <div class="text-[10px] text-slate-400">@<?= htmlspecialchars($u['username']) ?></div>
                                 </td>
                                 <td class="px-8 py-4">
-                                    <span class="px-2 py-1 rounded text-[9px] font-black uppercase 
-                                        <?= $u['role']=='admin' ? 'bg-slate-800 text-white' : 'bg-blue-100 text-blue-600' ?>">
-                                        <?= $u['role'] == 'admin' ? 'Event Org' : 'Club' ?>
-                                    </span>
+                                    <div class="flex flex-col gap-1 items-start">
+                                        <span class="px-2 py-1 rounded text-[9px] font-black uppercase 
+                                            <?= $u['role']=='admin' ? 'bg-slate-800 text-white' : 'bg-blue-100 text-blue-600' ?>">
+                                            <?= $u['role'] == 'admin' ? 'Event Org' : 'Club' ?>
+                                        </span>
+                                        <?php if(($u['account_status']??'') == 'pending'): ?>
+                                            <span class="px-2 py-1 rounded text-[9px] font-black uppercase bg-orange-100 text-orange-600 border border-orange-200">
+                                                Pending
+                                            </span>
+                                        <?php else: ?>
+                                            <span class="px-2 py-1 rounded text-[9px] font-black uppercase bg-emerald-100 text-emerald-600">
+                                                Verified
+                                            </span>
+                                        <?php endif; ?>
+                                    </div>
                                 </td>
                                 <td class="px-8 py-4 text-right text-[10px] text-slate-400 font-mono">
                                     <?= date('d/m/Y H:i', strtotime($u['created_at'])) ?>
