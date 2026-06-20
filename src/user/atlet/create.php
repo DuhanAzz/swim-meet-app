@@ -22,13 +22,13 @@ function generateSwimmerUID($pdo, $nama_atlet, $tanggal_lahir, $jenis_kelamin) {
     $huruf1 = isset($kata[0][0]) ? $kata[0][0] : 'A';
     $kode1 = str_pad(ord($huruf1) - 64, 2, '0', STR_PAD_LEFT); 
     
-    // 3. Kode Inisial 2 (Jika namanya cuma 1 kata, set jadi 00)
+    // 3. Kode Inisial 2 (Jika namanya cuma 1 kata, ambil huruf kedua dari kata pertama)
     if (isset($kata[1]) && !empty($kata[1])) {
         $huruf2 = $kata[1][0];
-        $kode2 = str_pad(ord($huruf2) - 64, 2, '0', STR_PAD_LEFT);
     } else {
-        $kode2 = '00'; 
+        $huruf2 = isset($kata[0][1]) ? $kata[0][1] : 'X'; 
     }
+    $kode2 = str_pad(ord($huruf2) - 64, 2, '0', STR_PAD_LEFT);
     
     // 4. Tahun Lahir
     $tahun = date('Y', strtotime($tanggal_lahir));

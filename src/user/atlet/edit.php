@@ -30,10 +30,10 @@ function generateSwimmerUID($pdo, $nama_atlet, $tanggal_lahir, $jenis_kelamin) {
     
     if (isset($kata[1]) && !empty($kata[1])) {
         $huruf2 = $kata[1][0];
-        $kode2 = str_pad(ord($huruf2) - 64, 2, '0', STR_PAD_LEFT);
     } else {
-        $kode2 = '00'; 
+        $huruf2 = isset($kata[0][1]) ? $kata[0][1] : 'X'; 
     }
+    $kode2 = str_pad(ord($huruf2) - 64, 2, '0', STR_PAD_LEFT);
     
     $tahun = date('Y', strtotime($tanggal_lahir));
     $kode_jk = (strtoupper($jenis_kelamin) == 'L' || strtoupper($jenis_kelamin) == 'M') ? '1' : '9';
