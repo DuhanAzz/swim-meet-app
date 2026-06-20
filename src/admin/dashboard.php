@@ -46,6 +46,11 @@ if ($eventId > 0) {
         $stmtRev->execute([$eventId]);
         $stats['revenue'] = $stmtRev->fetchColumn() ?: 0;
 
+        // E. Total Pembayaran/Pendaftaran yang masih Pending
+        $stmtPending = $pdo->prepare("SELECT COUNT(*) FROM payments WHERE event_id = ? AND status IN ('Pending', 'Unpaid', 'pending')");
+        $stmtPending->execute([$eventId]);
+        $stats['pending_payments'] = $stmtPending->fetchColumn() ?: 0;
+
     } catch (Exception $e) { /* Silent Error */ }
 }
 
@@ -100,18 +105,34 @@ include __DIR__ . '/../../views/layout/sidebar.php';
             </a>
         <?php else: ?>
             <div class="flex gap-2">
-                <span class="px-4 py-2 bg-emerald-100 text-emerald-700 rounded-lg text-xs font-black uppercase tracking-wide border border-emerald-200">
+                <span class="px-4 py-2 bg-emerald-100 text-emerald-700 rounded-lg text-xs font-black uppercase tracking-wide border border-emerald-200 shadow-sm">
                     Status: <?= htmlspecialchars($eventStatus) ?>
                 </span>
-                <a href="settings/event_profile.php?event_id=<?= $eventId ?>" class="px-4 py-2 bg-slate-800 text-white rounded-lg text-xs font-bold uppercase hover:bg-slate-700 transition">
+                <a href="settings/event_profile.php?event_id=<?= $eventId ?>" class="px-4 py-2 bg-slate-800 text-white rounded-lg text-xs font-bold uppercase hover:bg-slate-700 transition shadow-sm">
                     ⚙️ Edit Event
                 </a>
             </div>
         <?php endif; ?>
     </div>
 
+    <!-- ACTION REQUIRED ALERTS -->
+    <?php if(($stats['pending_payments'] ?? 0) > 0): ?>
+    <div class="mb-8">
+        <div class="bg-gradient-to-r from-amber-500 to-orange-500 rounded-2xl p-6 text-white shadow-lg flex flex-col sm:flex-row items-center justify-between group gap-4">
+            <div class="flex items-center gap-4">
+                <div class="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center text-2xl flex-shrink-0">💳</div>
+                <div>
+                    <h3 class="font-black text-lg">Action Required: <?= $stats['pending_payments'] ?> Pembayaran Pending</h3>
+                    <p class="text-sm text-orange-100 font-medium mt-1">Terdapat pendaftaran klub yang menunggu verifikasi pembayaran dari Anda.</p>
+                </div>
+            </div>
+            <a href="entries/index.php" class="whitespace-nowrap bg-white text-orange-600 px-6 py-3 rounded-xl font-black text-xs uppercase tracking-widest hover:bg-orange-50 transition transform group-hover:scale-105 shadow-md">Verifikasi Sekarang</a>
+        </div>
+    </div>
+    <?php endif; ?>
+
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        <div class="bg-slate-900 rounded-2xl p-6 text-white shadow-xl relative overflow-hidden group">
+        <div class="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl p-6 text-white shadow-lg relative overflow-hidden group border-b-4 border-emerald-500">
             <div class="relative z-10">
                 <p class="text-slate-400 text-[10px] font-black uppercase tracking-widest mb-1">Total Pemasukan</p>
                 <h2 class="text-2xl font-black">Rp <?= number_format($stats['revenue'], 0, ',', '.') ?></h2>
@@ -119,36 +140,36 @@ include __DIR__ . '/../../views/layout/sidebar.php';
             <div class="absolute right-[-10px] bottom-[-10px] opacity-10 group-hover:scale-110 transition text-white text-6xl">💰</div>
         </div>
 
-        <div class="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm hover:border-blue-500 transition group">
+        <div class="bg-gradient-to-br from-white to-slate-50 rounded-2xl p-6 border-b-4 border-blue-500 shadow-sm hover:shadow-lg transition-all duration-300 group">
             <div class="flex justify-between items-start">
                 <div>
                     <p class="text-slate-400 text-[10px] font-black uppercase tracking-widest mb-1">Total Entries</p>
-                    <h2 class="text-3xl font-black text-slate-800"><?= number_format($stats['entries']) ?></h2>
+                    <h2 class="text-3xl font-black text-slate-800 group-hover:text-blue-600 transition"><?= number_format($stats['entries']) ?></h2>
                     <p class="text-[10px] text-slate-400 mt-1">Nomor Lomba</p>
                 </div>
-                <div class="w-10 h-10 bg-blue-50 text-blue-600 rounded-lg flex items-center justify-center text-xl group-hover:bg-blue-600 group-hover:text-white transition">🏊</div>
+                <div class="w-12 h-12 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center text-2xl shadow-inner group-hover:bg-blue-600 group-hover:text-white transition">🏊</div>
             </div>
         </div>
 
-        <div class="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm hover:border-purple-500 transition group">
+        <div class="bg-gradient-to-br from-white to-slate-50 rounded-2xl p-6 border-b-4 border-purple-500 shadow-sm hover:shadow-lg transition-all duration-300 group">
             <div class="flex justify-between items-start">
                 <div>
                     <p class="text-slate-400 text-[10px] font-black uppercase tracking-widest mb-1">Total Atlet</p>
-                    <h2 class="text-3xl font-black text-slate-800"><?= number_format($stats['atlet']) ?></h2>
+                    <h2 class="text-3xl font-black text-slate-800 group-hover:text-purple-600 transition"><?= number_format($stats['atlet']) ?></h2>
                     <p class="text-[10px] text-slate-400 mt-1">Orang</p>
                 </div>
-                <div class="w-10 h-10 bg-purple-50 text-purple-600 rounded-lg flex items-center justify-center text-xl group-hover:bg-purple-600 group-hover:text-white transition">👤</div>
+                <div class="w-12 h-12 bg-purple-100 text-purple-600 rounded-xl flex items-center justify-center text-2xl shadow-inner group-hover:bg-purple-600 group-hover:text-white transition">👤</div>
             </div>
         </div>
 
-        <div class="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm hover:border-orange-500 transition group">
+        <div class="bg-gradient-to-br from-white to-slate-50 rounded-2xl p-6 border-b-4 border-orange-500 shadow-sm hover:shadow-lg transition-all duration-300 group">
             <div class="flex justify-between items-start">
                 <div>
                     <p class="text-slate-400 text-[10px] font-black uppercase tracking-widest mb-1">Klub/Sekolah</p>
-                    <h2 class="text-3xl font-black text-slate-800"><?= number_format($stats['clubs']) ?></h2>
+                    <h2 class="text-3xl font-black text-slate-800 group-hover:text-orange-600 transition"><?= number_format($stats['clubs']) ?></h2>
                     <p class="text-[10px] text-slate-400 mt-1">Partisipan</p>
                 </div>
-                <div class="w-10 h-10 bg-orange-50 text-orange-600 rounded-lg flex items-center justify-center text-xl group-hover:bg-orange-600 group-hover:text-white transition">🏢</div>
+                <div class="w-12 h-12 bg-orange-100 text-orange-600 rounded-xl flex items-center justify-center text-2xl shadow-inner group-hover:bg-orange-600 group-hover:text-white transition">🏢</div>
             </div>
         </div>
     </div>
