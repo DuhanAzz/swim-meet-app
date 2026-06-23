@@ -6,20 +6,16 @@
  * ==============================================================================
  */
 
-// KONFIGURASI DATABASE
-$host = 'localhost';
-$db   = 'swim_meet';
-$user = 'root';
-$pass = ''; 
-
 // BAGIAN PHP (API & BACKEND)
 if (isset($_GET['action'])) {
     header('Content-Type: application/json');
     ini_set('display_errors', 0);
     
+    // GUNAKAN CONFIG DATABASE UTAMA (Otomatis mendeteksi Local/Hosting)
+    require_once __DIR__ . '/../../src/config/database.php';
+    
     try {
-        $pdo = new PDO("mysql:host=$host;dbname=$db;charset=utf8mb4", $user, $pass);
-        $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        // Objek $pdo sudah tersedia dari database.php
 
         if ($_GET['action'] == 'get_events') {
             $stmt = $pdo->query("SELECT id, event_name FROM events ORDER BY id DESC");
