@@ -4,6 +4,9 @@ Options -Indexes
 <IfModule mod_rewrite.c>
     RewriteEngine On
     
+    # Blokir akses langsung ke semua file di dalam folder src
+    RewriteRule ^src/ - [F,L]
+    
     # 2. Jika request adalah root folder (kosong), arahkan ke public/index.php
     RewriteRule ^$ public/index.php [L]
 

@@ -3,6 +3,15 @@ ob_start(); // Tahan output agar tidak bocor
 if (session_status() === PHP_SESSION_NONE) { session_start(); }
 date_default_timezone_set('Asia/Jakarta');
 
+$envPath = __DIR__ . '/../../.env';
+if (!file_exists($envPath)) {
+    die("File .env tidak ditemukan. Silakan buat berdasarkan .env.example.");
+}
+$env = parse_ini_file($envPath);
+if (!$env) {
+    die("Gagal membaca file .env.");
+}
+
 if (
     $_SERVER['SERVER_NAME'] == 'localhost' ||
     $_SERVER['SERVER_NAME'] == '127.0.0.1' ||
@@ -15,10 +24,10 @@ if (
     ini_set('display_startup_errors', 1);
     error_reporting(E_ALL);
 
-    $host = '127.0.0.1';
-    $dbname = 'swim_meet';
-    $username = 'root';
-    $password = '';
+    $host = $env['DB_HOST'] ?? '127.0.0.1';
+    $dbname = $env['DB_NAME'] ?? 'swim_meet';
+    $username = $env['DB_USER'] ?? 'root';
+    $password = $env['DB_PASS'] ?? '';
     
     // Base URL untuk environment lokal
     define('BASE_URL', '/swim-meet');
@@ -32,10 +41,10 @@ if (
     // UBAH BARIS INI DARI 0 MENJADI E_ALL
     error_reporting(E_ALL); 
 
-    $host = 'localhost';
-    $dbname = 'u381696286_setsystem';
-    $username = 'u381696286_setsystem';
-    $password = 'iV6|2KG^';
+    $host = $env['DB_HOST'] ?? 'localhost';
+    $dbname = $env['DB_NAME'] ?? 'u381696286_setsystem';
+    $username = $env['DB_USER'] ?? 'u381696286_setsystem';
+    $password = $env['DB_PASS'] ?? 'iV6|2KG^';
     
     // Base URL untuk environment hosting
     define('BASE_URL', '');
