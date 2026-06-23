@@ -53,7 +53,7 @@ if (isset($_GET['action'])) {
         if ($_GET['action'] == 'get_participants') {
             $raceId = $_GET['race_id'];
             $heat   = $_GET['heat'];
-            $sql = "SELECT es.lane_prelim as lane, s.nama_atlet as swimmer_name, ee.id as entry_id, es.time_prelim as final_time, es.id as seeding_id
+            $sql = "SELECT es.lane_prelim as lane, s.nama_atlet as swimmer_name, ee.id as entry_id, es.time_final as final_time, es.id as seeding_id
                     FROM event_entries ee
                     INNER JOIN event_seeding es ON es.entry_id = ee.id
                     LEFT JOIN swimmers s ON ee.swimmer_id = s.id
@@ -69,12 +69,31 @@ if (isset($_GET['action'])) {
             $json = file_get_contents('php://input');
             $data = json_decode($json, true);
             if (!$data) { throw new Exception("Data tidak valid"); }
-            $sql = "UPDATE event_seeding SET time_prelim = :waktu WHERE entry_id = :id";
+            $sql = "UPDATE event_seeding SET time_final = :waktu, time_final_ms = :ms WHERE entry_id = :id";
             $stmt = $pdo->prepare($sql);
             $count = 0;
             foreach ($data as $row) {
                 if (!empty($row['id']) && !empty($row['time'])) {
-                    $stmt->execute(['waktu' => $row['time'], 'id' => $row['id']]);
+                    // Hitung MS
+                    $timeStr = trim($row['time']);
+                    $parts = explode(':', $timeStr);
+                    if (count($parts) == 3) {
+                        // format MM:SS:mm
+                        $ms = ((int)$parts[0] * 60 * 1000) + ((int)$parts[1] * 1000) + ((int)$parts[2] * 10);
+                    } else if (count($parts) == 2) {
+                        $ms = ((int)$parts[0] * 1000) + ((int)$parts[1] * 10);
+                    } else {
+                        $ms = 99999999;
+                    }
+
+                    // Ubah format string agar standard MM:SS.mm
+                    $standardTimeStr = str_replace(':', '.', $timeStr);
+                    $firstColonPos = strpos($timeStr, ':');
+                    if ($firstColonPos !== false) {
+                        $standardTimeStr = substr_replace($standardTimeStr, ':', $firstColonPos, 1);
+                    }
+
+                    $stmt->execute(['waktu' => $standardTimeStr, 'ms' => $ms, 'id' => $row['id']]);
                     $count++;
                 }
             }
