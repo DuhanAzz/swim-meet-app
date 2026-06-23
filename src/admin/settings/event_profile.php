@@ -39,9 +39,9 @@ if ($eventId == 0) {
 
 // 🍏 JURUS AMAN MACOS: Deteksi folder root fisik
 $baseDir = dirname(dirname(dirname(__DIR__))); 
-$targetDir = $baseDir . "/uploads/logos/";
-$posterDir = $baseDir . "/uploads/posters/";
-$docDir    = $baseDir . "/uploads/documents/";
+$targetDir = $baseDir . "/public/uploads/logos/";
+$posterDir = $baseDir . "/public/uploads/posters/";
+$docDir    = $baseDir . "/public/uploads/documents/";
 
 // --- 2. FITUR HAPUS SPONSOR ---
 if (isset($_GET['del_sponsor']) && $eventId > 0) {
