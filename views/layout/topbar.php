@@ -60,17 +60,8 @@ if ($uid > 0) {
 </head>
 <body class="bg-slate-50">
 
-<?php if(isset($_SESSION['toast_message'])): ?>
-<div id="toast-notification" class="fixed top-24 right-5 z-[100] flex items-center w-full max-w-xs p-4 text-gray-500 bg-white rounded-lg shadow-xl border border-gray-100 animate-bounce" role="alert">
-    <div class="inline-flex items-center justify-center flex-shrink-0 w-8 h-8 rounded-lg <?= ($_SESSION['toast_type']=='success') ? 'text-green-500 bg-green-100' : 'text-red-500 bg-red-100' ?>">
-        <?= ($_SESSION['toast_type']=='success') ? '✓' : '✕' ?>
-    </div>
-    <div class="ms-3 text-sm font-bold"><?= $_SESSION['toast_message'] ?></div>
-    <button type="button" class="ms-auto -mx-1.5 -my-1.5 bg-white text-gray-400 hover:text-gray-900 rounded-lg p-1.5 inline-flex items-center justify-center h-8 w-8" data-dismiss-target="#toast-notification">
-        <span class="sr-only">Close</span> &times;
-    </button>
-</div>
-<?php unset($_SESSION['toast_message']); unset($_SESSION['toast_type']); endif; ?>
+<!-- Flash Message Global -->
+<?php include_once __DIR__ . '/../notifikasi.php'; ?>
 
 <nav class="fixed top-0 left-0 right-0 z-40 bg-white border-b border-gray-200 h-16 shadow-sm sm:ml-64 transition-all">
   <div class="px-3 py-3 lg:px-5 lg:pl-3 h-full">
