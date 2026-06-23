@@ -4,19 +4,22 @@ if (session_status() === PHP_SESSION_NONE) { session_start(); }
 date_default_timezone_set('Asia/Jakarta');
 
 $envPath = __DIR__ . '/../../.env';
-if (!file_exists($envPath)) {
-    die("File .env tidak ditemukan. Silakan buat berdasarkan .env.example.");
-}
-$env = parse_ini_file($envPath);
-if (!$env) {
-    die("Gagal membaca file .env.");
+$env = [];
+if (file_exists($envPath)) {
+    $parsed = parse_ini_file($envPath);
+    if ($parsed !== false) $env = $parsed;
 }
 
-if (
-    $_SERVER['SERVER_NAME'] == 'localhost' ||
-    $_SERVER['SERVER_NAME'] == '127.0.0.1' ||
-    str_contains($_SERVER['SERVER_NAME'], 'ngrok')
-) {
+$is_local = false;
+if (isset($_SERVER['SERVER_NAME'])) {
+    $is_local = (
+        $_SERVER['SERVER_NAME'] == 'localhost' ||
+        $_SERVER['SERVER_NAME'] == '127.0.0.1' ||
+        str_contains($_SERVER['SERVER_NAME'], 'ngrok')
+    );
+}
+
+if ($is_local) {
     // ==========================================
     // KONDISI LOCAL (Termasuk Ngrok)
     // ==========================================
