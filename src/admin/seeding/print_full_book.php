@@ -357,9 +357,24 @@ if ($showScheduleAuto) {
                                 <div class="event-records-container" style="border:none; padding:0; margin-bottom:10px;">
                                     <?php 
                                     if($pc['show_records']): 
-                                        $stmtRec = $pdo->prepare("SELECT record_type, holder_name, record_time, location, record_year FROM master_records WHERE distance = ? AND stroke = ? AND jenis_kelamin = ? AND (age_group = ? OR record_type = 'rekornas') ORDER BY record_type ASC, id ASC");
-                                        $stmtRec->execute([$data['meta']['distance'], $data['meta']['stroke'], $data['meta']['jenis_kelamin'], $data['meta']['age_group']]);
-                                        $records = $stmtRec->fetchAll(PDO::FETCH_ASSOC);
+                                        $records = [];
+                                        
+                                        // 1. Ambil Rekornas (Dari master_records)
+                                        $stmtRec = $pdo->prepare("SELECT record_type, holder_name, record_time, location, record_year FROM master_records WHERE distance = ? AND stroke = ? AND jenis_kelamin = ? AND record_type = 'rekornas' ORDER BY id ASC");
+                                        $stmtRec->execute([$data['meta']['distance'], $data['meta']['stroke'], $data['meta']['jenis_kelamin']]);
+                                        $records = array_merge($records, $stmtRec->fetchAll(PDO::FETCH_ASSOC));
+
+                                        // 2. Ambil Rekor Acuan (Dari event_historical_records)
+                                        if (!empty($raceInfo['record_package_id'])) {
+                                            $stmtPkg = $pdo->prepare("
+                                                SELECT 'rekor_event' as record_type, ehr.holder_name, ehr.record_time, e.event_city as location, YEAR(e.event_date_start) as record_year 
+                                                FROM event_historical_records ehr 
+                                                LEFT JOIN events e ON ehr.source_event_id = e.id
+                                                WHERE ehr.package_id = ? AND ehr.distance = ? AND ehr.stroke = ? AND ehr.jenis_kelamin = ? AND ehr.age_group = ?
+                                            ");
+                                            $stmtPkg->execute([$raceInfo['record_package_id'], $data['meta']['distance'], $data['meta']['stroke'], $data['meta']['jenis_kelamin'], $data['meta']['age_group']]);
+                                            $records = array_merge($records, $stmtPkg->fetchAll(PDO::FETCH_ASSOC));
+                                        }
                                         
                                         if(!empty($records)):
                                             ?>

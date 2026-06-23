@@ -94,9 +94,9 @@ else $dashLink = BASE_URL . '/public/login.php';
             <span class="font-bold text-[11px] tracking-widest uppercase">Data Master DQ</span>
          </a>
 
-         <a href="<?= BASE_URL ?>/src/master/manage_records.php" class="<?= (strpos($req,"manage_records")!==false) ? $activeLink : $baseLink ?>">
+         <a href="<?= BASE_URL ?>/src/master/manage_records.php" class="<?= (strpos($req,"manage_records")!==false || strpos($req,"record_packages")!==false) ? $activeLink : $baseLink ?>">
             <span class="w-6 text-center mr-3 text-lg">🏆</span> 
-            <span class="font-bold text-[11px] tracking-widest uppercase">Data Master Records</span>
+            <span class="font-bold text-[11px] tracking-widest uppercase">Manajemen Rekor</span>
          </a>
       <?php endif; ?>
 

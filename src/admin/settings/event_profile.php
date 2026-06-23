@@ -90,23 +90,25 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $bankRek     = $_POST['bank_account_number'] ?? '';
         $bankAtas    = $_POST['bank_account_name'] ?? '';
 
+        $recordPackageId = !empty($_POST['record_package_id']) ? (int)$_POST['record_package_id'] : NULL;
+
         if ($eventId == 0) {
             $sql = "INSERT INTO events (
                         user_id, event_name, event_location, event_city, event_date_start, event_date_end, 
                         lane_count, pool_type, age_calculation_type, participation_type, event_status,
-                        bank_name, bank_account_number, bank_account_name
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"; 
+                        bank_name, bank_account_number, bank_account_name, record_package_id
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"; 
             $stmt = $pdo->prepare($sql);
-            $stmt->execute([$uid, $eventName, $eventLoc, $eventCity, $dateStart, $dateEnd, $laneCount, $poolType, $ageCalc, $partType, $status, $bankName, $bankRek, $bankAtas]);
+            $stmt->execute([$uid, $eventName, $eventLoc, $eventCity, $dateStart, $dateEnd, $laneCount, $poolType, $ageCalc, $partType, $status, $bankName, $bankRek, $bankAtas, $recordPackageId]);
             $eventId = $pdo->lastInsertId(); 
         } else {
             $sql = "UPDATE events SET 
                     event_name = ?, event_location = ?, event_city = ?, event_date_start = ?, event_date_end = ?, 
                     lane_count = ?, pool_type = ?, age_calculation_type = ?, participation_type = ?, event_status = ?,
-                    bank_name = ?, bank_account_number = ?, bank_account_name = ?
+                    bank_name = ?, bank_account_number = ?, bank_account_name = ?, record_package_id = ?
                     WHERE user_id = ? AND id = ?"; 
             $stmt = $pdo->prepare($sql);
-            $stmt->execute([$eventName, $eventLoc, $eventCity, $dateStart, $dateEnd, $laneCount, $poolType, $ageCalc, $partType, $status, $bankName, $bankRek, $bankAtas, $uid, $eventId]);
+            $stmt->execute([$eventName, $eventLoc, $eventCity, $dateStart, $dateEnd, $laneCount, $poolType, $ageCalc, $partType, $status, $bankName, $bankRek, $bankAtas, $recordPackageId, $uid, $eventId]);
         }
 
         // --- HANDLE UPLOAD LOGO & BRANDING ---
@@ -215,6 +217,8 @@ if ($eventId > 0) {
     }
 }
 
+$allPackages = $pdo->query("SELECT * FROM record_packages ORDER BY id DESC")->fetchAll(PDO::FETCH_ASSOC);
+
 function val($data, $key, $default = '') { return isset($data[$key]) ? htmlspecialchars($data[$key]) : $default; }
 
 // --- FUNGSI BANTUAN URL PREVIEW ---
@@ -307,6 +311,18 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                             <option value="club" <?= $pp == 'club' ? 'selected' : '' ?>>Antar Club</option>
                             <option value="school" <?= $pp == 'school' ? 'selected' : '' ?>>Antar Sekolah</option>
                         </select>
+                    </div>
+                    <div class="md:col-span-2">
+                        <label class="text-[10px] font-bold text-indigo-400 uppercase mb-2 block">Acuan Rekor Event (Pecah Rekor)</label>
+                        <select name="record_package_id" class="w-full px-4 py-3 rounded-xl border border-indigo-200 font-bold text-slate-700">
+                            <option value="">-- Tidak Menggunakan Rekor Event Tambahan --</option>
+                            <?php foreach($allPackages as $pkg): ?>
+                                <option value="<?= $pkg['id'] ?>" <?= (val($row, 'record_package_id') == $pkg['id']) ? 'selected' : '' ?>>
+                                    Paket: <?= htmlspecialchars($pkg['package_name']) ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                        <p class="text-[10px] text-indigo-500 mt-1 italic">Paket ini dikelola oleh Master Admin dan berfungsi sebagai baseline rekor lomba selain Rekor Nasional.</p>
                     </div>
                 </div>
             </div>
