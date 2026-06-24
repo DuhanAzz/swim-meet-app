@@ -49,17 +49,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $swimmerId = $_POST['swimmer_id'];
         $entries   = $_POST['entries'] ?? [];
         
-        $stmtCekSw = $pdo->prepare("SELECT id FROM swimmers WHERE id = ? AND user_id = ?");
+        $stmtCekSw = $pdo->prepare("SELECT id, club_id FROM swimmers WHERE id = ? AND user_id = ?");
         $stmtCekSw->execute([$swimmerId, $uid]);
-        if (!$stmtCekSw->fetch()) { die("Error: Atlet tidak valid."); }
+        $swimmerData = $stmtCekSw->fetch(PDO::FETCH_ASSOC);
+        if (!$swimmerData) { die("Error: Atlet tidak valid."); }
 
-        $stmtC = $pdo->prepare("SELECT id FROM clubs WHERE user_id = ? LIMIT 1");
-        $stmtC->execute([$uid]);
-        $clubRow = $stmtC->fetch(PDO::FETCH_ASSOC);
-        $clubId = $clubRow['id'] ?? $uid; 
+        $clubId = $swimmerData['club_id'];
+        if (!$clubId) {
+            $stmtC = $pdo->prepare("SELECT id FROM clubs WHERE user_id = ? LIMIT 1");
+            $stmtC->execute([$uid]);
+            $clubRow = $stmtC->fetch(PDO::FETCH_ASSOC);
+            $clubId = $clubRow['id'] ?? null; 
+        }
+        if (!$clubId) { die("Error: Atlet tidak terhubung dengan klub manapun (Data Club ID kosong)."); }
 
-        // PERBAIKAN: Gunakan event_id bukan organizer_id
-        $stmtValidCats = $pdo->prepare("SELECT id FROM event_numbers WHERE event_id = ?"); 
+        // PERBAIKAN: Gunakan event_id dengan fallback organizer_id
+        $stmtValidCats = $pdo->prepare("
+            SELECT en.id 
+            FROM event_numbers en 
+            JOIN events e ON en.organizer_id = e.user_id
+            WHERE e.id = ? AND (en.event_id = e.id OR en.event_id IS NULL)
+        "); 
         $stmtValidCats->execute([$targetEventId]);
         $validCategoryIds = $stmtValidCats->fetchAll(PDO::FETCH_COLUMN);
 
@@ -94,8 +104,14 @@ $stmtGroups = $pdo->prepare("SELECT id, min_age, max_age, group_name FROM event_
 $stmtGroups->execute([$targetEventId]);
 $ageRules = $stmtGroups->fetchAll(PDO::FETCH_UNIQUE|PDO::FETCH_ASSOC);
 
-// PERBAIKAN: Gunakan event_id bukan organizer_id
-$stmtEn = $pdo->prepare("SELECT * FROM event_numbers WHERE event_id = ? ORDER BY distance ASC, stroke ASC");
+// PERBAIKAN: Gunakan event_id dengan fallback organizer_id
+$stmtEn = $pdo->prepare("
+    SELECT en.* 
+    FROM event_numbers en 
+    JOIN events e ON en.organizer_id = e.user_id
+    WHERE e.id = ? AND (en.event_id = e.id OR en.event_id IS NULL)
+    ORDER BY en.distance ASC, en.stroke ASC
+");
 $stmtEn->execute([$targetEventId]);
 $allEvents = $stmtEn->fetchAll(PDO::FETCH_ASSOC);
 
