@@ -156,10 +156,9 @@ if (!empty($events)) {
                     
                     $pool = $e['pool_type'] ?? '50m';
 
-                    // Karena kita ada di folder `public/`, path gambar cukup langsung panggil path database
                     $imgSrc = 'https://images.unsplash.com/photo-1530549387789-4c100476466c?w=800&auto=format&fit=crop';
-                    if (!empty($e['poster_image'])) $imgSrc = $e['poster_image'];
-                    elseif (!empty($e['logo_left'])) $imgSrc = $e['logo_left'];
+                    if (!empty($e['poster_image'])) $imgSrc = ltrim($e['poster_image'], '/');
+                    elseif (!empty($e['logo_left'])) $imgSrc = ltrim($e['logo_left'], '/');
                 ?>
                 <div class="bg-white rounded-3xl border border-slate-200 overflow-hidden hover:shadow-2xl transition-all duration-300 group flex flex-col sm:flex-row relative">
                     
@@ -208,8 +207,9 @@ if (!empty($events)) {
                                     <?php foreach($documentsByEvent[$e['id']] as $doc): 
                                         $cat = strtoupper($doc['kategori'] ?? 'LAINNYA');
                                         $btnColor = ($cat == 'JUKNIS') ? 'bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-600 hover:text-white' : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-700 hover:text-white';
+                                        $docPath = (strpos($doc['file_path'], 'http') === 0) ? $doc['file_path'] : ltrim($doc['file_path'], '/');
                                     ?>
-                                        <a href="<?= htmlspecialchars($doc['file_path']) ?>" target="_blank" class="px-2.5 py-1 rounded border text-[9px] font-black tracking-widest uppercase transition-all <?= $btnColor ?>">
+                                        <a href="<?= htmlspecialchars($docPath) ?>" target="_blank" class="px-2.5 py-1 rounded border text-[9px] font-black tracking-widest uppercase transition-all <?= $btnColor ?>">
                                             📄 <?= htmlspecialchars($doc['judul_file'] ?? $cat) ?>
                                         </a>
                                     <?php endforeach; ?>
