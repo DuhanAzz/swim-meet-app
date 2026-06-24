@@ -355,7 +355,8 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
 
                     <?php foreach ($tableStructure as $strokeName => $distances): ?>
                         <?php foreach ($distances as $distKey => $eventsInDist): ?>
-                            <?php 
+                                <?php 
+                                $matchedEvents = [];
                                 $foundEvent = null;
                                 $registeredTime = null;
 
@@ -384,13 +385,26 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                                         }
                                     }
 
-                                    if ($isAgeFit) { $foundEvent = $ev; break; }
+                                    if ($isAgeFit) { 
+                                        $matchedEvents[] = $ev; 
+                                    }
                                 }
 
                                 $cellContent = '';
                                 $cellClass = 'cell-blocked'; 
 
-                                if ($foundEvent) {
+                                if (!empty($matchedEvents)) {
+                                    $foundEvent = $matchedEvents[0]; // Default ambil yang pertama
+
+                                    // SUPER-RESILIENCE: Jika ada duplikasi nomor lomba akibat salah input EO, 
+                                    // prioritaskan nomor lomba yang sudah diisi / disimpan oleh user!
+                                    foreach ($matchedEvents as $mev) {
+                                        if (isset($savedData[$sid][$mev['id']]) && $savedData[$sid][$mev['id']] !== '') {
+                                            $foundEvent = $mev;
+                                            break;
+                                        }
+                                    }
+
                                     if (isset($savedData[$sid][$foundEvent['id']]) && $savedData[$sid][$foundEvent['id']] !== '') {
                                         $registeredTime = $savedData[$sid][$foundEvent['id']];
                                         $cellContent = htmlspecialchars($registeredTime);
