@@ -63,13 +63,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         }
         if (!$clubId) { die("Error: Atlet tidak terhubung dengan klub manapun (Data Club ID kosong)."); }
 
-        // PERBAIKAN: Gunakan event_id dengan fallback organizer_id
-        $stmtValidCats = $pdo->prepare("
-            SELECT en.id 
-            FROM event_numbers en 
-            JOIN events e ON en.organizer_id = e.user_id
-            WHERE e.id = ? AND (en.event_id = e.id OR en.event_id IS NULL)
-        "); 
+        // STRICT: Gunakan event_id saja untuk menghindari event lama bocor
+        $stmtValidCats = $pdo->prepare("SELECT id FROM event_numbers WHERE event_id = ?"); 
         $stmtValidCats->execute([$targetEventId]);
         $validCategoryIds = $stmtValidCats->fetchAll(PDO::FETCH_COLUMN);
 
@@ -104,14 +99,8 @@ $stmtGroups = $pdo->prepare("SELECT id, min_age, max_age, group_name FROM event_
 $stmtGroups->execute([$targetEventId]);
 $ageRules = $stmtGroups->fetchAll(PDO::FETCH_UNIQUE|PDO::FETCH_ASSOC);
 
-// PERBAIKAN: Gunakan event_id dengan fallback organizer_id
-$stmtEn = $pdo->prepare("
-    SELECT en.* 
-    FROM event_numbers en 
-    JOIN events e ON en.organizer_id = e.user_id
-    WHERE e.id = ? AND (en.event_id = e.id OR en.event_id IS NULL)
-    ORDER BY en.distance ASC, en.stroke ASC
-");
+// STRICT: Gunakan event_id saja untuk menghindari event lama bocor
+$stmtEn = $pdo->prepare("SELECT * FROM event_numbers WHERE event_id = ? ORDER BY distance ASC, stroke ASC");
 $stmtEn->execute([$targetEventId]);
 $allEvents = $stmtEn->fetchAll(PDO::FETCH_ASSOC);
 
