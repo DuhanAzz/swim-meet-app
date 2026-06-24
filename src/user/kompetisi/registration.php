@@ -240,15 +240,19 @@ foreach ($visibleSwimmers as $sw) {
             $allowedYears = array_map('intval', $matches[1]); 
             if (in_array($birthYear, $allowedYears)) $isAgeFit = true;
         } else {
+            $min = (int)($ev['age_min'] ?? 0); 
+            $max = (int)($ev['age_max'] ?? 99);
+            $passMinMax = ($age >= $min && ($max == 0 || $age <= $max));
+
             $kuIds = !empty($ev['selected_ku_ids']) ? explode(',', $ev['selected_ku_ids']) : [];
             if (!empty($kuIds)) {
+                $passKu = false;
                 foreach ($kuIds as $kid) { 
-                    if (isset($ageRules[$kid]) && $age >= (int)$ageRules[$kid]['min_age'] && $age <= (int)$ageRules[$kid]['max_age']) { $isAgeFit = true; break; } 
+                    if (isset($ageRules[$kid]) && $age >= (int)$ageRules[$kid]['min_age'] && $age <= (int)$ageRules[$kid]['max_age']) { $passKu = true; break; } 
                 }
+                if ($passKu && $passMinMax) { $isAgeFit = true; }
             } else {
-                $min = (int)($ev['age_min'] ?? 0); 
-                $max = (int)($ev['age_max'] ?? 99);
-                if ($age >= $min && ($max == 0 || $age <= $max)) $isAgeFit = true;
+                if ($passMinMax) { $isAgeFit = true; }
             }
         }
 
@@ -373,15 +377,19 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                                         $allowedYears = array_map('intval', $matches[1]); 
                                         if (in_array($birthYear, $allowedYears)) $isAgeFit = true;
                                     } else {
+                                        $min = (int)($ev['age_min'] ?? 0); 
+                                        $max = (int)($ev['age_max'] ?? 99);
+                                        $passMinMax = ($age >= $min && ($max == 0 || $age <= $max));
+
                                         $kuIds = !empty($ev['selected_ku_ids']) ? explode(',', $ev['selected_ku_ids']) : [];
                                         if (!empty($kuIds)) {
+                                            $passKu = false;
                                             foreach ($kuIds as $kid) { 
-                                                if (isset($ageRules[$kid]) && $age >= (int)$ageRules[$kid]['min_age'] && $age <= (int)$ageRules[$kid]['max_age']) { $isAgeFit = true; break; } 
+                                                if (isset($ageRules[$kid]) && $age >= (int)$ageRules[$kid]['min_age'] && $age <= (int)$ageRules[$kid]['max_age']) { $passKu = true; break; } 
                                             }
+                                            if ($passKu && $passMinMax) { $isAgeFit = true; }
                                         } else {
-                                            $min = (int)($ev['age_min'] ?? 0); 
-                                            $max = (int)($ev['age_max'] ?? 99);
-                                            if ($age >= $min && ($max == 0 || $age <= $max)) $isAgeFit = true;
+                                            if ($passMinMax) { $isAgeFit = true; }
                                         }
                                     }
 
