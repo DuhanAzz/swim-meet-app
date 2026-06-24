@@ -144,8 +144,10 @@ $upcoming_preview = $pdo->query($sql)->fetchAll();
 
     <section id="home" class="h-screen min-h-[850px] flex items-center relative overflow-hidden">
         <div id="slider" class="absolute inset-0">
-            <?php foreach($sliders as $index => $slide): ?>
-                <div class="hero-slide <?= $index === 0 ? 'active' : '' ?>" style="background-image: url('<?= $slide['image_path'] ?>');"></div>
+            <?php foreach($sliders as $index => $slide): 
+                $slideImg = (strpos($slide['image_path'], 'http') === 0) ? $slide['image_path'] : ltrim($slide['image_path'], '/');
+            ?>
+                <div class="hero-slide <?= $index === 0 ? 'active' : '' ?>" style="background-image: url('<?= htmlspecialchars($slideImg) ?>');"></div>
             <?php endforeach; ?>
             <div class="absolute inset-0 hero-overlay"></div>
         </div>
@@ -194,9 +196,9 @@ $upcoming_preview = $pdo->query($sql)->fetchAll();
                 // Prioritas gambar: poster -> logo -> default
                 $imgSrc = 'https://images.unsplash.com/photo-1530549387789-4c100476466c?w=800&auto=format&fit=crop';
                 if (!empty($e['poster_image'])) {
-                    $imgSrc = $e['poster_image'];
+                    $imgSrc = ltrim($e['poster_image'], '/');
                 } elseif (!empty($e['logo_left'])) {
-                    $imgSrc = $e['logo_left'];
+                    $imgSrc = ltrim($e['logo_left'], '/');
                 }
             ?>
             <div class="bg-white rounded-3xl border border-slate-200 overflow-hidden hover:shadow-2xl transition-all duration-300 group flex flex-col sm:flex-row relative">
