@@ -148,8 +148,8 @@ function hitungKU($tglLahir) {
     return "Senior";
 }
 
-include __DIR__ . '/../../../views/layout/sidebar.php';
 include __DIR__ . '/../../../views/layout/topbar.php';
+include __DIR__ . '/../../../views/layout/sidebar.php';
 ?>
 
 <div class="p-4 sm:ml-64">

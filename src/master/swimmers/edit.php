@@ -111,8 +111,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-include __DIR__ . '/../../../views/layout/sidebar.php';
 include __DIR__ . '/../../../views/layout/topbar.php';
+include __DIR__ . '/../../../views/layout/sidebar.php';
 ?>
 
 <div class="p-4 sm:ml-64">

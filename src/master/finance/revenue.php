@@ -75,8 +75,8 @@ $sql = "SELECT p.*, u.nama_lengkap as club_name, e.event_name
         ORDER BY p.created_at DESC LIMIT 50";
 $payments = $pdo->query($sql)->fetchAll();
 
-include __DIR__ . '/../../../views/layout/sidebar.php';
 include __DIR__ . '/../../../views/layout/topbar.php';
+include __DIR__ . '/../../../views/layout/sidebar.php';
 ?>
 
 <div class="p-6 sm:ml-64 pt-24 bg-slate-50 min-h-screen font-sans relative">

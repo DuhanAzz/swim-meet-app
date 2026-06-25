@@ -59,8 +59,8 @@ if (!$config) {
     $config = $pdo->query("SELECT * FROM site_settings WHERE id=1")->fetch();
 }
 
-include __DIR__ . '/../../../views/layout/sidebar.php';
 include __DIR__ . '/../../../views/layout/topbar.php';
+include __DIR__ . '/../../../views/layout/sidebar.php';
 ?>
 
 <div class="p-6 sm:ml-64 pt-24 bg-slate-50 min-h-screen font-sans pb-20">

@@ -257,7 +257,7 @@ foreach($groupedSwimmers as &$d) {
             <div class="sheet-footer">
                 <?php if(!empty($sponsors)): ?>
                     <?php foreach($sponsors as $img): ?>
-                        <img src="<?= '../../../public/' . ltrim($img, '/') ?>" alt="Sponsor">
+                        <img src="<?= BASE_URL . '/public/' . ltrim($img, '/') ?>" alt="Sponsor">
                     <?php endforeach; ?>
                 <?php else: ?>
                     <small style="color:#ccc; font-weight:bold;">TIRTA AMANDA SWIMMING CLUB</small>

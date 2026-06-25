@@ -32,8 +32,8 @@ try {
     $error_msg = "Gagal memuat data: " . $e->getMessage();
 }
 
-include __DIR__ . '/../../../views/layout/sidebar.php';
 include __DIR__ . '/../../../views/layout/topbar.php';
+include __DIR__ . '/../../../views/layout/sidebar.php';
 ?>
 
 <div class="p-4 sm:ml-64">
