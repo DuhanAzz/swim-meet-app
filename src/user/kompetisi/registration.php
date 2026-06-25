@@ -229,8 +229,7 @@ foreach ($visibleSwimmers as $sw) {
         $eGen = (in_array($ev['jenis_kelamin'], ['Putra', 'L'])) ? 'L' : ((in_array($ev['jenis_kelamin'], ['Putri', 'P'])) ? 'P' : 'MIX');
         if ($eGen !== 'MIX' && $eGen !== $gender) continue;
         
-        // Filter Safety
-        if (($age <= 7 && $jarak >= 100) || ($age <= 9 && $jarak >= 200)) continue;
+        // Filter Safety (Dihapus agar mengikuti murni setting EO)
 
         // Filter Umur
         $isAgeFit = false;
@@ -368,7 +367,7 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                                     $eGen = (in_array($ev['jenis_kelamin'], ['Putra', 'L'])) ? 'L' : ((in_array($ev['jenis_kelamin'], ['Putri', 'P'])) ? 'P' : 'MIX');
                                     if ($eGen !== 'MIX' && $eGen !== $gender) continue;
 
-                                    if (($age <= 7 && $ev['distance'] >= 100) || ($age <= 9 && $ev['distance'] >= 200)) continue;
+                                    // Filter Safety Dihapus
 
                                     $isAgeFit = false;
                                     $groupName = strtoupper($ev['age_group'] ?? '');
