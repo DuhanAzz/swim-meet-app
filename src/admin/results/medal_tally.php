@@ -25,8 +25,8 @@ $eventName  = strtoupper($raceInfo['event_name'] ?? 'EVENT NAME');
 $venueName  = strtoupper($raceInfo['event_location'] ?? '-');
 $eventDate  = $raceInfo['event_date_start'] ?? date('Y-m-d');
 $eventYear  = date('Y', strtotime($eventDate)); 
-$logoLeft   = !empty($raceInfo['logo_left']) ? '../../../public/' . $raceInfo['logo_left'] : null;
-$logoRight  = !empty($raceInfo['logo_right']) ? '../../../public/' . $raceInfo['logo_right'] : null;
+$logoLeft   = !empty($raceInfo['logo_left']) ? BASE_URL . '/public/' . ltrim($raceInfo['logo_left'], '/') : null;
+$logoRight  = !empty($raceInfo['logo_right']) ? BASE_URL . '/public/' . ltrim($raceInfo['logo_right'], '/') : null;
 
 $displayDate = strtoupper(date('d F Y', strtotime($eventDate)));
 if(!empty($raceInfo['event_date_end']) && $raceInfo['event_date_end'] != '0000-00-00' && $raceInfo['event_date_end'] != $eventDate) {
@@ -336,7 +336,7 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
         <div class="footer-sponsors">
             <?php if(!empty($sponsors)): ?>
                 <?php foreach($sponsors as $img): ?>
-                    <img src="../../../public/<?= $img ?>">
+                    <img src="<?= BASE_URL . '/public/' . ltrim($img, '/') ?>">
                 <?php endforeach; ?>
             <?php endif; ?>
         </div>

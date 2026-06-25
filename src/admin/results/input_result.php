@@ -64,8 +64,8 @@ if(!empty($eventProfile['event_date_end']) && $eventProfile['event_date_end'] !=
 }
 $dateRange = strtoupper($dateRange);
 
-$logoLeft   = !empty($eventProfile['logo_left']) ? '../../../public/' . $eventProfile['logo_left'] : null;
-$logoRight  = !empty($eventProfile['logo_right']) ? '../../../public/' . $eventProfile['logo_right'] : null;
+$logoLeft   = !empty($eventProfile['logo_left']) ? BASE_URL . '/public/' . ltrim($eventProfile['logo_left'], '/') : null;
+$logoRight  = !empty($eventProfile['logo_right']) ? BASE_URL . '/public/' . ltrim($eventProfile['logo_right'], '/') : null;
 
 $total_lintasan = (int)($eventProfile['lane_count'] ?? 8);
 $pool_type    = strtoupper($eventProfile['pool_type'] ?? 'LCM');
@@ -482,7 +482,7 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                 <div class="footer-sponsors">
                     <?php if(!empty($sponsors)): ?>
                         <?php foreach($sponsors as $img): ?>
-                            <img src="../../../public/<?= $img ?>">
+                            <img src="<?= BASE_URL . '/public/' . ltrim($img, '/') ?>">
                         <?php endforeach; ?>
                     <?php endif; ?>
                 </div>
