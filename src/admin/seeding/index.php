@@ -60,6 +60,15 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                 </div>
             </a>
 
+            <a href="list_clubs_recap.php?event_id=<?= $targetEventId ?>" 
+               class="bg-fuchsia-600 text-white pl-6 pr-8 py-4 rounded-[2rem] transition flex items-center gap-4 group hover:-translate-y-1 shadow-xl shadow-fuchsia-200 hover:bg-fuchsia-700 h-[72px]">
+                <div class="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center group-hover:bg-white group-hover:text-fuchsia-600 transition">📋</div>
+                <div class="text-left">
+                    <span class="block text-[9px] font-bold text-fuchsia-200 uppercase tracking-widest">Starting List</span>
+                    <span class="block font-black text-sm uppercase tracking-wider">Recap Klub</span>
+                </div>
+            </a>
+
             <button type="button" onclick="if(<?= $total_all_entries ?> > 0) { document.getElementById('configForm').submit(); }" class="bg-emerald-600 text-white pl-6 pr-8 py-4 rounded-[2rem] transition flex items-center gap-4 group <?= $globalDisabled ?> h-[72px]">
                 <div class="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center group-hover:bg-white group-hover:text-emerald-600 transition">🖨️</div>
                 <div class="text-left">
