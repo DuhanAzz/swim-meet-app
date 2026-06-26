@@ -127,17 +127,17 @@ if (isset($_GET['action'])) {
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', sans-serif; }
     body {
       min-height: 100vh; background: var(--bg-gradient); color: var(--text-color);
-      display: flex; flex-direction: column; align-items: center; justify-content: flex-start; padding: 20px;
+      display: flex; flex-direction: column; align-items: center; justify-content: flex-start; padding: 10px 20px;
     }
-    .main-container { display: flex; width: 100%; max-width: 1400px; gap: 20px; height: calc(100vh - 100px); }
+    .main-container { display: flex; width: 100%; max-width: 1400px; gap: 15px; height: auto; }
     
     .top-nav {
-      width: 100%; max-width: 1400px; margin-bottom: 15px; 
+      width: 100%; max-width: 1400px; margin-bottom: 10px; 
       background: var(--panel-bg); border-radius: 15px; border: 1px solid rgba(255,255,255,0.1);
       overflow: hidden; flex-shrink: 0;
     }
     .top-nav-header {
-      padding: 15px 20px; cursor: pointer; display: flex; justify-content: space-between;
+      padding: 10px 20px; cursor: pointer; display: flex; justify-content: space-between;
       align-items: center; font-weight: bold; font-size: 1.1em; background: rgba(0,0,0,0.3);
       transition: background 0.2s; color: var(--accent-color);
     }
@@ -147,40 +147,40 @@ if (isset($_GET['action'])) {
     }
     .top-nav-content.open { max-height: 500px; }
     .nav-cards-container {
-      display: flex; gap: 20px; padding: 20px; align-items: flex-start;
+      display: flex; gap: 15px; padding: 15px; align-items: flex-start;
     }
     .nav-cards-container .control-card { flex: 1; margin: 0; }
-    .timer-section { flex: 3; background: var(--panel-bg); border-radius: 15px; padding: 20px; overflow-y: auto; border: 1px solid rgba(255,255,255,0.1); }
+    .timer-section { flex: 3; background: var(--panel-bg); border-radius: 15px; padding: 15px; border: 1px solid rgba(255,255,255,0.1); }
     
     .stopwatch-row {
       display: flex; align-items: center; background: rgba(0, 0, 0, 0.3);
-      padding: 8px 15px; border-radius: 8px; margin-bottom: 10px;
+      padding: 4px 10px; border-radius: 8px; margin-bottom: 6px;
       border-left: 5px solid transparent; transition: 0.3s;
     }
     .stopwatch-row.active-lane { border-left-color: #00ffcc; background: rgba(0, 255, 204, 0.08); }
     .stopwatch-row.finished-lane { border-left-color: #f1c40f; background: rgba(241, 196, 15, 0.1); }
     .stopwatch-row.disabled-lane { opacity: 0.4; filter: grayscale(80%); }
     
-    .check-col { margin-right: 15px; }
-    .lane-checkbox { transform: scale(1.5); cursor: pointer; accent-color: var(--accent-color); }
+    .check-col { margin-right: 10px; }
+    .lane-checkbox { transform: scale(1.3); cursor: pointer; accent-color: var(--accent-color); }
     .lane-info { flex: 1; text-align: left; }
-    .lane-number { font-weight: bold; font-size: 1.1em; color: var(--accent-color); }
-    .swimmer-name { font-size: 0.9em; color: #ddd; font-style: italic; display: block; text-transform: uppercase;}
+    .lane-number { font-weight: bold; font-size: 1em; color: var(--accent-color); }
+    .swimmer-name { font-size: 0.8em; color: #ddd; font-style: italic; display: block; text-transform: uppercase;}
     
     .time-display {
-      font-family: 'Courier New', monospace; font-size: 2em; background: var(--timer-bg);
-      color: var(--timer-text); padding: 5px 20px; border-radius: 6px;
-      margin: 0 15px; min-width: 180px; text-align: center; letter-spacing: 2px;
+      font-family: 'Courier New', monospace; font-size: 1.6em; background: var(--timer-bg);
+      color: var(--timer-text); padding: 3px 15px; border-radius: 6px;
+      margin: 0 10px; min-width: 140px; text-align: center; letter-spacing: 2px;
     }
     .finished-time { color: #f1c40f; }
-    .btn-stop-small { background: #ff4d4d; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 0.9em; }
+    .btn-stop-small { background: #ff4d4d; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 0.8em; }
 
-    .control-section { flex: 1; display: flex; flex-direction: column; gap: 15px; }
-    .control-card { background: var(--panel-bg); padding: 20px; border-radius: 15px; border: 1px solid rgba(255,255,255,0.1); display: flex; flex-direction: column; gap: 10px; }
-    h2 { font-size: 1.2em; border-bottom: 1px solid rgba(255,255,255,0.2); padding-bottom: 10px; margin-bottom: 5px; color: #fff; }
-    label { font-size: 0.9em; color: #bbb; margin-top: 5px; }
-    select, input { background: rgba(0,0,0,0.4); border: 1px solid #444; color: white; padding: 10px; border-radius: 5px; font-size: 1em; width: 100%; }
-    .btn { padding: 15px; font-size: 1.1em; font-weight: bold; border: none; border-radius: 8px; cursor: pointer; text-transform: uppercase; margin-top:5px; width: 100%; }
+    .control-section { flex: 1; display: flex; flex-direction: column; gap: 10px; }
+    .control-card { background: var(--panel-bg); padding: 15px; border-radius: 15px; border: 1px solid rgba(255,255,255,0.1); display: flex; flex-direction: column; gap: 8px; }
+    h2 { font-size: 1.1em; border-bottom: 1px solid rgba(255,255,255,0.2); padding-bottom: 5px; margin-bottom: 2px; color: #fff; }
+    label { font-size: 0.85em; color: #bbb; margin-top: 2px; }
+    select, input { background: rgba(0,0,0,0.4); border: 1px solid #444; color: white; padding: 6px 10px; border-radius: 5px; font-size: 0.95em; width: 100%; }
+    .btn { padding: 10px; font-size: 1em; font-weight: bold; border: none; border-radius: 8px; cursor: pointer; text-transform: uppercase; margin-top:3px; width: 100%; }
     .btn-start { background: #2ecc71; color: white; }
     .btn-reset { background: #f1c40f; color: black; }
     .btn-save { background: #17a2b8; color: white; }
