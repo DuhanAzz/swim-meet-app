@@ -127,9 +127,29 @@ if (isset($_GET['action'])) {
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', sans-serif; }
     body {
       min-height: 100vh; background: var(--bg-gradient); color: var(--text-color);
-      display: flex; justify-content: center; align-items: center; padding: 20px;
+      display: flex; flex-direction: column; align-items: center; justify-content: flex-start; padding: 20px;
     }
-    .main-container { display: flex; width: 100%; max-width: 1400px; gap: 20px; height: 90vh; }
+    .main-container { display: flex; width: 100%; max-width: 1400px; gap: 20px; height: calc(100vh - 100px); }
+    
+    .top-nav {
+      width: 100%; max-width: 1400px; margin-bottom: 15px; 
+      background: var(--panel-bg); border-radius: 15px; border: 1px solid rgba(255,255,255,0.1);
+      overflow: hidden; flex-shrink: 0;
+    }
+    .top-nav-header {
+      padding: 15px 20px; cursor: pointer; display: flex; justify-content: space-between;
+      align-items: center; font-weight: bold; font-size: 1.1em; background: rgba(0,0,0,0.3);
+      transition: background 0.2s; color: var(--accent-color);
+    }
+    .top-nav-header:hover { background: rgba(0,0,0,0.5); }
+    .top-nav-content {
+      max-height: 0; overflow: hidden; transition: max-height 0.3s ease-out;
+    }
+    .top-nav-content.open { max-height: 500px; }
+    .nav-cards-container {
+      display: flex; gap: 20px; padding: 20px; align-items: flex-start;
+    }
+    .nav-cards-container .control-card { flex: 1; margin: 0; }
     .timer-section { flex: 3; background: var(--panel-bg); border-radius: 15px; padding: 20px; overflow-y: auto; border: 1px solid rgba(255,255,255,0.1); }
     
     .stopwatch-row {
@@ -171,6 +191,38 @@ if (isset($_GET['action'])) {
   </style>
 </head>
 <body>
+  <div class="top-nav">
+    <div class="top-nav-header" onclick="toggleTopNav()">
+      <span>⚙️ Pengaturan Lanjutan (Penyimpanan & Hardware)</span>
+      <span id="navIcon">▼</span>
+    </div>
+    <div class="top-nav-content" id="topNavContent">
+      <div class="nav-cards-container">
+        
+        <div class="control-card">
+          <h2>💾 Penyimpanan Lokal (100% Offline)</h2>
+          <button id="btnSelFolder" class="btn" style="background: #34495e; color: white; font-size: 0.9em; padding: 10px;" onclick="selectBackupFolder()">📁 Pilih Folder Backup Teks</button>
+          <div id="folderStatus" style="font-size: 0.75em; color: #aaa; text-align: center; margin-top: 5px;">Folder belum dipilih</div>
+          
+          <div style="padding:8px; border-radius:5px; background: rgba(241, 196, 15, 0.1); border: 1px solid #f1c40f; color: #f1c40f; text-align:center; font-weight:bold; margin-top: 10px; font-size: 0.8em;">
+              Data di Antrean Lokal: <span id="syncCount">0</span>
+          </div>
+          <a href="sync.php" target="_blank" class="btn" style="background: #e67e22; color: white; margin-top: 10px; text-decoration: none; text-align: center; display: block; font-size: 0.9em;">🚀 Buka Sync Dashboard</a>
+        </div>
+
+        <div class="control-card">
+          <h2>🔌 Hardware</h2>
+          <button id="connectBtn" class="btn btn-connect">Connect Arduino</button>
+          <div style="font-size:0.8em; color:#aaa; margin-top:5px;">
+              Mode 0-9: <br>
+              <code>{"lane": 0, "time": 45.12}</code> = Lane 0
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
   <div class="main-container">
     <div class="timer-section" id="stopwatchContainer"></div>
 
@@ -191,30 +243,10 @@ if (isset($_GET['action'])) {
       </div>
 
       <div class="control-card">
-        <h2>💾 Penyimpanan Lokal (100% Offline)</h2>
-        <button id="btnSelFolder" class="btn" style="background: #34495e; color: white; font-size: 0.9em; padding: 10px;" onclick="selectBackupFolder()">📁 Pilih Folder Backup Teks</button>
-        <div id="folderStatus" style="font-size: 0.75em; color: #aaa; text-align: center; margin-top: 5px;">Folder belum dipilih</div>
-        
-        <div style="padding:8px; border-radius:5px; background: rgba(241, 196, 15, 0.1); border: 1px solid #f1c40f; color: #f1c40f; text-align:center; font-weight:bold; margin-top: 10px; font-size: 0.8em;">
-            Data di Antrean Lokal: <span id="syncCount">0</span>
-        </div>
-        <a href="sync.php" target="_blank" class="btn" style="background: #e67e22; color: white; margin-top: 10px; text-decoration: none; text-align: center; display: block; font-size: 0.9em;">🚀 Buka Sync Dashboard</a>
-      </div>
-
-      <div class="control-card">
         <h2>⏱️ Kontrol Timer</h2>
         <button class="btn btn-start" onclick="startAll()">START (Spasi)</button>
         <button class="btn btn-reset" onclick="resetAll()">RESET (R)</button>
         <button class="btn btn-save" onclick="saveResults()">💾 SAVE & DB</button>
-      </div>
-
-      <div class="control-card">
-        <h2>🔌 Hardware</h2>
-        <button id="connectBtn" class="btn btn-connect">Connect Arduino</button>
-        <div style="font-size:0.8em; color:#aaa; margin-top:5px;">
-            Mode 0-9: <br>
-            <code>{"lane": 0, "time": 45.12}</code> = Lane 0
-        </div>
       </div>
     </div>
   </div>
@@ -248,6 +280,13 @@ if (isset($_GET['action'])) {
       container.appendChild(row);
       stopwatches.push({ id: i, startTime: null, elapsed: 0, running: false, db_entry_id: null });
       intervals.push(null);
+    }
+
+    function toggleTopNav() {
+        const content = document.getElementById("topNavContent");
+        const icon = document.getElementById("navIcon");
+        content.classList.toggle("open");
+        icon.textContent = content.classList.contains("open") ? "▲" : "▼";
     }
 
     function toggleLane(i) {
