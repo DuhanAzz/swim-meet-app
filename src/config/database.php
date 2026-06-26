@@ -12,10 +12,14 @@ if (file_exists($envPath)) {
 
 $is_local = false;
 if (isset($_SERVER['SERVER_NAME'])) {
+    $sn = $_SERVER['SERVER_NAME'];
     $is_local = (
-        $_SERVER['SERVER_NAME'] == 'localhost' ||
-        $_SERVER['SERVER_NAME'] == '127.0.0.1' ||
-        str_contains($_SERVER['SERVER_NAME'], 'ngrok')
+        $sn == 'localhost' ||
+        $sn == '127.0.0.1' ||
+        str_contains($sn, 'ngrok') ||
+        str_starts_with($sn, '192.168.') ||
+        str_starts_with($sn, '10.') ||
+        str_starts_with($sn, '172.')
     );
 }
 
