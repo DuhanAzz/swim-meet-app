@@ -191,11 +191,14 @@ if (isset($_GET['action'])) {
       </div>
 
       <div class="control-card">
-        <h2>💾 Backup & Sync</h2>
-        <div id="connStatus" style="padding:10px; border-radius:5px; background: rgba(46, 204, 113, 0.2); border: 1px solid #2ecc71; color: #2ecc71; text-align:center; font-weight:bold; margin-bottom: 5px;">🟢 ONLINE</div>
+        <h2>💾 Penyimpanan Lokal (100% Offline)</h2>
         <button id="btnSelFolder" class="btn" style="background: #34495e; color: white; font-size: 0.9em; padding: 10px;" onclick="selectBackupFolder()">📁 Pilih Folder Backup Teks</button>
         <div id="folderStatus" style="font-size: 0.75em; color: #aaa; text-align: center; margin-top: 5px;">Folder belum dipilih</div>
-        <button id="btnSync" class="btn" style="background: #e67e22; color: white; display: none; margin-top: 10px;" onclick="syncOfflineData()">🔄 Sync Data Tertunda (<span id="syncCount">0</span>)</button>
+        
+        <div style="padding:8px; border-radius:5px; background: rgba(241, 196, 15, 0.1); border: 1px solid #f1c40f; color: #f1c40f; text-align:center; font-weight:bold; margin-top: 10px; font-size: 0.8em;">
+            Data di Antrean Lokal: <span id="syncCount">0</span>
+        </div>
+        <a href="sync.php" target="_blank" class="btn" style="background: #e67e22; color: white; margin-top: 10px; text-decoration: none; text-align: center; display: block; font-size: 0.9em;">🚀 Buka Sync Dashboard</a>
       </div>
 
       <div class="control-card">
@@ -301,7 +304,7 @@ if (isset($_GET['action'])) {
     }
 
     // ============================================
-    // API & DB HANDLER + OFFLINE QUEUE
+    // OFFLINE QUEUE (PRODUCER) & FILE SYSTEM
     // ============================================
     let backupDirHandle = null;
 
@@ -312,46 +315,25 @@ if (isset($_GET['action'])) {
 
     function saveOfflineQueue(q) {
         localStorage.setItem('stopwatch_sync_queue', JSON.stringify(q));
-        updateSyncUI();
+        updateQueueUI();
     }
 
-    function updateSyncUI() {
+    function updateQueueUI() {
         const q = getOfflineQueue();
-        const btn = document.getElementById('btnSync');
-        const count = document.getElementById('syncCount');
-        if(q.length > 0) {
-            btn.style.display = 'block';
-            count.textContent = q.length;
-        } else {
-            btn.style.display = 'none';
-        }
+        const countEl = document.getElementById('syncCount');
+        if(countEl) countEl.textContent = q.length;
     }
 
-    function updateConnectionStatus(isOnline) {
-        const el = document.getElementById('connStatus');
-        if(isOnline) {
-            el.innerHTML = '🟢 ONLINE';
-            el.style.color = '#2ecc71';
-            el.style.borderColor = '#2ecc71';
-            el.style.background = 'rgba(46, 204, 113, 0.2)';
-        } else {
-            el.innerHTML = '🔴 OFFLINE';
-            el.style.color = '#e74c3c';
-            el.style.borderColor = '#e74c3c';
-            el.style.background = 'rgba(231, 76, 60, 0.2)';
+    // Dengarkan jika ada perubahan dari tab Sync
+    window.addEventListener('storage', (e) => {
+        if(e.key === 'stopwatch_sync_queue') {
+            updateQueueUI();
         }
-    }
-
-    window.addEventListener('online', () => {
-        updateConnectionStatus(true);
-        if(getOfflineQueue().length > 0) syncOfflineData();
     });
-    window.addEventListener('offline', () => updateConnectionStatus(false));
 
     window.addEventListener('DOMContentLoaded', () => {
         fetchEvents();
-        updateSyncUI();
-        updateConnectionStatus(navigator.onLine);
+        updateQueueUI();
     });
 
     async function selectBackupFolder() {
@@ -380,41 +362,6 @@ if (isset($_GET['action'])) {
             }
         }
         return false;
-    }
-
-    async function syncOfflineData() {
-        const q = getOfflineQueue();
-        if(q.length === 0) return;
-        
-        let successCount = 0;
-        let newQ = [];
-        
-        document.getElementById('btnSync').innerHTML = '⏳ Syncing...';
-        
-        for(let item of q) {
-            try {
-                const res = await fetch('?action=update_results', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(item.updateData)
-                });
-                const json = await res.json();
-                if(json.status === 'success') {
-                    successCount++;
-                } else {
-                    newQ.push(item);
-                }
-            } catch(e) {
-                newQ.push(item);
-            }
-        }
-        
-        saveOfflineQueue(newQ);
-        document.getElementById('btnSync').innerHTML = `🔄 Sync Data Tertunda (<span id="syncCount">${newQ.length}</span>)`;
-        
-        if(successCount > 0) {
-            alert(`Berhasil sinkronisasi ${successCount} antrean data ke database!`);
-        }
     }
 
     async function fetchEvents() {
@@ -568,32 +515,29 @@ if (isset($_GET['action'])) {
         }
 
         if(updateData.length > 0) {
-            if(navigator.onLine) {
-                try {
-                    const res = await fetch('?action=update_results', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(updateData)
-                    });
-                    const json = await res.json();
-                    if(json.status === 'success') { 
-                        alert(`Sukses! Data tersimpan di DB & Lokal.`); 
-                    } else {
-                        throw new Error(json.message || "Unknown error dari server");
-                    }
-                } catch(e) {
-                    console.error("DB Error:", e);
-                    let q = getOfflineQueue();
-                    q.push({ timestamp: Date.now(), ev: ev, ht: ht, updateData: updateData });
-                    saveOfflineQueue(q);
-                    alert("Koneksi DB Error. Data masuk ke antrean offline."); 
-                }
-            } else {
-                let q = getOfflineQueue();
-                q.push({ timestamp: Date.now(), ev: ev, ht: ht, updateData: updateData });
-                saveOfflineQueue(q);
-                alert("Sedang Offline! Data masuk ke antrean offline."); 
-            }
+            // HANYA MASUKKAN KE ANTREAN LOKAL (PRODUCER MODE)
+            // TIDAK ADA FETCH INTERNET SAMA SEKALI
+            let q = getOfflineQueue();
+            q.push({ 
+                id: Date.now().toString() + Math.floor(Math.random()*1000), // ID unik antrean
+                timestamp: Date.now(), 
+                ev: ev, 
+                ht: ht, 
+                updateData: updateData 
+            });
+            saveOfflineQueue(q);
+            
+            // Beri notifikasi visual kecil (bisa flash color)
+            const btnSave = document.querySelector('.btn-save');
+            const oldHtml = btnSave.innerHTML;
+            btnSave.innerHTML = "✅ TERSIMPAN LOKAL!";
+            btnSave.style.background = "#2ecc71";
+            setTimeout(() => {
+                btnSave.innerHTML = oldHtml;
+                btnSave.style.background = "#17a2b8";
+            }, 1500);
+        } else {
+            alert("Tidak ada waktu atlet yang terisi. File backup teks tetap terbuat.");
         }
     }
 
