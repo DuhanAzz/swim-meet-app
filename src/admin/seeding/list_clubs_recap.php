@@ -23,9 +23,10 @@ if (!$event) {
 }
 
 // Ambil daftar klub yang memiliki peserta di event ini
-$sql = "SELECT u.id as club_user_id, u.nama_lengkap as nama_klub, u.location as kota,
+$sql = "SELECT u.id as club_user_id, u.nama_lengkap as nama_klub, c.kota,
                COUNT(DISTINCT s.id) as total_atlet
         FROM users u
+        LEFT JOIN clubs c ON u.id = c.user_id
         JOIN swimmers s ON u.id = s.user_id
         JOIN event_entries ee ON s.id = ee.swimmer_id
         WHERE ee.event_id = ? AND ee.category_id IS NOT NULL
