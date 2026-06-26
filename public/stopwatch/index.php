@@ -191,6 +191,14 @@ if (isset($_GET['action'])) {
       </div>
 
       <div class="control-card">
+        <h2>💾 Backup & Sync</h2>
+        <div id="connStatus" style="padding:10px; border-radius:5px; background: rgba(46, 204, 113, 0.2); border: 1px solid #2ecc71; color: #2ecc71; text-align:center; font-weight:bold; margin-bottom: 5px;">🟢 ONLINE</div>
+        <button id="btnSelFolder" class="btn" style="background: #34495e; color: white; font-size: 0.9em; padding: 10px;" onclick="selectBackupFolder()">📁 Pilih Folder Backup Teks</button>
+        <div id="folderStatus" style="font-size: 0.75em; color: #aaa; text-align: center; margin-top: 5px;">Folder belum dipilih</div>
+        <button id="btnSync" class="btn" style="background: #e67e22; color: white; display: none; margin-top: 10px;" onclick="syncOfflineData()">🔄 Sync Data Tertunda (<span id="syncCount">0</span>)</button>
+      </div>
+
+      <div class="control-card">
         <h2>⏱️ Kontrol Timer</h2>
         <button class="btn btn-start" onclick="startAll()">START (Spasi)</button>
         <button class="btn btn-reset" onclick="resetAll()">RESET (R)</button>
@@ -293,9 +301,121 @@ if (isset($_GET['action'])) {
     }
 
     // ============================================
-    // API & DB HANDLER
+    // API & DB HANDLER + OFFLINE QUEUE
     // ============================================
-    window.addEventListener('DOMContentLoaded', fetchEvents);
+    let backupDirHandle = null;
+
+    function getOfflineQueue() {
+        const q = localStorage.getItem('stopwatch_sync_queue');
+        return q ? JSON.parse(q) : [];
+    }
+
+    function saveOfflineQueue(q) {
+        localStorage.setItem('stopwatch_sync_queue', JSON.stringify(q));
+        updateSyncUI();
+    }
+
+    function updateSyncUI() {
+        const q = getOfflineQueue();
+        const btn = document.getElementById('btnSync');
+        const count = document.getElementById('syncCount');
+        if(q.length > 0) {
+            btn.style.display = 'block';
+            count.textContent = q.length;
+        } else {
+            btn.style.display = 'none';
+        }
+    }
+
+    function updateConnectionStatus(isOnline) {
+        const el = document.getElementById('connStatus');
+        if(isOnline) {
+            el.innerHTML = '🟢 ONLINE';
+            el.style.color = '#2ecc71';
+            el.style.borderColor = '#2ecc71';
+            el.style.background = 'rgba(46, 204, 113, 0.2)';
+        } else {
+            el.innerHTML = '🔴 OFFLINE';
+            el.style.color = '#e74c3c';
+            el.style.borderColor = '#e74c3c';
+            el.style.background = 'rgba(231, 76, 60, 0.2)';
+        }
+    }
+
+    window.addEventListener('online', () => {
+        updateConnectionStatus(true);
+        if(getOfflineQueue().length > 0) syncOfflineData();
+    });
+    window.addEventListener('offline', () => updateConnectionStatus(false));
+
+    window.addEventListener('DOMContentLoaded', () => {
+        fetchEvents();
+        updateSyncUI();
+        updateConnectionStatus(navigator.onLine);
+    });
+
+    async function selectBackupFolder() {
+        try {
+            backupDirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+            document.getElementById('folderStatus').textContent = "✅ Folder terpilih: " + backupDirHandle.name;
+            document.getElementById('folderStatus').style.color = "#2ecc71";
+        } catch(e) {
+            console.error(e);
+            document.getElementById('folderStatus').textContent = "❌ Pemilihan folder dibatalkan / tidak didukung";
+            document.getElementById('folderStatus').style.color = "#e74c3c";
+        }
+    }
+
+    async function saveFileSilently(filename, content) {
+        if(backupDirHandle) {
+            try {
+                const fileHandle = await backupDirHandle.getFileHandle(filename, { create: true });
+                const writable = await fileHandle.createWritable();
+                await writable.write(content);
+                await writable.close();
+                return true;
+            } catch(e) {
+                console.error("Gagal save silent:", e);
+                return false;
+            }
+        }
+        return false;
+    }
+
+    async function syncOfflineData() {
+        const q = getOfflineQueue();
+        if(q.length === 0) return;
+        
+        let successCount = 0;
+        let newQ = [];
+        
+        document.getElementById('btnSync').innerHTML = '⏳ Syncing...';
+        
+        for(let item of q) {
+            try {
+                const res = await fetch('?action=update_results', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(item.updateData)
+                });
+                const json = await res.json();
+                if(json.status === 'success') {
+                    successCount++;
+                } else {
+                    newQ.push(item);
+                }
+            } catch(e) {
+                newQ.push(item);
+            }
+        }
+        
+        saveOfflineQueue(newQ);
+        document.getElementById('btnSync').innerHTML = `🔄 Sync Data Tertunda (<span id="syncCount">${newQ.length}</span>)`;
+        
+        if(successCount > 0) {
+            alert(`Berhasil sinkronisasi ${successCount} antrean data ke database!`);
+        }
+    }
 
     async function fetchEvents() {
       const select = document.getElementById('eventSelect');
@@ -419,7 +539,6 @@ if (isset($_GET['action'])) {
         let updateData = [];
 
         stopwatches.forEach((sw, i) => {
-            // Label di txt file: Lintasan 0, Lintasan 1...
             const laneLabel = i; 
             const nm = document.getElementById('swimmer'+i).textContent;
             const tm = document.getElementById("sw"+i).textContent;
@@ -433,20 +552,48 @@ if (isset($_GET['action'])) {
             }
         });
 
-        const a = document.createElement("a");
-        a.href = URL.createObjectURL(new Blob([txt], {type: "text/plain"}));
-        a.download = `Hasil_${ev}_H${ht}.txt`; a.click();
+        // Tambahkan timestamp di nama file agar unik jika save berulang kali
+        const filename = `Hasil_${ev}_H${ht}_${Date.now()}.txt`;
+
+        let savedSilently = false;
+        if(backupDirHandle) {
+            savedSilently = await saveFileSilently(filename, txt);
+        }
+        
+        if(!savedSilently) {
+            const a = document.createElement("a");
+            a.href = URL.createObjectURL(new Blob([txt], {type: "text/plain"}));
+            a.download = filename; 
+            a.click();
+        }
 
         if(updateData.length > 0) {
-            try {
-                const res = await fetch('?action=update_results', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(updateData)
-                });
-                const json = await res.json();
-                if(json.status === 'success') { alert(`Sukses! ${json.updated} data terupdate.`); }
-            } catch(e) { alert("Error koneksi update DB."); }
+            if(navigator.onLine) {
+                try {
+                    const res = await fetch('?action=update_results', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(updateData)
+                    });
+                    const json = await res.json();
+                    if(json.status === 'success') { 
+                        alert(`Sukses! Data tersimpan di DB & Lokal.`); 
+                    } else {
+                        throw new Error(json.message || "Unknown error dari server");
+                    }
+                } catch(e) {
+                    console.error("DB Error:", e);
+                    let q = getOfflineQueue();
+                    q.push({ timestamp: Date.now(), ev: ev, ht: ht, updateData: updateData });
+                    saveOfflineQueue(q);
+                    alert("Koneksi DB Error. Data masuk ke antrean offline."); 
+                }
+            } else {
+                let q = getOfflineQueue();
+                q.push({ timestamp: Date.now(), ev: ev, ht: ht, updateData: updateData });
+                saveOfflineQueue(q);
+                alert("Sedang Offline! Data masuk ke antrean offline."); 
+            }
         }
     }
 
