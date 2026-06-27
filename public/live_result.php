@@ -6,6 +6,7 @@ if (session_status() === PHP_SESSION_NONE) session_start();
 // 🚀 TANPA PENGECEKAN LOGIN! Bebas diakses publik.
 
 $event_id = $_GET['event_id'] ?? 0;
+$currentMode = $_GET['mode'] ?? 'split';
 
 // 1. DATA SETTING GLOBAL (Untuk Logo & Judul persis seperti Index)
 $s = $pdo->query("SELECT * FROM site_settings WHERE id=1")->fetch();
@@ -26,11 +27,26 @@ $partType = strtolower($event['participation_type'] ?? 'club');
 $isSchoolEvent = (strpos($partType, 'school') !== false || strpos($partType, 'sekolah') !== false);
 $teamHeaderLabel = $isSchoolEvent ? 'SEKOLAH' : 'KLUB / TIM';
 
-$groupedResults = [];
+// AMBIL RENTANG UMUR UNTUK FUNGSI KALKULASI SPLIT
+$stmtAge = $pdo->prepare("SELECT group_name, min_age, max_age FROM event_age_groups WHERE event_id = ?");
+$stmtAge->execute([$event_id]);
+$ageGroups = $stmtAge->fetchAll(PDO::FETCH_ASSOC);
+$eventYear = date('Y', strtotime($event['event_date_start']));
+
+if (!function_exists('getAgeGroupLabel')) {
+    function getAgeGroupLabel($dob, $evtYear, $groups) {
+        if(!$dob || $dob == '0000-00-00') return '-';
+        $age = $evtYear - (int)date('Y', strtotime($dob));
+        foreach($groups as $g) {
+            if ($age >= $g['min_age'] && $age <= $g['max_age']) return $g['group_name'];
+        }
+        return "DILUAR KATEGORI ($age TH)";
+    }
+}
 
 // 3. MENGAMBIL HASIL (Hanya yang is_published = 1)
 $sql = "SELECT en.event_number, en.distance, en.stroke, en.jenis_kelamin, en.age_group,
-               s.nama_atlet, c.nama_klub, s.asal_sekolah,
+               s.nama_atlet, c.nama_klub, s.asal_sekolah, s.tanggal_lahir,
                ee.entry_time, 
                es.time_final, es.rank_final, es.is_dq_final, es.dq_reason_final
         FROM event_numbers en
@@ -43,8 +59,7 @@ $sql = "SELECT en.event_number, en.distance, en.stroke, en.jenis_kelamin, en.age
           AND (es.time_final IS NOT NULL OR es.is_dq_final = 1)
         ORDER BY 
             CAST(en.event_number AS UNSIGNED) ASC,
-            es.is_dq_final ASC,
-            es.rank_final ASC";
+            es.is_dq_final ASC";
 
 $stmtRes = $pdo->prepare($sql);
 $stmtRes->execute([$event_id]);
@@ -70,23 +85,64 @@ function timeToMs($time) {
     return ($menit * 60000) + ($detik * 1000) + ($ms * 10);
 }
 
-// Kelompokkan hasil berdasarkan nomor acara
+// 4. Kelompokkan hasil berdasarkan nomor acara & MODE
+$groupedResults = [];
 foreach ($results as $r) {
     $r['ms_sort'] = 9999999999;
     if ($r['is_dq_final'] == 1) { $r['ms_sort'] = 9999999999 + 100; }
     elseif (!empty($r['time_final']) && $r['time_final'] != 'NT') { $r['ms_sort'] = timeToMs($r['time_final']); }
     
+    // Default Title
     $judulAcara = "ACARA #" . $r['event_number'] . " - " . $r['distance'] . "M " . strtoupper($r['stroke']) . " " . strtoupper($r['jenis_kelamin']) . " (" . $r['age_group'] . ")";
+    
+    if ($currentMode === 'overall') {
+        $judulAcara = "ACARA #" . $r['event_number'] . " - " . $r['distance'] . "M " . strtoupper($r['stroke']) . " " . strtoupper($r['jenis_kelamin']) . " (OVERALL)";
+    } else {
+        // SPLIT MODE
+        if (stripos($r['age_group'], 'GABUNG') !== false) {
+            $realKU = getAgeGroupLabel($r['tanggal_lahir'], $eventYear, $ageGroups);
+            $judulAcara = "ACARA #" . $r['event_number'] . " - " . $r['distance'] . "M " . strtoupper($r['stroke']) . " " . strtoupper($r['jenis_kelamin']) . " (" . $realKU . ")";
+        }
+    }
+
     $groupedResults[$judulAcara][] = $r;
 }
 
+// 5. Dynamic Re-Ranking (usort) untuk memastikan setiap grup memiliki rank 1..N
 foreach ($groupedResults as &$rows) {
     usort($rows, function($a, $b) {
         if ($a['ms_sort'] == $b['ms_sort']) return 0;
         return ($a['ms_sort'] < $b['ms_sort']) ? -1 : 1;
     });
+    
+    $rank = 1; $real_rank = 1; $prev_time = null;
+    foreach ($rows as &$atlet) {
+        $isDQ = ($atlet['is_dq_final'] == 1);
+        $isValid = (!$isDQ && !empty($atlet['time_final']) && $atlet['time_final'] != 'NT');
+        $atlet['dynamic_rank'] = null;
+        if ($isValid) {
+            if ($atlet['ms_sort'] !== $prev_time) { $real_rank = $rank; }
+            $atlet['dynamic_rank'] = $real_rank;
+            $prev_time = $atlet['ms_sort'];
+            $rank++;
+        }
+    }
 }
 unset($rows);
+// Supaya jika di split, array keys yang berubah berantakan bisa dirapihkan
+uksort($groupedResults, function($a, $b) {
+    // Cari ACARA # angka
+    preg_match('/ACARA #(\d+)/', $a, $matchA);
+    preg_match('/ACARA #(\d+)/', $b, $matchB);
+    $numA = isset($matchA[1]) ? (int)$matchA[1] : 9999;
+    $numB = isset($matchB[1]) ? (int)$matchB[1] : 9999;
+    
+    if ($numA === $numB) {
+        return strcmp($a, $b); // sort by KU name if same event
+    }
+    return $numA < $numB ? -1 : 1;
+});
+
 ?>
 <!DOCTYPE html>
 <html lang="id">
@@ -159,9 +215,28 @@ unset($rows);
             </div>
         </div>
 
-        <div class="bg-slate-900/80 backdrop-blur p-2 rounded-full shadow-2xl border border-slate-800 mb-8 flex items-center gap-2 sticky top-24 z-40 focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-950/50 transition-all">
-            <span class="text-lg ml-4 opacity-40">🔍</span>
-            <input type="text" id="searchInput" placeholder="Cari nama atlet atau tim..." class="w-full bg-transparent border-none focus:outline-none focus:ring-0 text-sm font-bold text-slate-100 uppercase placeholder:text-slate-500 placeholder:normal-case placeholder:font-medium py-2">
+        <div class="flex flex-col sm:flex-row gap-4 items-center justify-between mb-8 sticky top-24 z-40">
+            <div class="w-full sm:w-2/3 bg-slate-900/80 backdrop-blur p-2 rounded-full shadow-2xl border border-slate-800 flex items-center gap-2 focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-950/50 transition-all">
+                <span class="text-lg ml-4 opacity-40">🔍</span>
+                <input type="text" id="searchInput" placeholder="Cari nama atlet atau tim..." class="w-full bg-transparent border-none focus:outline-none focus:ring-0 text-sm font-bold text-slate-100 uppercase placeholder:text-slate-500 placeholder:normal-case placeholder:font-medium py-2">
+            </div>
+            
+            <div class="w-full sm:w-1/3 flex justify-end">
+                <label for="modeToggle" class="flex items-center cursor-pointer bg-slate-900/80 rounded-full border border-slate-800 shadow-xl backdrop-blur select-none p-1 relative w-56 h-12">
+                    <input type="checkbox" id="modeToggle" class="sr-only peer" onchange="toggleMode(this)" <?= $currentMode === 'overall' ? 'checked' : '' ?>>
+                    
+                    <div class="absolute inset-0 flex items-center justify-between px-6 z-10 pointer-events-none">
+                        <span class="text-[11px] font-black uppercase tracking-widest text-slate-400 peer-checked:text-slate-600 transition-colors duration-300">SPLIT KU</span>
+                        <span class="text-[11px] font-black uppercase tracking-widest text-slate-600 peer-checked:text-slate-400 transition-colors duration-300">OVERALL</span>
+                    </div>
+                    
+                    <div class="w-1/2 h-full bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full shadow-md transform transition-transform duration-300 ease-in-out peer-checked:translate-x-full flex items-center justify-center z-20 pointer-events-none">
+                        <span class="text-[11px] font-black uppercase tracking-widest text-white shadow-sm" id="sliderText">
+                            <?= $currentMode === 'overall' ? 'OVERALL' : 'SPLIT KU' ?>
+                        </span>
+                    </div>
+                </label>
+            </div>
         </div>
 
         <?php if (empty($groupedResults)): ?>
@@ -201,10 +276,8 @@ unset($rows);
                                     </thead>
                                     <tbody class="divide-y divide-slate-800/40">
                                         <?php 
-                                        $rank = 1; $real_rank = 1; $prev_time = null;
                                         foreach ($atletList as $atlet): 
                                             $isDQ = ($atlet['is_dq_final'] == 1);
-                                            $isValid = (!$isDQ && !empty($atlet['time_final']) && $atlet['time_final'] != 'NT');
                                             
                                             if ($isSchoolEvent) {
                                                 $displayTeam = !empty($atlet['asal_sekolah']) ? $atlet['asal_sekolah'] : '-';
@@ -214,12 +287,8 @@ unset($rows);
 
                                             $rankBadge = '-';
                                             $rankClass = 'text-slate-500';
-                                            if ($isValid) {
-                                                if ($atlet['ms_sort'] !== $prev_time) { $real_rank = $rank; }
-                                                $rankBadge = $real_rank;
-                                                $prev_time = $atlet['ms_sort'];
-                                                $rank++;
-                                                
+                                            if ($atlet['dynamic_rank'] !== null) {
+                                                $rankBadge = $atlet['dynamic_rank'];
                                                 if($rankBadge == 1) { $rankBadge = '🥇 1'; $rankClass = 'text-amber-400'; }
                                                 elseif($rankBadge == 2) { $rankBadge = '🥈 2'; $rankClass = 'text-slate-300'; }
                                                 elseif($rankBadge == 3) { $rankBadge = '🥉 3'; $rankClass = 'text-orange-400'; }
@@ -240,7 +309,14 @@ unset($rows);
                                                 </span>
                                             </td>
                                             <td class="py-3.5 px-4 text-center text-[10px] font-black uppercase tracking-widest text-slate-400">
-                                                <?= htmlspecialchars($atlet['age_group']) ?>
+                                                <?php 
+                                                    // Jika Split, mungkin butuh label KU asli walau ada di tabel gabungan
+                                                    if (stripos($atlet['age_group'], 'GABUNG') !== false) {
+                                                        echo htmlspecialchars(getAgeGroupLabel($atlet['tanggal_lahir'], $eventYear, $ageGroups));
+                                                    } else {
+                                                        echo htmlspecialchars($atlet['age_group']);
+                                                    }
+                                                ?>
                                             </td>
                                             <td class="py-3.5 px-4 text-[10px] font-bold uppercase tracking-widest team-name text-slate-400">
                                                 <?= htmlspecialchars($displayTeam) ?>
@@ -314,15 +390,22 @@ unset($rows);
             const body = card.querySelector('.accordion-body');
             const arrow = card.querySelector('.accordion-arrow');
             
-            // Toggle class hidden pada tabel
             body.classList.toggle('hidden');
             
-            // Animasi putar panah indikator
             if (body.classList.contains('hidden')) {
                 arrow.style.transform = 'rotate(0deg)';
             } else {
                 arrow.style.transform = 'rotate(180deg)';
             }
+        }
+        
+        // FUNGSI TOGGLE MODE OVERALL / SPLIT
+        function toggleMode(checkbox) {
+            const isOverall = checkbox.checked;
+            document.getElementById('sliderText').textContent = isOverall ? 'OVERALL' : 'SPLIT KU';
+            const urlParams = new URLSearchParams(window.location.search);
+            urlParams.set('mode', isOverall ? 'overall' : 'split');
+            window.location.search = urlParams.toString();
         }
 
         // NAVBAR SCROLL CONTROL
@@ -338,7 +421,7 @@ unset($rows);
             }
         });
 
-        // SCRIPT PENCARIAN REALTIME (PINTAR: JIKA MATCH, OTOMATIS AKORDION TERBUKA)
+        // SCRIPT PENCARIAN REALTIME
         document.getElementById('searchInput')?.addEventListener('keyup', function() {
             let filter = this.value.toLowerCase();
             let cards = document.querySelectorAll('.result-card');
@@ -362,17 +445,16 @@ unset($rows);
                 });
 
                 if (filter === "") {
-                    // Kembalikan ke posisi semula (tertutup semua) saat search dihapus kosong
                     body.classList.add('hidden');
                     if(arrow) arrow.style.transform = 'rotate(0deg)';
                     card.style.display = '';
                 } else {
                     if (cardHasVisibleRow) {
                         card.style.display = '';
-                        body.classList.remove('hidden'); // Otomatis bongkar isi jika nama ketemu
+                        body.classList.remove('hidden'); 
                         if(arrow) arrow.style.transform = 'rotate(180deg)';
                     } else {
-                        card.style.display = 'none'; // Sembunyikan bar jika tidak ada nama yang cocok
+                        card.style.display = 'none'; 
                     }
                 }
             });
