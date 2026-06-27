@@ -69,32 +69,24 @@ if (isset($_GET['action'])) {
             $json = file_get_contents('php://input');
             $data = json_decode($json, true);
             if (!$data) { throw new Exception("Data tidak valid"); }
-            $sql = "UPDATE event_seeding SET time_final = :waktu, time_final_ms = :ms WHERE entry_id = :id";
+            $sql = "UPDATE event_seeding SET time_final = :waktu WHERE entry_id = :id";
             $stmt = $pdo->prepare($sql);
             $count = 0;
             foreach ($data as $row) {
                 if (!empty($row['id']) && !empty($row['time'])) {
-                    // Hitung MS
-                    $timeStr = trim($row['time']);
-                    $parts = explode(':', $timeStr);
-                    if (count($parts) == 3) {
-                        // format MM:SS:mm
-                        $ms = ((int)$parts[0] * 60 * 1000) + ((int)$parts[1] * 1000) + ((int)$parts[2] * 10);
-                    } else if (count($parts) == 2) {
-                        $ms = ((int)$parts[0] * 1000) + ((int)$parts[1] * 10);
-                    } else {
-                        $ms = 99999999;
-                    }
-
                     // Ubah format string agar standard MM:SS.mm
+                    $timeStr = trim($row['time']);
                     $standardTimeStr = str_replace(':', '.', $timeStr);
                     $firstColonPos = strpos($timeStr, ':');
                     if ($firstColonPos !== false) {
                         $standardTimeStr = substr_replace($standardTimeStr, ':', $firstColonPos, 1);
                     }
 
-                    $stmt->execute(['waktu' => $standardTimeStr, 'ms' => $ms, 'id' => $row['id']]);
-                    $count++;
+                    if ($stmt->execute(['waktu' => $standardTimeStr, 'id' => $row['id']])) {
+                        $count++;
+                    } else {
+                        throw new Exception("Gagal menyimpan waktu ke DB untuk ID " . $row['id']);
+                    }
                 }
             }
             echo json_encode(['status' => 'success', 'updated' => $count]);
