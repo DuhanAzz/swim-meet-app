@@ -32,10 +32,27 @@ $partType = strtolower($event['participation_type'] ?? 'club');
 $isSchoolEvent = (strpos($partType, 'school') !== false || strpos($partType, 'sekolah') !== false);
 $teamHeaderLabel = $isSchoolEvent ? 'SEKOLAH' : 'KLUB / TIM';
 
+// AMBIL RENTANG UMUR UNTUK FUNGSI KALKULASI SPLIT
+$stmtAge = $pdo->prepare("SELECT group_name, min_age, max_age FROM event_age_groups WHERE event_id = ?");
+$stmtAge->execute([$event_id]);
+$ageGroups = $stmtAge->fetchAll(PDO::FETCH_ASSOC);
+$eventYear = date('Y', strtotime($event['event_date_start']));
+
+if (!function_exists('getAgeGroupLabel')) {
+    function getAgeGroupLabel($dob, $evtYear, $groups) {
+        if(!$dob || $dob == '0000-00-00') return '-';
+        $age = $evtYear - (int)date('Y', strtotime($dob));
+        foreach($groups as $g) {
+            if ($age >= $g['min_age'] && $age <= $g['max_age']) return $g['group_name'];
+        }
+        return "DILUAR KATEGORI ($age TH)";
+    }
+}
+
 // 3. Mengambil Hasil Perlombaan
 // Di sini keamanannya dijaga: HANYA menampilkan nomor lomba yang is_published = 1
 $sql = "SELECT en.event_number, en.distance, en.stroke, en.jenis_kelamin, en.age_group,
-               s.nama_atlet, c.nama_klub, s.asal_sekolah, s.user_id as swimmer_owner_id,
+               s.nama_atlet, c.nama_klub, s.asal_sekolah, s.user_id as swimmer_owner_id, s.tanggal_lahir,
                ee.entry_time, 
                es.time_final, es.rank_final, es.is_dq_final, es.dq_reason_final
         FROM event_numbers en
@@ -75,6 +92,20 @@ function timeToMs($time) {
     return ($menit * 60000) + ($detik * 1000) + ($ms * 10);
 }
 
+// Deteksi Mode per Acara dari Database (berdasarkan jumlah atlet dengan rank_final = 1)
+$modePerAcara = [];
+foreach($results as $r) {
+    if(!isset($modePerAcara[$r['event_number']])) {
+        $modePerAcara[$r['event_number']] = [
+             'rank1_count' => 0, 
+             'is_gabungan' => (stripos($r['age_group'], 'GABUNG') !== false)
+        ];
+    }
+    if($r['rank_final'] == 1) {
+        $modePerAcara[$r['event_number']]['rank1_count']++;
+    }
+}
+
 // 4. Kelompokkan berdasarkan Nomor Acara
 $groupedResults = [];
 foreach ($results as $r) {
@@ -82,7 +113,29 @@ foreach ($results as $r) {
     if ($r['is_dq_final'] == 1) { $r['ms_sort'] = 9999999999 + 100; }
     elseif (!empty($r['time_final']) && $r['time_final'] != 'NT') { $r['ms_sort'] = timeToMs($r['time_final']); }
     
-    $judulAcara = "ACARA #" . $r['event_number'] . " - " . $r['distance'] . "M " . strtoupper($r['stroke']) . " " . strtoupper($r['jenis_kelamin']) . " (" . $r['age_group'] . ")";
+    // Cek apakah Admin menyimpannya sebagai OVERALL atau SPLIT
+    $isSplit = false;
+    $m = $modePerAcara[$r['event_number']];
+    if ($m['is_gabungan']) {
+        if ($m['rank1_count'] > 1) {
+            $isSplit = true; // Banyak juara 1 (berarti di-split per KU)
+        } elseif ($m['rank1_count'] == 1) {
+            $isSplit = false; // Hanya 1 juara 1 (berarti digabung Overall)
+        } else {
+            $isSplit = true; // Belum disimpan Admin (rank_final kosong semua), default: Split
+        }
+    } else {
+        $isSplit = false; // Bukan grup gabungan
+    }
+    
+    if (!$isSplit) {
+        $label = ($m['is_gabungan']) ? 'OVERALL' : $r['age_group'];
+        $judulAcara = "ACARA #" . $r['event_number'] . " - " . $r['distance'] . "M " . strtoupper($r['stroke']) . " " . strtoupper($r['jenis_kelamin']) . " (" . $label . ")";
+    } else {
+        $realKU = getAgeGroupLabel($r['tanggal_lahir'], $eventYear, $ageGroups);
+        $judulAcara = "ACARA #" . $r['event_number'] . " - " . $r['distance'] . "M " . strtoupper($r['stroke']) . " " . strtoupper($r['jenis_kelamin']) . " (" . $realKU . ")";
+    }
+
     $groupedResults[$judulAcara][] = $r;
 }
 
@@ -91,7 +144,32 @@ foreach ($groupedResults as &$rows) {
         if ($a['ms_sort'] == $b['ms_sort']) return 0;
         return ($a['ms_sort'] < $b['ms_sort']) ? -1 : 1;
     });
+    $rank = 1; $real_rank = 1; $prev_time = null;
+    foreach ($rows as &$atlet) {
+        $isDQ = ($atlet['is_dq_final'] == 1);
+        $isValid = (!$isDQ && !empty($atlet['time_final']) && $atlet['time_final'] != 'NT');
+        $atlet['dynamic_rank'] = null;
+        if ($isValid) {
+            if ($atlet['ms_sort'] !== $prev_time) { $real_rank = $rank; }
+            $atlet['dynamic_rank'] = $real_rank;
+            $prev_time = $atlet['ms_sort'];
+            $rank++;
+        }
+    }
 }
+unset($rows);
+// Supaya jika di split, array keys yang berubah berantakan bisa dirapihkan
+uksort($groupedResults, function($a, $b) {
+    preg_match('/ACARA #(\d+)/', $a, $matchA);
+    preg_match('/ACARA #(\d+)/', $b, $matchB);
+    $numA = isset($matchA[1]) ? (int)$matchA[1] : 9999;
+    $numB = isset($matchB[1]) ? (int)$matchB[1] : 9999;
+    
+    if ($numA === $numB) {
+        return strcmp($a, $b); // sort by KU name if same event
+    }
+    return $numA < $numB ? -1 : 1;
+});
 unset($rows);
 
 include __DIR__ . '/../../views/layout/topbar.php'; 
@@ -150,11 +228,9 @@ include __DIR__ . '/../../views/layout/sidebar.php';
                                 </thead>
                                 <tbody>
                                     <?php 
-                                    $rank = 1; $real_rank = 1; $prev_time = null;
                                     foreach ($atletList as $atlet): 
                                         $isMyTeam = ($atlet['swimmer_owner_id'] == $user_id);
                                         $isDQ = ($atlet['is_dq_final'] == 1);
-                                        $isValid = (!$isDQ && !empty($atlet['time_final']) && $atlet['time_final'] != 'NT');
                                         
                                         $rowClass = 'border-b border-slate-100 hover:bg-slate-50 transition-colors';
                                         
@@ -165,15 +241,12 @@ include __DIR__ . '/../../views/layout/sidebar.php';
                                         }
 
                                         $rankBadge = '-';
-                                        if ($isValid) {
-                                            if ($atlet['ms_sort'] !== $prev_time) { $real_rank = $rank; }
-                                            $rankBadge = $real_rank;
-                                            $prev_time = $atlet['ms_sort'];
-                                            $rank++;
-                                            
-                                            if($rankBadge == 1) $rankBadge = '🥇 1';
-                                            if($rankBadge == 2) $rankBadge = '🥈 2';
-                                            if($rankBadge == 3) $rankBadge = '🥉 3';
+                                        $rankClass = 'text-slate-600';
+                                        if ($atlet['dynamic_rank'] !== null) {
+                                            $rankBadge = $atlet['dynamic_rank'];
+                                            if($rankBadge == 1) { $rankBadge = '🥇 1'; $rankClass = 'text-amber-500'; }
+                                            if($rankBadge == 2) { $rankBadge = '🥈 2'; $rankClass = 'text-slate-400'; }
+                                            if($rankBadge == 3) { $rankBadge = '🥉 3'; $rankClass = 'text-orange-500'; }
                                         }
 
                                         $waktuDaftar = $atlet['entry_time'];
@@ -183,25 +256,29 @@ include __DIR__ . '/../../views/layout/sidebar.php';
                                     ?>
                                     <tr class="searchable-row <?= $rowClass ?>">
                                         
-                                        <td class="py-3 px-4 text-center font-black <?= ($atlet['rank_final'] <= 3 && !$isDQ) ? 'text-amber-600' : 'text-slate-400' ?>">
+                                        <td class="p-4 text-center font-bold <?= $rankClass ?>">
                                             <?= $rankBadge ?>
                                         </td>
                                         
-                                        <td class="py-3 px-4">
-                                            <span class="text-xs font-black uppercase athlete-name <?= $isMyTeam ? 'bg-yellow-300 text-slate-900 px-2 py-0.5 rounded shadow-sm' : 'text-slate-700' ?>">
-                                                <?= htmlspecialchars($atlet['nama_atlet']) ?>
-                                            </span>
+                                        <td class="p-4">
+                                            <div class="font-extrabold text-slate-800 athlete-name <?= $isMyTeam ? 'text-yellow-600' : '' ?>"><?= htmlspecialchars($atlet['nama_atlet']) ?></div>
                                         </td>
                                         
-                                        <td class="py-3 px-4 text-center text-[10px] font-black uppercase tracking-widest text-slate-500">
-                                            <?= htmlspecialchars($atlet['age_group']) ?>
+                                        <td class="p-4 text-center font-bold text-slate-500 text-xs">
+                                            <?php 
+                                                if (stripos($atlet['age_group'], 'GABUNG') !== false) {
+                                                    echo htmlspecialchars(getAgeGroupLabel($atlet['tanggal_lahir'], $eventYear, $ageGroups));
+                                                } else {
+                                                    echo htmlspecialchars($atlet['age_group']);
+                                                }
+                                            ?>
                                         </td>
                                         
-                                        <td class="py-3 px-4 text-[10px] font-bold uppercase tracking-widest team-name text-slate-500">
+                                        <td class="p-4 text-sm font-bold text-slate-600 team-name">
                                             <?= htmlspecialchars($displayTeam) ?>
                                         </td>
                                         
-                                        <td class="py-3 px-4 text-center font-mono text-xs text-slate-400 font-bold">
+                                        <td class="p-4 text-center font-mono text-xs text-slate-400 font-bold">
                                             <?= htmlspecialchars($waktuDaftar) ?>
                                         </td>
                                         

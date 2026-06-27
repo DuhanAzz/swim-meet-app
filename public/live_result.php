@@ -6,9 +6,6 @@ if (session_status() === PHP_SESSION_NONE) session_start();
 // 🚀 TANPA PENGECEKAN LOGIN! Bebas diakses publik.
 
 $event_id = $_GET['event_id'] ?? 0;
-$currentMode = $_GET['mode'] ?? 'split';
-
-// 1. DATA SETTING GLOBAL (Untuk Logo & Judul persis seperti Index)
 $s = $pdo->query("SELECT * FROM site_settings WHERE id=1")->fetch();
 $heroTitle = $s['hero_title'] ?? 'SWIMMEET CHAMPIONSHIP'; 
 
@@ -85,24 +82,48 @@ function timeToMs($time) {
     return ($menit * 60000) + ($detik * 1000) + ($ms * 10);
 }
 
-// 4. Kelompokkan hasil berdasarkan nomor acara & MODE
+// Deteksi Mode per Acara dari Database (berdasarkan jumlah atlet dengan rank_final = 1)
+$modePerAcara = [];
+foreach($results as $r) {
+    if(!isset($modePerAcara[$r['event_number']])) {
+        $modePerAcara[$r['event_number']] = [
+             'rank1_count' => 0, 
+             'is_gabungan' => (stripos($r['age_group'], 'GABUNG') !== false)
+        ];
+    }
+    if($r['rank_final'] == 1) {
+        $modePerAcara[$r['event_number']]['rank1_count']++;
+    }
+}
+
+// 4. Kelompokkan hasil berdasarkan nomor acara & AUTO MODE
 $groupedResults = [];
 foreach ($results as $r) {
     $r['ms_sort'] = 9999999999;
     if ($r['is_dq_final'] == 1) { $r['ms_sort'] = 9999999999 + 100; }
     elseif (!empty($r['time_final']) && $r['time_final'] != 'NT') { $r['ms_sort'] = timeToMs($r['time_final']); }
     
-    // Default Title
-    $judulAcara = "ACARA #" . $r['event_number'] . " - " . $r['distance'] . "M " . strtoupper($r['stroke']) . " " . strtoupper($r['jenis_kelamin']) . " (" . $r['age_group'] . ")";
-    
-    if ($currentMode === 'overall') {
-        $judulAcara = "ACARA #" . $r['event_number'] . " - " . $r['distance'] . "M " . strtoupper($r['stroke']) . " " . strtoupper($r['jenis_kelamin']) . " (OVERALL)";
-    } else {
-        // SPLIT MODE
-        if (stripos($r['age_group'], 'GABUNG') !== false) {
-            $realKU = getAgeGroupLabel($r['tanggal_lahir'], $eventYear, $ageGroups);
-            $judulAcara = "ACARA #" . $r['event_number'] . " - " . $r['distance'] . "M " . strtoupper($r['stroke']) . " " . strtoupper($r['jenis_kelamin']) . " (" . $realKU . ")";
+    // Cek apakah Admin menyimpannya sebagai OVERALL atau SPLIT
+    $isSplit = false;
+    $m = $modePerAcara[$r['event_number']];
+    if ($m['is_gabungan']) {
+        if ($m['rank1_count'] > 1) {
+            $isSplit = true; // Banyak juara 1 (berarti di-split per KU)
+        } elseif ($m['rank1_count'] == 1) {
+            $isSplit = false; // Hanya 1 juara 1 (berarti digabung Overall)
+        } else {
+            $isSplit = true; // Belum disimpan Admin (rank_final kosong semua), default: Split
         }
+    } else {
+        $isSplit = false; // Bukan grup gabungan
+    }
+    
+    if (!$isSplit) {
+        $label = ($m['is_gabungan']) ? 'OVERALL' : $r['age_group'];
+        $judulAcara = "ACARA #" . $r['event_number'] . " - " . $r['distance'] . "M " . strtoupper($r['stroke']) . " " . strtoupper($r['jenis_kelamin']) . " (" . $label . ")";
+    } else {
+        $realKU = getAgeGroupLabel($r['tanggal_lahir'], $eventYear, $ageGroups);
+        $judulAcara = "ACARA #" . $r['event_number'] . " - " . $r['distance'] . "M " . strtoupper($r['stroke']) . " " . strtoupper($r['jenis_kelamin']) . " (" . $realKU . ")";
     }
 
     $groupedResults[$judulAcara][] = $r;
@@ -215,28 +236,9 @@ uksort($groupedResults, function($a, $b) {
             </div>
         </div>
 
-        <div class="flex flex-col sm:flex-row gap-4 items-center justify-between mb-8 sticky top-24 z-40">
-            <div class="w-full sm:w-2/3 bg-slate-900/80 backdrop-blur p-2 rounded-full shadow-2xl border border-slate-800 flex items-center gap-2 focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-950/50 transition-all">
-                <span class="text-lg ml-4 opacity-40">🔍</span>
-                <input type="text" id="searchInput" placeholder="Cari nama atlet atau tim..." class="w-full bg-transparent border-none focus:outline-none focus:ring-0 text-sm font-bold text-slate-100 uppercase placeholder:text-slate-500 placeholder:normal-case placeholder:font-medium py-2">
-            </div>
-            
-            <div class="w-full sm:w-1/3 flex justify-end">
-                <label for="modeToggle" class="flex items-center cursor-pointer bg-slate-900/80 rounded-full border border-slate-800 shadow-xl backdrop-blur select-none p-1 relative w-56 h-12">
-                    <input type="checkbox" id="modeToggle" class="sr-only peer" onchange="toggleMode(this)" <?= $currentMode === 'overall' ? 'checked' : '' ?>>
-                    
-                    <div class="absolute inset-0 flex items-center justify-between px-6 z-10 pointer-events-none">
-                        <span class="text-[11px] font-black uppercase tracking-widest text-slate-400 peer-checked:text-slate-600 transition-colors duration-300">SPLIT KU</span>
-                        <span class="text-[11px] font-black uppercase tracking-widest text-slate-600 peer-checked:text-slate-400 transition-colors duration-300">OVERALL</span>
-                    </div>
-                    
-                    <div class="w-1/2 h-full bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full shadow-md transform transition-transform duration-300 ease-in-out peer-checked:translate-x-full flex items-center justify-center z-20 pointer-events-none">
-                        <span class="text-[11px] font-black uppercase tracking-widest text-white shadow-sm" id="sliderText">
-                            <?= $currentMode === 'overall' ? 'OVERALL' : 'SPLIT KU' ?>
-                        </span>
-                    </div>
-                </label>
-            </div>
+        <div class="bg-slate-900/80 backdrop-blur p-2 rounded-full shadow-2xl border border-slate-800 mb-8 flex items-center gap-2 sticky top-24 z-40 focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-950/50 transition-all">
+            <span class="text-lg ml-4 opacity-40">🔍</span>
+            <input type="text" id="searchInput" placeholder="Cari nama atlet atau tim..." class="w-full bg-transparent border-none focus:outline-none focus:ring-0 text-sm font-bold text-slate-100 uppercase placeholder:text-slate-500 placeholder:normal-case placeholder:font-medium py-2">
         </div>
 
         <?php if (empty($groupedResults)): ?>
@@ -399,15 +401,6 @@ uksort($groupedResults, function($a, $b) {
             }
         }
         
-        // FUNGSI TOGGLE MODE OVERALL / SPLIT
-        function toggleMode(checkbox) {
-            const isOverall = checkbox.checked;
-            document.getElementById('sliderText').textContent = isOverall ? 'OVERALL' : 'SPLIT KU';
-            const urlParams = new URLSearchParams(window.location.search);
-            urlParams.set('mode', isOverall ? 'overall' : 'split');
-            window.location.search = urlParams.toString();
-        }
-
         // NAVBAR SCROLL CONTROL
         const navbar = document.getElementById('navbar');
         const navContainer = document.getElementById('nav-container');
