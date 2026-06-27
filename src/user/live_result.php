@@ -42,7 +42,7 @@ $sql = "SELECT en.event_number, en.distance, en.stroke, en.jenis_kelamin, en.age
         JOIN event_entries ee ON en.id = ee.category_id
         JOIN event_seeding es ON ee.id = es.entry_id
         JOIN swimmers s ON ee.swimmer_id = s.id
-        LEFT JOIN clubs c ON s.club_id = c.id
+        LEFT JOIN clubs c ON ee.club_id = c.id
         WHERE en.event_id = ? 
           AND en.is_published = 1  
           AND (es.time_final IS NOT NULL OR es.is_dq_final = 1)
@@ -136,7 +136,7 @@ include __DIR__ . '/../../views/layout/sidebar.php';
                                         if ($isSchoolEvent) {
                                             $displayTeam = !empty($atlet['asal_sekolah']) ? $atlet['asal_sekolah'] : '-';
                                         } else {
-                                            $displayTeam = !empty($atlet['nama_klub']) ? $atlet['nama_klub'] : 'UNATTACHED';
+                                            $displayTeam = !empty($atlet['nama_klub']) ? $atlet['nama_klub'] : '-';
                                         }
 
                                         $rankBadge = '-';
