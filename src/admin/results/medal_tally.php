@@ -25,8 +25,10 @@ $eventName  = strtoupper($raceInfo['event_name'] ?? 'EVENT NAME');
 $venueName  = strtoupper($raceInfo['event_location'] ?? '-');
 $eventDate  = $raceInfo['event_date_start'] ?? date('Y-m-d');
 $eventYear  = date('Y', strtotime($eventDate)); 
-$logoLeft   = !empty($raceInfo['logo_left']) ? BASE_URL . '/public/' . ltrim($raceInfo['logo_left'], '/') : null;
-$logoRight  = !empty($raceInfo['logo_right']) ? BASE_URL . '/public/' . ltrim($raceInfo['logo_right'], '/') : null;
+$protocol = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? "https" : "http");
+$host = $_SERVER['HTTP_HOST'];
+$logoLeft   = !empty($raceInfo['logo_left']) ? $protocol . "://" . $host . BASE_URL . '/public/' . ltrim($raceInfo['logo_left'], '/') : null;
+$logoRight  = !empty($raceInfo['logo_right']) ? $protocol . "://" . $host . BASE_URL . '/public/' . ltrim($raceInfo['logo_right'], '/') : null;
 
 $displayDate = strtoupper(date('d F Y', strtotime($eventDate)));
 if(!empty($raceInfo['event_date_end']) && $raceInfo['event_date_end'] != '0000-00-00' && $raceInfo['event_date_end'] != $eventDate) {
@@ -67,7 +69,7 @@ if (!empty($selected_ku_ids)) {
 if ($team_source == 'school') {
     $teamColumn = "COALESCE(NULLIF(s.asal_sekolah, ''), 'TANPA SEKOLAH')";
 } else {
-    $teamColumn = "COALESCE(NULLIF(u.nama_lengkap, ''), 'TANPA KLUB/TIM')";
+    $teamColumn = "COALESCE(NULLIF(c.nama_klub, ''), 'TANPA KLUB/TIM')";
 }
 
 // --- QUERY DATA MEDALI ---
@@ -108,7 +110,7 @@ if ($mode == 'team') {
             JOIN event_seeding es ON ee.id = es.entry_id
             JOIN swimmers s ON ee.swimmer_id = s.id
             JOIN event_numbers en ON ee.category_id = en.id
-            LEFT JOIN users u ON (ee.club_id = u.id OR ee.user_id = u.id)
+            LEFT JOIN clubs c ON ee.club_id = c.id
             WHERE $whereSql
             GROUP BY entity_name
             ORDER BY gold DESC, silver DESC, bronze DESC, total DESC";
@@ -126,7 +128,7 @@ if ($mode == 'team') {
             JOIN event_seeding es ON ee.id = es.entry_id
             JOIN swimmers s ON ee.swimmer_id = s.id
             JOIN event_numbers en ON ee.category_id = en.id
-            LEFT JOIN users u ON (ee.club_id = u.id OR ee.user_id = u.id)
+            LEFT JOIN clubs c ON ee.club_id = c.id
             WHERE $whereSql
             GROUP BY s.id
             ORDER BY gold DESC, silver DESC, bronze DESC, total DESC";
@@ -336,7 +338,7 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
         <div class="footer-sponsors">
             <?php if(!empty($sponsors)): ?>
                 <?php foreach($sponsors as $img): ?>
-                    <img src="<?= BASE_URL . '/public/' . ltrim($img, '/') ?>">
+                    <img src="<?= $protocol . "://" . $host . BASE_URL . '/public/' . ltrim($img, '/') ?>">
                 <?php endforeach; ?>
             <?php endif; ?>
         </div>
