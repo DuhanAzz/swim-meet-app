@@ -338,6 +338,7 @@ foreach($rawData as $row) {
                                         </tr>
                                     </thead>
                                     <tbody>
+                                        <?php 
                                         // Grouping by KU
                                         $groupedData = [];
                                         foreach($data['data'] as $s) {
