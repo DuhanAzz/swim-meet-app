@@ -88,7 +88,7 @@ foreach($results as $r) {
     if(!isset($modePerAcara[$r['event_number']])) {
         $modePerAcara[$r['event_number']] = [
              'rank1_count' => 0, 
-             'is_gabungan' => (stripos($r['age_group'], 'GABUNG') !== false)
+             'is_gabungan' => (stripos($r['age_group'], 'GABUNG') !== false || strpos($r['age_group'], ',') !== false || strpos($r['age_group'], '/') !== false)
         ];
     }
     if($r['rank_final'] == 1) {
