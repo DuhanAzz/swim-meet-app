@@ -64,12 +64,35 @@ while ($row = $stmtDqRules->fetch(PDO::FETCH_ASSOC)) {
 $dqRulesJson = json_encode($dqRulesArray);
 // ---------------------------------------------------
 
+function timeToMs($time) {
+    $time = trim($time);
+    if (empty($time) || $time == 'NT' || $time == '99:99.99' || $time == '-') return 9999999999; 
+    $parts = preg_split('/[:.]/', $time);
+    $menit = 0; $detik = 0; $ms = 0;
+    if (count($parts) == 3) { $menit = (int)$parts[0]; $detik = (int)$parts[1]; $ms = (int)$parts[2]; } 
+    elseif (count($parts) == 2) { $detik = (int)$parts[0]; $ms = (int)$parts[1]; } 
+    elseif (count($parts) == 1) { $detik = (int)$parts[0]; }
+    return ($menit * 60000) + ($detik * 1000) + ($ms * 10);
+}
+
 // 4. Kelompokkan berdasarkan Nomor Acara
 $groupedResults = [];
 foreach ($results as $r) {
+    $r['ms_sort'] = 9999999999;
+    if ($r['is_dq_final'] == 1) { $r['ms_sort'] = 9999999999 + 100; }
+    elseif (!empty($r['time_final']) && $r['time_final'] != 'NT') { $r['ms_sort'] = timeToMs($r['time_final']); }
+    
     $judulAcara = "ACARA #" . $r['event_number'] . " - " . $r['distance'] . "M " . strtoupper($r['stroke']) . " " . strtoupper($r['jenis_kelamin']) . " (" . $r['age_group'] . ")";
     $groupedResults[$judulAcara][] = $r;
 }
+
+foreach ($groupedResults as &$rows) {
+    usort($rows, function($a, $b) {
+        if ($a['ms_sort'] == $b['ms_sort']) return 0;
+        return ($a['ms_sort'] < $b['ms_sort']) ? -1 : 1;
+    });
+}
+unset($rows);
 
 include __DIR__ . '/../../views/layout/topbar.php'; 
 include __DIR__ . '/../../views/layout/sidebar.php'; 
@@ -127,9 +150,11 @@ include __DIR__ . '/../../views/layout/sidebar.php';
                                 </thead>
                                 <tbody>
                                     <?php 
+                                    $rank = 1; $real_rank = 1; $prev_time = null;
                                     foreach ($atletList as $atlet): 
                                         $isMyTeam = ($atlet['swimmer_owner_id'] == $user_id);
                                         $isDQ = ($atlet['is_dq_final'] == 1);
+                                        $isValid = (!$isDQ && !empty($atlet['time_final']) && $atlet['time_final'] != 'NT');
                                         
                                         $rowClass = 'border-b border-slate-100 hover:bg-slate-50 transition-colors';
                                         
@@ -140,8 +165,12 @@ include __DIR__ . '/../../views/layout/sidebar.php';
                                         }
 
                                         $rankBadge = '-';
-                                        if (!$isDQ && !empty($atlet['rank_final'])) {
-                                            $rankBadge = $atlet['rank_final'];
+                                        if ($isValid) {
+                                            if ($atlet['ms_sort'] !== $prev_time) { $real_rank = $rank; }
+                                            $rankBadge = $real_rank;
+                                            $prev_time = $atlet['ms_sort'];
+                                            $rank++;
+                                            
                                             if($rankBadge == 1) $rankBadge = '🥇 1';
                                             if($rankBadge == 2) $rankBadge = '🥈 2';
                                             if($rankBadge == 3) $rankBadge = '🥉 3';
