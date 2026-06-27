@@ -29,8 +29,8 @@ $loc  = $raceInfo['event_location'] ?? '-';
 if (!empty($raceInfo['event_city'])) $loc .= ' - ' . $raceInfo['event_city'];
 $venueName  = strtoupper($loc);
 $eventDate  = $raceInfo['event_date_start'] ?? date('Y-m-d');
-$logoLeft   = !empty($raceInfo['logo_left']) ? BASE_URL . '/public/' . ltrim($raceInfo['logo_left'], '/') : null;
-$logoRight  = !empty($raceInfo['logo_right']) ? BASE_URL . '/public/' . ltrim($raceInfo['logo_right'], '/') : null;
+$logoLeft   = !empty($raceInfo['logo_left']) ? $protocol . "://" . $host . BASE_URL . '/public/' . ltrim($raceInfo['logo_left'], '/') : null;
+$logoRight  = !empty($raceInfo['logo_right']) ? $protocol . "://" . $host . BASE_URL . '/public/' . ltrim($raceInfo['logo_right'], '/') : null;
 $partType   = $raceInfo['participation_type'] ?? 'club';
 $rawPool    = $raceInfo['pool_type'] ?? '50m'; 
 $poolLabel  = ($rawPool === '25m' || $rawPool === 'SCM') ? 'SCM' : 'LCM';
@@ -221,7 +221,7 @@ foreach($rawData as $row) {
         <div class="footer-sponsors">
             <?php if(!empty($sponsors)): ?>
                 <?php foreach($sponsors as $img): ?>
-                    <img src="<?= BASE_URL . '/public/' . ltrim($img, '/') ?>">
+                    <img src="<?= $protocol . "://" . $host . BASE_URL . '/public/' . ltrim($img, '/') ?>">
                 <?php endforeach; ?>
             <?php endif; ?>
         </div>
