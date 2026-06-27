@@ -27,10 +27,11 @@ function timeToMs($time) {
 
 function shortenName($name) { return trim(preg_replace('/\s+/', ' ', $name ?? '')); }
 function getTeamName($row, $type) {
-    $club = trim($row['club_name'] ?? ''); $school = trim($row['asal_sekolah'] ?? '');
-    if (stripos($type, 'sekolah') !== false || stripos($type, 'school') !== false) return $school ?: ($club ?: '-');
-    return $club ?: ($school ?: '-');
+    $club = $row['club_name'] ?? ''; $school = $row['asal_sekolah'] ?? '';
+    if (stripos($type, 'sekolah') !== false || stripos($type, 'school') !== false) return $school ?: '-';
+    return $club ?: '-';
 }
+
 
 // AMBIL MASTER DATA DQ RULES UNTUK POPUP
 $stmtDq = $pdo->query("SELECT * FROM dq_rules ORDER BY CAST(SUBSTRING(pasal, 4) AS UNSIGNED) ASC, pasal ASC");
@@ -191,8 +192,8 @@ $sponsors = $stmtSpon->fetchAll(PDO::FETCH_COLUMN);
 
 try {
     $sql = "SELECT ee.id, es.heat_prelim as heat, es.lane_prelim as lane, es.time_final as final_time, es.is_dq_final as is_dq, es.dq_reason_final as dq_reason, es.time_prelim as entry_time,
-            s.uid, s.nama_atlet, s.tanggal_lahir, s.asal_sekolah, u.nama_lengkap as club_name
-            FROM event_entries ee JOIN event_seeding es ON ee.id = es.entry_id JOIN swimmers s ON ee.swimmer_id = s.id LEFT JOIN users u ON ee.club_id = u.id 
+            s.uid, s.nama_atlet, s.tanggal_lahir, s.asal_sekolah, c.nama_klub as club_name
+            FROM event_entries ee JOIN event_seeding es ON ee.id = es.entry_id JOIN swimmers s ON ee.swimmer_id = s.id LEFT JOIN clubs c ON ee.club_id = c.id 
             WHERE ee.category_id = ? AND es.heat_prelim IS NOT NULL ORDER BY es.heat_prelim ASC, es.lane_prelim ASC";
     $stmt = $pdo->prepare($sql);
     $stmt->execute([$cat_id]);
