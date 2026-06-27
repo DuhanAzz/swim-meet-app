@@ -64,9 +64,9 @@ if (!function_exists('getKUName')) {
 }
 if (!function_exists('getTeamName')) {
     function getTeamName($row, $type) {
-        $club = trim($row['club_name'] ?? ''); $school = trim($row['asal_sekolah'] ?? '');
-        if (stripos($type, 'sekolah') !== false || stripos($type, 'school') !== false) return $school ?: ($club ?: '-');
-        return $club ?: ($school ?: '-');
+        $club = $row['club_name'] ?? ''; $school = $row['asal_sekolah'] ?? '';
+        if (stripos($type, 'sekolah') !== false || stripos($type, 'school') !== false) return $school ?: '-';
+        return $club ?: '-';
     }
 }
 
@@ -75,12 +75,12 @@ if (!function_exists('getTeamName')) {
 $sqlAll = "SELECT 
             en.id as cat_id, en.event_number, en.distance, en.stroke, en.age_group, en.jenis_kelamin, 
             es.rank_final, es.time_prelim as entry_time, es.time_final, es.is_dq_final, es.dq_reason_final,
-            s.uid, s.nama_atlet, s.tanggal_lahir, u.nama_lengkap as club_name, s.asal_sekolah
+            s.uid, s.nama_atlet, s.tanggal_lahir, c.nama_klub as club_name, s.asal_sekolah
            FROM event_numbers en
            JOIN event_entries ee ON ee.category_id = en.id
            JOIN event_seeding es ON ee.id = es.entry_id
            JOIN swimmers s ON ee.swimmer_id = s.id
-           LEFT JOIN users u ON (ee.club_id = u.id OR ee.user_id = u.id)
+           LEFT JOIN clubs c ON ee.club_id = c.id
         WHERE (es.time_final IS NOT NULL OR es.is_dq_final = 1)
            AND en.event_id = ?
            ORDER BY CAST(en.event_number AS UNSIGNED) ASC, 
