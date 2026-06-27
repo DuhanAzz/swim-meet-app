@@ -47,7 +47,13 @@ $available_kus = $stmtKU->fetchAll(PDO::FETCH_ASSOC);
 // --- PROSES FILTER ---
 $mode = $_GET['mode'] ?? 'team'; 
 $filter_gender = $_GET['gender'] ?? 'all';
-$team_source = $_GET['team_source'] ?? 'club'; // Filter Sumber Tim
+
+// Auto-detect default team source based on participation_type
+$partType = strtolower($raceInfo['participation_type'] ?? 'club');
+$isSchoolEvent = (strpos($partType, 'school') !== false || strpos($partType, 'sekolah') !== false);
+$defaultTeamSource = $isSchoolEvent ? 'school' : 'club';
+$team_source = $_GET['team_source'] ?? $defaultTeamSource; // Filter Sumber Tim
+
 $selected_ku_ids = $_GET['ku'] ?? []; 
 
 $valid_birth_years = [];
@@ -72,71 +78,154 @@ if ($team_source == 'school') {
     $teamColumn = "COALESCE(NULLIF(c.nama_klub, ''), 'TANPA KLUB/TIM')";
 }
 
-// --- QUERY DATA MEDALI ---
-$tally = [];
+// --- FUNGSI UTILITAS ---
+if (!function_exists('timeToMs')) {
+    function timeToMs($time) {
+        $time = trim($time);
+        if (empty($time) || $time == 'NT' || $time == '99:99.99' || $time == '-') return 9999999999; 
+        $parts = preg_split('/[:.]/', $time);
+        $menit = 0; $detik = 0; $ms = 0;
+        if (count($parts) == 3) { $menit = (int)$parts[0]; $detik = (int)$parts[1]; $ms = (int)$parts[2]; } 
+        elseif (count($parts) == 2) { $detik = (int)$parts[0]; $ms = (int)$parts[1]; } 
+        elseif (count($parts) == 1) { $detik = (int)$parts[0]; }
+        return ($menit * 60000) + ($detik * 1000) + ($ms * 10);
+    }
+}
+if (!function_exists('getKUNameTally')) {
+    function getKUNameTally($dob, $evtYear, $groups) {
+        if(!$dob || $dob == '0000-00-00') return 'UMUR TIDAK DIKETAHUI';
+        $age = $evtYear - (int)date('Y', strtotime($dob));
+        foreach($groups as $g) {
+            if ($age >= $g['min_age'] && $age <= $g['max_age']) return $g['group_name'];
+        }
+        return 'DILUAR KATEGORI (' . $age . ' TH)';
+    }
+}
 
-$whereClauses = [
-    "en.event_id = ?", 
-    "es.rank_final IN (1, 2, 3)", 
-    "(es.is_dq_final = 0 OR es.is_dq_final IS NULL)"
-];
-
+// --- PERHITUNGAN MEDALI DINAMIS (Mengacu pada time_final) ---
+$whereClauses = ["en.event_id = ?", "(es.time_final IS NOT NULL OR es.is_dq_final = 1)"];
 $params = [$eventId];
 
-// Filter Gender
 if ($mode == 'athlete' && $filter_gender !== 'all') {
     $whereClauses[] = "s.jenis_kelamin = ?";
     $params[] = $filter_gender;
 }
 
-// Filter Tahun Lahir (KU)
-if (!empty($valid_birth_years)) {
-    $placeholders = implode(',', array_fill(0, count($valid_birth_years), '?'));
-    $whereClauses[] = "YEAR(s.tanggal_lahir) IN ($placeholders)";
-    foreach ($valid_birth_years as $y) { $params[] = $y; }
+$whereSql = implode(" AND ", $whereClauses);
+
+$sqlRaw = "SELECT 
+            en.event_number, en.age_group as event_age_group,
+            s.id as swimmer_id, s.uid, s.nama_atlet, s.jenis_kelamin, s.tanggal_lahir,
+            $teamColumn as team_name,
+            es.time_final, es.is_dq_final, es.rank_final
+        FROM event_entries ee
+        JOIN event_seeding es ON ee.id = es.entry_id
+        JOIN swimmers s ON ee.swimmer_id = s.id
+        JOIN event_numbers en ON ee.category_id = en.id
+        LEFT JOIN clubs c ON ee.club_id = c.id
+        WHERE $whereSql";
+
+$stmt = $pdo->prepare($sqlRaw);
+$stmt->execute($params);
+$allEntries = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+// 1. Auto-deteksi Split Mode per Event
+$modePerAcara = [];
+foreach($allEntries as $r) {
+    if(!isset($modePerAcara[$r['event_number']])) {
+        $modePerAcara[$r['event_number']] = [
+             'rank1_count' => 0, 
+             'is_gabungan' => (stripos($r['event_age_group'], 'GABUNG') !== false || strpos($r['event_age_group'], ',') !== false || strpos($r['event_age_group'], '/') !== false)
+        ];
+    }
+    if($r['rank_final'] == 1) {
+        $modePerAcara[$r['event_number']]['rank1_count']++;
+    }
 }
 
-$whereSql = implode(" AND ", $whereClauses);
+// 2. Kelompokkan dan Sortir untuk mendapatkan Ranking Dinamis
+$eventsGrouped = [];
+foreach($allEntries as $r) {
+    $r['ms_sort'] = 9999999999;
+    if ($r['is_dq_final'] == 1) { $r['ms_sort'] = 9999999999 + 100; }
+    elseif (!empty($r['time_final']) && $r['time_final'] != 'NT') { $r['ms_sort'] = timeToMs($r['time_final']); }
+    
+    $m = $modePerAcara[$r['event_number']];
+    $isSplit = false;
+    if ($m['is_gabungan']) {
+        if ($m['rank1_count'] > 1) { $isSplit = true; } 
+        elseif ($m['rank1_count'] == 1) { $isSplit = false; } 
+        else { $isSplit = true; } // Default Split jika belum disimpan
+    }
+    
+    $groupKey = $isSplit ? getKUNameTally($r['tanggal_lahir'], $eventYear, $available_kus) : 'OVERALL';
+    $eventsGrouped[$r['event_number']][$groupKey][] = $r;
+}
+
+// 3. Berikan Ranking dan Tally Medali
+$rawTally = []; // Menyimpan akumulasi
+foreach($eventsGrouped as $eventNum => $groups) {
+    foreach($groups as $groupName => &$swimmers) {
+        usort($swimmers, function($a, $b) {
+            if ($a['ms_sort'] == $b['ms_sort']) return 0;
+            return ($a['ms_sort'] < $b['ms_sort']) ? -1 : 1;
+        });
+        
+        $rank = 1; $real_rank = 1; $prev_time = null;
+        foreach($swimmers as &$s) {
+            $isValid = ($s['is_dq_final'] == 0 && !empty($s['time_final']) && $s['time_final'] != 'NT');
+            if ($isValid) {
+                if ($s['ms_sort'] !== $prev_time) { $real_rank = $rank; }
+                if ($real_rank <= 3) {
+                    // Tambahkan ke keranjang medali
+                    $key = ($mode == 'team') ? $s['team_name'] : $s['swimmer_id'];
+                    if (!isset($rawTally[$key])) {
+                        $rawTally[$key] = [
+                            'entity_name' => ($mode == 'team') ? $s['team_name'] : $s['nama_atlet'],
+                            'uid' => $s['uid'], 'jenis_kelamin' => $s['jenis_kelamin'], 'tanggal_lahir' => $s['tanggal_lahir'],
+                            'team_name' => $s['team_name'],
+                            'gold' => 0, 'silver' => 0, 'bronze' => 0, 'total' => 0
+                        ];
+                    }
+                    if ($real_rank == 1) $rawTally[$key]['gold']++;
+                    if ($real_rank == 2) $rawTally[$key]['silver']++;
+                    if ($real_rank == 3) $rawTally[$key]['bronze']++;
+                    $rawTally[$key]['total']++;
+                }
+                $prev_time = $s['ms_sort'];
+                $rank++;
+            }
+        }
+    }
+}
+unset($swimmers);
+
+// 4. Ubah ke array index numerik dan aplikasikan filter KU jika ada
+$tallyData = [];
+foreach($rawTally as $t) {
+    // Filter KU jika dipilih
+    if (!empty($valid_birth_years)) {
+        $bYear = (int)date('Y', strtotime($t['tanggal_lahir']));
+        if (!in_array($bYear, $valid_birth_years)) {
+            continue; // Skip jika di luar filter KU
+        }
+    }
+    $tallyData[] = $t;
+}
+
+// 5. Urutkan klasemen Emas > Perak > Perunggu > Total
+usort($tallyData, function($a, $b) {
+    if ($a['gold'] != $b['gold']) return $b['gold'] - $a['gold'];
+    if ($a['silver'] != $b['silver']) return $b['silver'] - $a['silver'];
+    if ($a['bronze'] != $b['bronze']) return $b['bronze'] - $a['bronze'];
+    return $b['total'] - $a['total'];
+});
 
 if ($mode == 'team') {
     $titlePage = "KLASEMEN JUARA UMUM (" . ($team_source == 'school' ? 'SEKOLAH' : 'KLUB/TIM') . ")";
-    $sql = "SELECT 
-                $teamColumn as entity_name,
-                SUM(CASE WHEN es.rank_final = 1 THEN 1 ELSE 0 END) as gold,
-                SUM(CASE WHEN es.rank_final = 2 THEN 1 ELSE 0 END) as silver,
-                SUM(CASE WHEN es.rank_final = 3 THEN 1 ELSE 0 END) as bronze,
-                COUNT(*) as total
-            FROM event_entries ee
-            JOIN event_seeding es ON ee.id = es.entry_id
-            JOIN swimmers s ON ee.swimmer_id = s.id
-            JOIN event_numbers en ON ee.category_id = en.id
-            LEFT JOIN clubs c ON ee.club_id = c.id
-            WHERE $whereSql
-            GROUP BY entity_name
-            ORDER BY gold DESC, silver DESC, bronze DESC, total DESC";
 } else {
     $titlePage = "PERENANG TERBAIK";
-    $sql = "SELECT 
-                s.nama_atlet as entity_name,
-                s.uid, s.jenis_kelamin, s.tanggal_lahir,
-                $teamColumn as team_name,
-                SUM(CASE WHEN es.rank_final = 1 THEN 1 ELSE 0 END) as gold,
-                SUM(CASE WHEN es.rank_final = 2 THEN 1 ELSE 0 END) as silver,
-                SUM(CASE WHEN es.rank_final = 3 THEN 1 ELSE 0 END) as bronze,
-                COUNT(*) as total
-            FROM event_entries ee
-            JOIN event_seeding es ON ee.id = es.entry_id
-            JOIN swimmers s ON ee.swimmer_id = s.id
-            JOIN event_numbers en ON ee.category_id = en.id
-            LEFT JOIN clubs c ON ee.club_id = c.id
-            WHERE $whereSql
-            GROUP BY s.id
-            ORDER BY gold DESC, silver DESC, bronze DESC, total DESC";
 }
-
-$stmt = $pdo->prepare($sql);
-$stmt->execute($params);
-$tallyData = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 // --- PENGELOMPOKAN KHUSUS PERENANG TERBAIK (ATHLETE MODE) ---
 $groupedAthleteData = [];
