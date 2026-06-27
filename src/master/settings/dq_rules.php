@@ -44,8 +44,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 }
 
 // --- AMBIL SEMUA DATA ---
-// Mengurutkan dengan mengubah angka di belakang "SW " menjadi integer agar urutannya natural (1, 2, 3... 10)
-$stmt = $pdo->query("SELECT * FROM dq_rules ORDER BY CAST(SUBSTRING(pasal, 4) AS UNSIGNED) ASC, pasal ASC");
+// Mengurutkan secara Natural Sort untuk format penomoran baru (contoh: 5.1.2, 10.2a)
+$stmt = $pdo->query("SELECT * FROM dq_rules ORDER BY 
+    CAST(SUBSTRING_INDEX(pasal, '.', 1) AS UNSIGNED) ASC, 
+    CAST(SUBSTRING_INDEX(SUBSTRING_INDEX(pasal, '.', 2), '.', -1) AS UNSIGNED) ASC, 
+    pasal ASC");
 $rules = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 include __DIR__ . '/../../../views/layout/topbar.php'; 
@@ -132,15 +135,14 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                     <option value="GAYA DADA">GAYA DADA</option>
                     <option value="GAYA KUPU-KUPU">GAYA KUPU-KUPU</option>
                     <option value="GAYA GANTI">GAYA GANTI</option>
-                    <option value="PERLOMBAAN">PERLOMBAAN UMUM</option>
-                    <option value="PAKAIAN">PAKAIAN & PERALATAN</option>
-                    <option value="LAINNYA">LAINNYA</option>
+                    <option value="LOMBA">LOMBA</option>
+                    <option value="LAIN-LAIN">LAIN-LAIN</option>
                 </select>
             </div>
             
             <div>
                 <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Nomor Pasal</label>
-                <input type="text" name="pasal" id="dqPasal" required placeholder="Contoh: SW 4.4" class="w-full px-4 py-3 rounded-xl border border-slate-200 font-bold text-slate-700 focus:outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition">
+                <input type="text" name="pasal" id="dqPasal" required placeholder="Contoh: 5.1.5.2" class="w-full px-4 py-3 rounded-xl border border-slate-200 font-bold text-slate-700 focus:outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition">
             </div>
             
             <div>
