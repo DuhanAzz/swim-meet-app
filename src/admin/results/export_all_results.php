@@ -70,6 +70,19 @@ if (!function_exists('getTeamName')) {
     }
 }
 
+if (!function_exists('timeToMs')) {
+    function timeToMs($time) {
+        $time = trim($time);
+        if (empty($time) || $time == 'NT' || $time == '99:99.99' || $time == '-') return 9999999999; 
+        $parts = preg_split('/[:.]/', $time);
+        $menit = 0; $detik = 0; $ms = 0;
+        if (count($parts) == 3) { $menit = (int)$parts[0]; $detik = (int)$parts[1]; $ms = (int)$parts[2]; } 
+        elseif (count($parts) == 2) { $detik = (int)$parts[0]; $ms = (int)$parts[1]; } 
+        elseif (count($parts) == 1) { $detik = (int)$parts[0]; }
+        return ($menit * 60000) + ($detik * 1000) + ($ms * 10);
+    }
+}
+
 // === AMBIL DATA HASIL LOMBA KESELURUHAN ===
 // PERBAIKAN: Gunakan event_id dan panggil kolom rank_final, time_final secara akurat
 $sqlAll = "SELECT 
@@ -325,25 +338,49 @@ foreach($rawData as $row) {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        <?php 
                                         // Grouping by KU
                                         $groupedData = [];
                                         foreach($data['data'] as $s) {
                                             $kuLabel = getKUName($s['tanggal_lahir'], $eventYear, $ageGroups);
+                                            
+                                            $s['ms_sort'] = 9999999999;
+                                            if (($s['is_dq_final']??0) == 1) { $s['ms_sort'] = 9999999999 + 100; }
+                                            elseif (!empty($s['time_final']) && $s['time_final'] != 'NT') { $s['ms_sort'] = timeToMs($s['time_final']); }
+                                            
                                             $groupedData[$kuLabel][] = $s;
                                         }
+
+                                        ksort($groupedData);
+                                        foreach($groupedData as &$swimmers) {
+                                            usort($swimmers, function($a, $b) {
+                                                if ($a['ms_sort'] == $b['ms_sort']) return 0;
+                                                return ($a['ms_sort'] < $b['ms_sort']) ? -1 : 1;
+                                            });
+                                        }
+                                        unset($swimmers);
 
                                         foreach($groupedData as $groupName => $swimmers): 
                                         ?>
                                             <tr class="group-row"><td colspan="7"><?= htmlspecialchars($groupName) ?></td></tr>
-                                            <?php foreach($swimmers as $s): ?>
+                                            <?php 
+                                            $rank = 1; $real_rank = 1; $prev_time = null;
+                                            foreach($swimmers as $s): 
+                                                $isValid = (($s['is_dq_final']??0) == 0 && !empty($s['time_final']) && $s['time_final'] != 'NT');
+                                                $rankBadge = '-';
+                                                if ($isValid) {
+                                                    if ($s['ms_sort'] !== $prev_time) { $real_rank = $rank; }
+                                                    $rankBadge = $real_rank;
+                                                    $prev_time = $s['ms_sort'];
+                                                    $rank++;
+                                                }
+                                            ?>
                                             <tr>
-                                                <td class="col-rank"><?= $s['rank_final'] ?? '-' ?></td>
+                                                <td class="col-rank"><?= $rankBadge ?></td>
                                                 <td class="col-uid"><?= htmlspecialchars($s['uid'] ?? '-') ?></td>
                                                 <td class="col-nama"><?= $s['nama_atlet'] ?></td>
                                                 <td class="col-ku"><?= getKUName($s['tanggal_lahir'], $eventYear, $ageGroups) ?></td>
                                                 <td class="col-tim"><?= getTeamName($s, $partType) ?></td>
-                                                <td class="col-waktu-awal"><?= (!$s['entry_time'] || $s['entry_time']=='99.99.99') ? 'NT' : $s['entry_time'] ?></td>
+                                                <td class="col-waktu-awal"><?= (!$s['entry_time'] || $s['entry_time']=='99.99.99' || $s['entry_time']=='00:00.00') ? 'NT' : $s['entry_time'] ?></td>
                                                 <td class="col-hasil">
                                                     <?php 
                                                     if ($s['is_dq_final'] == 1) { 
