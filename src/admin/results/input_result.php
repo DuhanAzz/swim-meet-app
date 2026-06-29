@@ -65,8 +65,24 @@ if(!empty($eventProfile['event_date_end']) && $eventProfile['event_date_end'] !=
 }
 $dateRange = strtoupper($dateRange);
 
-$logoLeft   = !empty($eventProfile['logo_left']) ? BASE_URL . '/public/' . ltrim($eventProfile['logo_left'], '/') : null;
-$logoRight  = !empty($eventProfile['logo_right']) ? BASE_URL . '/public/' . ltrim($eventProfile['logo_right'], '/') : null;
+function getBase64Image($urlPath) {
+    if (empty($urlPath)) return null;
+    $baseDir = dirname(dirname(dirname(__DIR__)));
+    $cleanPath = ltrim(preg_replace('/^(\.\.\/)+/', '', $urlPath), '/');
+    if (strpos($cleanPath, 'swim-meet/') === 0) $cleanPath = substr($cleanPath, 10);
+    if (strpos($cleanPath, 'public/') !== 0) $cleanPath = "public/" . $cleanPath;
+    
+    $fullPath = $baseDir . "/" . $cleanPath;
+    if (file_exists($fullPath)) {
+        $ext = pathinfo($fullPath, PATHINFO_EXTENSION);
+        $data = file_get_contents($fullPath);
+        return 'data:image/' . $ext . ';base64,' . base64_encode($data);
+    }
+    return BASE_URL . '/' . ltrim($urlPath, '/');
+}
+
+$logoLeft   = getBase64Image($eventProfile['logo_left'] ?? '');
+$logoRight  = getBase64Image($eventProfile['logo_right'] ?? '');
 
 $total_lintasan = (int)($eventProfile['lane_count'] ?? 8);
 $pool_type    = strtoupper($eventProfile['pool_type'] ?? 'LCM');
@@ -90,6 +106,35 @@ function getAgeGroupLabel($dob, $eventYear, $ageGroups) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
         $pdo->beginTransaction();
+
+        // 1. Proses Import TXT Stopwatch Backup
+        if (isset($_FILES['txt_backup']) && $_FILES['txt_backup']['error'] === UPLOAD_ERR_OK) {
+            $fileTmp = $_FILES['txt_backup']['tmp_name'];
+            $fileContent = file_get_contents($fileTmp);
+            $lines = explode("\n", $fileContent);
+            
+            $stmtUpdTxt = $pdo->prepare("UPDATE event_seeding SET time_final = ? WHERE entry_id = ?");
+            $updateCount = 0;
+            
+            foreach ($lines as $line) {
+                // Cari format: Lintasan X [Nama] |ID:1234|: 01:23.45
+                if (preg_match('/\|ID:(\d+)\|:\s*([\d:.]+)/', $line, $matches)) {
+                    $entryId = $matches[1];
+                    $time = trim($matches[2]);
+                    if ($time !== '' && $time !== '00:00.00' && $time !== '00:00.000') {
+                        $stmtUpdTxt->execute([$time, $entryId]);
+                        $updateCount++;
+                    }
+                }
+            }
+            $pdo->commit();
+            $msg_success = "Import TXT Berhasil! $updateCount waktu atlet telah diperbarui.";
+            // Refresh halaman agar form di bawah tidak tereksekusi bersamaan
+            header("Location: input_result.php?category_id=" . $cat_id . "&msg=" . urlencode($msg_success));
+            exit;
+        }
+
+        // 2. Proses Input Manual Biasa
         $entries = $_POST['entries'] ?? [];
         $rankModePost = $_POST['rank_mode_input'] ?? 'split'; 
         $_SESSION['ranking_mode_' . $cat_id] = $rankModePost;
@@ -263,6 +308,7 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
         nav, aside, .no-print, .alert-box, .screen-only { display: none !important; }
         .p-4, .sm\:ml-64, .pt-24, .min-h-screen { padding: 0 !important; margin: 0 !important; min-height: auto !important; background: white !important; }
         body { background: white !important; font-family: 'Arial', sans-serif; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+        img, .header-fixed { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
         
         .print-only { display: block !important; }
         .page-wrapper { margin: 0; width: 100%; padding: 0 10mm; position: relative; }
@@ -346,12 +392,23 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                 <a href="<?= $prevUrl ?>" class="h-10 px-4 flex items-center justify-center rounded-l-lg font-bold text-xs uppercase transition border-r border-slate-600 <?= $prevClass ?>">&laquo; PREV</a>
                 <div class="flex bg-slate-100 rounded-none p-1 gap-1">
                     <a href="index.php" class="h-8 px-3 flex items-center bg-white border border-slate-300 rounded text-slate-600 font-bold text-[10px] uppercase hover:bg-slate-50">Menu</a>
+                    <button type="button" onclick="document.getElementById('txtUploadForm').classList.toggle('hidden')" class="h-8 px-3 flex items-center bg-emerald-500 text-white rounded font-bold text-[10px] uppercase hover:bg-emerald-600 gap-1" title="Import TXT Backup dari Stopwatch">📝 TXT</button>
                     <button onclick="window.print()" class="h-8 px-3 flex items-center bg-orange-500 text-white rounded font-bold text-[10px] uppercase hover:bg-orange-600 gap-1">🖨️ PDF</button>
                     <button type="submit" form="formResult" class="h-8 px-4 flex items-center bg-blue-600 text-white rounded font-bold text-[10px] uppercase hover:bg-blue-700 gap-1 shadow-sm">💾 SIMPAN</button>
                 </div>
                 <a href="<?= $nextUrl ?>" class="h-10 px-4 flex items-center justify-center rounded-r-lg font-bold text-xs uppercase transition border-l border-slate-600 <?= $nextClass ?>">NEXT &raquo;</a>
             </div>
         </div>
+        
+        <!-- Form Upload TXT Hidden -->
+        <div id="txtUploadForm" class="hidden w-full border-t pt-3 mt-1 bg-emerald-50 p-3 rounded-lg border border-emerald-200">
+            <label class="block text-xs font-bold text-emerald-700 mb-2">Import Hasil Lomba dari File .TXT Stopwatch (Fallback)</label>
+            <form method="POST" enctype="multipart/form-data" class="flex gap-2 items-center">
+                <input type="file" name="txt_backup" accept=".txt" required class="text-xs w-full p-1 bg-white border border-emerald-200 rounded">
+                <button type="submit" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-1.5 rounded font-bold text-xs whitespace-nowrap shadow-sm">Upload & Sinkron</button>
+            </form>
+        </div>
+
         <div class="w-full border-t pt-3 mt-1">
             <label for="driveLink" class="block text-xs font-bold text-blue-500 mb-1 text-center">🔗 Link GDrive / Web (Untuk QR Code di PDF):</label>
             <input type="text" id="driveLink" class="w-full p-2 border border-dashed border-blue-300 rounded bg-blue-50 text-center text-xs" placeholder="Tempel link file hasil di sini... (Auto Save)">

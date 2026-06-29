@@ -84,3 +84,35 @@ function writeLog($pdo, $userId, $action, $targetId, $desc) {
         // Silent fail: Jangan sampai error log mengganggu fungsi utama aplikasi
     }
 }
+/**
+ * Fungsi untuk upload dan compress gambar (HD dengan ukuran optimal)
+ */
+function compressImage($source, $destination, $quality = 80, $maxSizeMb = 3) {
+    // Cek batas ukuran
+    $filesize = filesize($source);
+    if ($filesize > ($maxSizeMb * 1024 * 1024)) {
+        return false; // File terlalu besar
+    }
+
+    $info = getimagesize($source);
+    if (!$info) return false;
+
+    if ($info['mime'] == 'image/jpeg') {
+        $image = imagecreatefromjpeg($source);
+        imagejpeg($image, $destination, $quality);
+        imagedestroy($image);
+    } elseif ($info['mime'] == 'image/png') {
+        $image = imagecreatefrompng($source);
+        // Pertahankan transparansi PNG
+        imageAlphaBlending($image, true);
+        imageSaveAlpha($image, true);
+        // Konversi kualitas (0-9 untuk PNG)
+        $pngQuality = round((100 - $quality) / 10);
+        imagepng($image, $destination, $pngQuality);
+        imagedestroy($image);
+    } else {
+        // Jika format lain (seperti webp, gif), pindahkan saja tanpa kompresi
+        move_uploaded_file($source, $destination);
+    }
+    return true;
+}

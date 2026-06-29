@@ -523,7 +523,8 @@ if (isset($_GET['action'])) {
             const isChecked = document.getElementById("chk"+i).checked;
             
             if(isChecked || sw.db_entry_id) {
-                txt += `Lintasan ${laneLabel} [${nm}]: ${tm}\n`;
+                // Tambahkan |ID:xxxx| agar mudah di-parse oleh sistem fallback TXT
+                txt += `Lintasan ${laneLabel} [${nm}] |ID:${sw.db_entry_id || ''}|: ${tm}\n`;
                 if(sw.db_entry_id) {
                     updateData.push({ id: sw.db_entry_id, time: tm });
                 }

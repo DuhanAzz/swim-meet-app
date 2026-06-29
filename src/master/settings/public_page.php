@@ -71,8 +71,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['slide_image'])) {
             // Validasi ekstensi
             if(in_array(strtolower($ext), ['jpg', 'jpeg', 'png', 'webp'])) {
                 $fileName = "slide_" . time() . "_" . rand(100,999) . "." . $ext;
-                // Pindahkan file
-                if(move_uploaded_file($_FILES['slide_image']['tmp_name'], $targetDir . $fileName)) {
+                // Pindahkan file dengan kompresi & limit 3MB
+                if(compressImage($_FILES['slide_image']['tmp_name'], $targetDir . $fileName, 80, 3)) {
                     // Simpan path relatif ke DB
                     $pdo->prepare("INSERT INTO hero_slides (image_path) VALUES (?)")->execute(["img/hero/" . $fileName]);
                     $_SESSION['swal_type'] = 'success'; $_SESSION['swal_msg'] = 'Slide baru berhasil ditambahkan!';

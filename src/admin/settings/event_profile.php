@@ -115,14 +115,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         if (!empty($_FILES['logo_left']['name'])) {
             $ext = pathinfo($_FILES['logo_left']['name'], PATHINFO_EXTENSION);
             $fn = "LOGO_L_" . $eventId . "_" . time() . "." . $ext;
-            if(move_uploaded_file($_FILES['logo_left']['tmp_name'], $targetDir . $fn)) {
+            if(compressImage($_FILES['logo_left']['tmp_name'], $targetDir . $fn, 80, 3)) {
                 $pdo->prepare("UPDATE events SET logo_left = ? WHERE id = ?")->execute(["/uploads/logos/" . $fn, $eventId]);
             }
         }
         if (!empty($_FILES['logo_right']['name'])) {
             $ext = pathinfo($_FILES['logo_right']['name'], PATHINFO_EXTENSION);
             $fn = "LOGO_R_" . $eventId . "_" . time() . "." . $ext;
-            if(move_uploaded_file($_FILES['logo_right']['tmp_name'], $targetDir . $fn)) {
+            if(compressImage($_FILES['logo_right']['tmp_name'], $targetDir . $fn, 80, 3)) {
                 $pdo->prepare("UPDATE events SET logo_right = ? WHERE id = ?")->execute(["/uploads/logos/" . $fn, $eventId]);
             }
         }
@@ -135,7 +135,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 if ($_FILES['sponsor_files']['tmp_name'][$i] != "") {
                     $ext = pathinfo($_FILES['sponsor_files']['name'][$i], PATHINFO_EXTENSION);
                     $newFileName = "SPONSOR_" . $eventId . "_" . time() . "_$i." . $ext;
-                    if(move_uploaded_file($_FILES['sponsor_files']['tmp_name'][$i], $targetDir . $newFileName)) {
+                    if(compressImage($_FILES['sponsor_files']['tmp_name'][$i], $targetDir . $newFileName, 80, 3)) {
                         $stmtSponsor->execute([$eventId, "/uploads/logos/" . $newFileName]);
                     }
                 }
@@ -146,7 +146,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         if (!empty($_FILES['poster_file']['name'])) {
             $ext = pathinfo($_FILES['poster_file']['name'], PATHINFO_EXTENSION);
             $fn = "POSTER_" . $eventId . "_" . time() . "." . $ext;
-            if(move_uploaded_file($_FILES['poster_file']['tmp_name'], $posterDir . $fn)) {
+            if(compressImage($_FILES['poster_file']['tmp_name'], $posterDir . $fn, 80, 3)) {
                 $pdo->prepare("UPDATE events SET poster_image = ? WHERE id = ?")->execute(["/uploads/posters/" . $fn, $eventId]);
             }
         }
