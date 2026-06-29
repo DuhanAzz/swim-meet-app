@@ -248,6 +248,28 @@ try {
 $heats = [];
 foreach ($raw_data as $row) { $heats[$row['heat']][$row['lane']] = $row; }
 
+// --- LOGIKA EXPORT TXT ---
+if (isset($_GET['export_txt'])) {
+    header('Content-Type: text/plain');
+    header('Content-Disposition: attachment; filename="Backup_Acara_' . preg_replace('/[^a-zA-Z0-9]/', '_', $nomor_acara) . '.txt"');
+    
+    echo "HASIL LOMBA: " . $judul_tengah . "\r\n";
+    echo "ACARA: " . $nomor_acara . "\r\n\r\n";
+    
+    foreach($heats as $heatNo => $lanesData) {
+        echo "HEAT " . $heatNo . "\r\n";
+        for($ln = 1; $ln <= $total_lintasan; $ln++) {
+            $s = $lanesData[$ln] ?? null;
+            if ($s) {
+                $timeStr = !empty($s['final_time']) ? $s['final_time'] : "00:00.00";
+                echo "Lintasan " . $ln . " [" . $s['nama_atlet'] . "] |ID:" . $s['id'] . "|: " . $timeStr . "\r\n";
+            }
+        }
+        echo "\r\n";
+    }
+    exit;
+}
+
 $groupedResults = [];
 if ($currentMode === 'overall') {
     $groupTitle = "OPEN KATEGORI";
@@ -392,8 +414,9 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                 <a href="<?= $prevUrl ?>" class="h-10 px-4 flex items-center justify-center rounded-l-lg font-bold text-xs uppercase transition border-r border-slate-600 <?= $prevClass ?>">&laquo; PREV</a>
                 <div class="flex bg-slate-100 rounded-none p-1 gap-1">
                     <a href="index.php" class="h-8 px-3 flex items-center bg-white border border-slate-300 rounded text-slate-600 font-bold text-[10px] uppercase hover:bg-slate-50">Menu</a>
-                    <button type="button" onclick="document.getElementById('txtUploadForm').classList.toggle('hidden')" class="h-8 px-3 flex items-center bg-emerald-500 text-white rounded font-bold text-[10px] uppercase hover:bg-emerald-600 gap-1" title="Import TXT Backup dari Stopwatch">📝 TXT</button>
-                    <button onclick="window.print()" class="h-8 px-3 flex items-center bg-orange-500 text-white rounded font-bold text-[10px] uppercase hover:bg-orange-600 gap-1">🖨️ PDF</button>
+                    <a href="input_result.php?category_id=<?= $cat_id ?>&export_txt=1" class="h-8 px-3 flex items-center bg-teal-500 text-white rounded font-bold text-[10px] uppercase hover:bg-teal-600 gap-1" title="Download Data ke TXT Format Stopwatch">📤 EXPORT TXT</a>
+                    <button type="button" onclick="document.getElementById('txtUploadForm').classList.toggle('hidden')" class="h-8 px-3 flex items-center bg-emerald-500 text-white rounded font-bold text-[10px] uppercase hover:bg-emerald-600 gap-1" title="Import TXT Backup dari Stopwatch">📝 IMPORT TXT</button>
+                    <button type="button" onclick="window.print()" class="h-8 px-3 flex items-center bg-orange-500 text-white rounded font-bold text-[10px] uppercase hover:bg-orange-600 gap-1">🖨️ PDF</button>
                     <button type="submit" form="formResult" class="h-8 px-4 flex items-center bg-blue-600 text-white rounded font-bold text-[10px] uppercase hover:bg-blue-700 gap-1 shadow-sm">💾 SIMPAN</button>
                 </div>
                 <a href="<?= $nextUrl ?>" class="h-10 px-4 flex items-center justify-center rounded-r-lg font-bold text-xs uppercase transition border-l border-slate-600 <?= $nextClass ?>">NEXT &raquo;</a>
