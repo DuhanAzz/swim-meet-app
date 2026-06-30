@@ -108,6 +108,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $pdo->beginTransaction();
 
         // 1. Proses Import TXT Stopwatch Backup
+        $txtImportSuccess = false;
         if (isset($_FILES['txt_backup']) && $_FILES['txt_backup']['error'] === UPLOAD_ERR_OK) {
             $fileTmp = $_FILES['txt_backup']['tmp_name'];
             $fileContent = file_get_contents($fileTmp);
@@ -127,16 +128,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 }
             }
-            $pdo->commit();
-            $msg_success = "Import TXT Berhasil! $updateCount waktu atlet telah diperbarui.";
-            // Refresh halaman agar form di bawah tidak tereksekusi bersamaan
-            header("Location: input_result.php?category_id=" . $cat_id . "&msg=" . urlencode($msg_success));
-            exit;
+            $txtImportSuccess = true;
+            $msg_success = "Import TXT Berhasil! $updateCount waktu atlet telah diperbarui. Ranking telah dikalkulasi ulang.";
         }
 
         // 2. Proses Input Manual Biasa
         $entries = $_POST['entries'] ?? [];
-        $rankModePost = $_POST['rank_mode_input'] ?? 'split'; 
+        $rankModePost = $_POST['rank_mode_input'] ?? $_SESSION['ranking_mode_' . $cat_id] ?? 'split'; 
         $_SESSION['ranking_mode_' . $cat_id] = $rankModePost;
         $currentMode = $rankModePost;
 
@@ -184,7 +182,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $stmtRank->execute([$rank, $s['id']]); $prevMs = $s['ms']; $counter++;
             }
             foreach ($invalid as $s) { $stmtRank->execute([NULL, $s['id']]); }
-            $msg_success = "Data disimpan! Ranking GABUNGAN (Final).";
+            if (!$txtImportSuccess) {
+                $msg_success = "Data disimpan! Ranking GABUNGAN (Final).";
+            }
         } else {
             $groupedSwimmers = [];
             foreach ($allSwimmers as $s) {
@@ -206,7 +206,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 foreach ($invalid as $s) { $stmtRank->execute([NULL, $s['id']]); }
             }
-            $msg_success = "Data disimpan! Ranking SPLIT KU (Final).";
+            if (!$txtImportSuccess) {
+                $msg_success = "Data disimpan! Ranking SPLIT KU (Final).";
+            }
         }
         $pdo->commit();
     } catch (Exception $e) { $pdo->rollBack(); $msg_error = "Error: " . $e->getMessage(); }
