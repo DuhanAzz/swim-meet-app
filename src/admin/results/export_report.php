@@ -180,21 +180,30 @@ uksort($groupedResults, function($a, $b) {
 
 $finalGroups = [];
 foreach ($groupedResults as $groupKey => &$groupData) {
+    if (!isset($groupData['rows']) || !is_array($groupData['rows'])) {
+        $groupData['rows'] = [];
+    }
+
     usort($groupData['rows'], function($a, $b) {
-        if ($a['ms_sort'] == $b['ms_sort']) return 0;
-        return ($a['ms_sort'] < $b['ms_sort']) ? -1 : 1;
+        $msA = isset($a['ms_sort']) ? $a['ms_sort'] : 9999999999;
+        $msB = isset($b['ms_sort']) ? $b['ms_sort'] : 9999999999;
+        if ($msA == $msB) return 0;
+        return ($msA < $msB) ? -1 : 1;
     });
     
     $rank = 1; $real_rank = 1; $prev_time = null;
     $filteredRows = [];
     foreach ($groupData['rows'] as &$atlet) {
-        $isDQ = ($atlet['is_dq_final'] == 1);
-        $isValid = (!$isDQ && !empty($atlet['time_final']) && $atlet['time_final'] != 'NT');
+        $isDQ = (isset($atlet['is_dq_final']) && $atlet['is_dq_final'] == 1);
+        $timeFinal = isset($atlet['time_final']) ? $atlet['time_final'] : '';
+        $msSort = isset($atlet['ms_sort']) ? $atlet['ms_sort'] : 9999999999;
+        
+        $isValid = (!$isDQ && !empty($timeFinal) && $timeFinal != 'NT');
         $atlet['dynamic_rank'] = null;
         if ($isValid) {
-            if ($atlet['ms_sort'] !== $prev_time) { $real_rank = $rank; }
+            if ($msSort !== $prev_time) { $real_rank = $rank; }
             $atlet['dynamic_rank'] = $real_rank;
-            $prev_time = $atlet['ms_sort'];
+            $prev_time = $msSort;
             $rank++;
         }
         
@@ -208,7 +217,7 @@ foreach ($groupedResults as $groupKey => &$groupData) {
     
     if (count($filteredRows) > 0) {
         $finalGroups[$groupKey] = [
-            'meta' => $groupData['meta'],
+            'meta' => $groupData['meta'] ?? [],
             'rows' => $filteredRows
         ];
     }
