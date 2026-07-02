@@ -37,7 +37,14 @@ if ($eventId > 0) {
         $stats['atlet'] = $stmtAtlet->fetchColumn();
 
         // C. Total Klub/Sekolah (Unik)
-        $stmtClub = $pdo->prepare("SELECT COUNT(DISTINCT club_id) FROM event_entries WHERE event_id = ?");
+        $partType = strtolower($event['participation_type'] ?? 'club');
+        $isSchool = (strpos($partType, 'school') !== false || strpos($partType, 'sekolah') !== false);
+        
+        if ($isSchool) {
+            $stmtClub = $pdo->prepare("SELECT COUNT(DISTINCT s.asal_sekolah) FROM event_entries ee JOIN swimmers s ON ee.swimmer_id = s.id WHERE ee.event_id = ? AND s.asal_sekolah != ''");
+        } else {
+            $stmtClub = $pdo->prepare("SELECT COUNT(DISTINCT club_id) FROM event_entries WHERE event_id = ?");
+        }
         $stmtClub->execute([$eventId]);
         $stats['clubs'] = $stmtClub->fetchColumn();
 
@@ -59,15 +66,28 @@ $chartLabels = [];
 $chartValues = [];
 
 if ($eventId > 0) {
-    $sqlChart = "
-        SELECT u.nama_lengkap as nama_klub, COUNT(DISTINCT ee.swimmer_id) as jumlah_atlet
-        FROM event_entries ee
-        JOIN users u ON ee.club_id = u.id
-        WHERE ee.event_id = ?
-        GROUP BY u.id
-        ORDER BY jumlah_atlet DESC
-        LIMIT 5
-    ";
+    if ($isSchool) {
+        $sqlChart = "
+            SELECT s.asal_sekolah as nama_klub, COUNT(DISTINCT ee.swimmer_id) as jumlah_atlet
+            FROM event_entries ee
+            JOIN swimmers s ON ee.swimmer_id = s.id
+            WHERE ee.event_id = ? AND s.asal_sekolah != ''
+            GROUP BY s.asal_sekolah
+            ORDER BY jumlah_atlet DESC
+            LIMIT 5
+        ";
+    } else {
+        $sqlChart = "
+            SELECT c.nama_klub as nama_klub, COUNT(DISTINCT ee.swimmer_id) as jumlah_atlet
+            FROM event_entries ee
+            JOIN clubs c ON ee.club_id = c.id
+            WHERE ee.event_id = ?
+            GROUP BY c.id
+            ORDER BY jumlah_atlet DESC
+            LIMIT 5
+        ";
+    }
+    
     try {
         $stmtChart = $pdo->prepare($sqlChart);
         $stmtChart->execute([$eventId]);
