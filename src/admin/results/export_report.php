@@ -123,7 +123,50 @@ foreach ($results as $r) {
     $r['team_name'] = $teamName;
     
     $groupKey = $judulAcara . " (" . $realKU . ")";
-    $groupedResults[$groupKey][] = $r;
+    
+    if (!isset($groupedResults[$groupKey])) {
+        $poolLabel = (stripos($event['pool_type']??'', '25m') !== false || stripos($event['pool_type']??'', 'SCM') !== false) ? 'SCM' : 'LCM';
+        
+        $cleanStroke = trim(str_ireplace(['Gaya', 'GAYA'], '', $r['stroke']));
+        $genderLabel = (in_array($r['jenis_kelamin'], ['L','Male','Man'])) ? 'PUTRA' : 'PUTRI';
+        
+        $judulParts = [];
+        if ($cfg_event_name) $judulParts[] = $r['distance']."M ".strtoupper($cleanStroke); 
+        if ($cfg_group) $judulParts[] = $realKU; 
+        if ($cfg_gender) $judulParts[] = strtoupper($genderLabel); 
+        if ($cfg_pool) $judulParts[] = $poolLabel; 
+        if ($cfg_round) $judulParts[] = "FINAL";
+        
+        // Fetch records if enabled
+        $records = [];
+        if ($cfg_show_records) {
+            $stmtRec = $pdo->prepare("SELECT record_type, holder_name, record_time, location, record_year FROM master_records WHERE distance = ? AND stroke = ? AND jenis_kelamin = ? AND record_type = 'rekornas' ORDER BY id ASC");
+            $stmtRec->execute([$r['distance'], $r['stroke'], $r['jenis_kelamin']]);
+            $records = array_merge($records, $stmtRec->fetchAll(PDO::FETCH_ASSOC));
+
+            if (!empty($event['record_package_id'])) {
+                $stmtPkg = $pdo->prepare("
+                    SELECT 'rekor_event' as record_type, ehr.holder_name, ehr.record_time, e.event_city as location, YEAR(e.event_date_start) as record_year 
+                    FROM event_historical_records ehr 
+                    LEFT JOIN events e ON ehr.source_event_id = e.id
+                    WHERE ehr.package_id = ? AND ehr.distance = ? AND ehr.stroke = ? AND ehr.jenis_kelamin = ? AND ehr.age_group = ?
+                ");
+                $stmtPkg->execute([$event['record_package_id'], $r['distance'], $r['stroke'], $r['jenis_kelamin'], $r['event_age_group']]);
+                $records = array_merge($records, $stmtPkg->fetchAll(PDO::FETCH_ASSOC));
+            }
+        }
+        
+        $groupedResults[$groupKey] = [
+            'meta' => [
+                'nomor' => $r['event_number'],
+                'judul' => implode(" - ", $judulParts),
+                'records' => $records
+            ],
+            'rows' => []
+        ];
+    }
+    
+    $groupedResults[$groupKey]['rows'][] = $r;
 }
 
 uksort($groupedResults, function($a, $b) {
