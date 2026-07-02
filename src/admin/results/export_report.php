@@ -15,6 +15,24 @@ $filter_limit = isset($_GET['limit']) ? $_GET['limit'] : 'ALL';
 $rank_mode = isset($_GET['rank_mode']) ? $_GET['rank_mode'] : 'OVERALL'; 
 $format = isset($_GET['format']) ? $_GET['format'] : 'pdf'; // pdf, excel, csv
 
+// Config Panel Options
+$cfg_event_no = isset($_GET['cfg_event_no']) && $_GET['cfg_event_no'] == 1;
+$cfg_date = isset($_GET['cfg_date']) && $_GET['cfg_date'] == 1;
+$cfg_event_name = isset($_GET['cfg_event_name']) && $_GET['cfg_event_name'] == 1;
+$cfg_group = isset($_GET['cfg_group']) && $_GET['cfg_group'] == 1;
+$cfg_gender = isset($_GET['cfg_gender']) && $_GET['cfg_gender'] == 1;
+$cfg_pool = isset($_GET['cfg_pool']) && $_GET['cfg_pool'] == 1;
+$cfg_round = isset($_GET['cfg_round']) && $_GET['cfg_round'] == 1;
+$cfg_show_records = isset($_GET['cfg_show_records']) && $_GET['cfg_show_records'] == 1;
+
+$col_uid = isset($_GET['col_uid']) && $_GET['col_uid'] == 1;
+$col_lahir = isset($_GET['col_lahir']) && $_GET['col_lahir'] == 1;
+$col_ku = isset($_GET['col_ku']) && $_GET['col_ku'] == 1;
+$col_tim = isset($_GET['col_tim']) && $_GET['col_tim'] == 1;
+$col_waktu = isset($_GET['col_waktu']) && $_GET['col_waktu'] == 1;
+$col_hasil = isset($_GET['col_hasil']) && $_GET['col_hasil'] == 1;
+$col_ket = isset($_GET['col_ket']) && $_GET['col_ket'] == 1;
+
 if ($event_id === 0) die("Event ID invalid.");
 
 // 1. Dapatkan detail event
