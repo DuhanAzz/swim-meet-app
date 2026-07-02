@@ -129,8 +129,40 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                             <div class="text-xs font-black uppercase py-2 rounded-lg peer-checked:bg-white peer-checked:text-emerald-600 peer-checked:shadow-sm transition text-slate-500">GABUNGAN / OVERALL</div>
                         </label>
                     </div>
-                    <p class="text-[10px] text-slate-400 mt-1 mt-2">Mempengaruhi hasil akhir khusus nomor Lomba Gabungan.</p>
+                    <p class="text-[10px] text-slate-400 mt-2">Mempengaruhi hasil akhir khusus nomor Lomba Gabungan.</p>
                 </div>
+                
+                <div class="md:col-span-2 lg:col-span-3 border-t border-slate-100 mt-2 pt-4 grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <!-- Komponen Judul (PDF/Excel) -->
+                    <div>
+                        <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5">A. Komponen Judul Acara (Khusus Laporan)</label>
+                        <div class="grid grid-cols-2 gap-x-2 gap-y-1.5 text-xs font-bold text-slate-600">
+                            <label class="flex items-center gap-2 cursor-pointer select-none"><input type="checkbox" id="cfg_event_no" class="rounded border-slate-300 text-blue-600 cfg-cb" checked> Nomor Acara</label>
+                            <label class="flex items-center gap-2 cursor-pointer select-none"><input type="checkbox" id="cfg_date" class="rounded border-slate-300 text-blue-600 cfg-cb" checked> Tanggal & Jam</label>
+                            <label class="flex items-center gap-2 cursor-pointer select-none"><input type="checkbox" id="cfg_event_name" class="rounded border-slate-300 text-blue-600 cfg-cb" checked> Jarak & Gaya</label>
+                            <label class="flex items-center gap-2 cursor-pointer select-none"><input type="checkbox" id="cfg_group" class="rounded border-slate-300 text-blue-600 cfg-cb" checked> Kelompok Umur</label>
+                            <label class="flex items-center gap-2 cursor-pointer select-none"><input type="checkbox" id="cfg_gender" class="rounded border-slate-300 text-blue-600 cfg-cb" checked> Jenis Kelamin</label>
+                            <label class="flex items-center gap-2 cursor-pointer select-none"><input type="checkbox" id="cfg_pool" class="rounded border-slate-300 text-blue-600 cfg-cb" checked> Tipe Kolam</label>
+                            <label class="flex items-center gap-2 cursor-pointer select-none"><input type="checkbox" id="cfg_round" class="rounded border-slate-300 text-blue-600 cfg-cb" checked> Babak (FINAL)</label>
+                            <label class="flex items-center gap-2 cursor-pointer select-none text-amber-700 font-extrabold"><input type="checkbox" id="cfg_show_records" class="rounded border-amber-300 text-amber-600 cfg-cb" checked> Tampilkan Rekor</label>
+                        </div>
+                    </div>
+                    
+                    <!-- Kolom Tabel Atlet -->
+                    <div>
+                        <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5">B. Kolom Tabel Data</label>
+                        <div class="grid grid-cols-2 gap-x-2 gap-y-1.5 text-xs font-bold text-slate-600">
+                            <label class="flex items-center gap-2 cursor-pointer select-none"><input type="checkbox" id="col_uid" class="rounded border-slate-300 text-blue-600 cfg-cb" checked> Kolom UID</label>
+                            <label class="flex items-center gap-2 cursor-pointer select-none"><input type="checkbox" id="col_lahir" class="rounded border-slate-300 text-blue-600 cfg-cb" checked> Tahun Lahir</label>
+                            <label class="flex items-center gap-2 cursor-pointer select-none"><input type="checkbox" id="col_ku" class="rounded border-slate-300 text-blue-600 cfg-cb" checked> Kolom KU</label>
+                            <label class="flex items-center gap-2 cursor-pointer select-none"><input type="checkbox" id="col_tim" class="rounded border-slate-300 text-blue-600 cfg-cb" checked> TIM / Sekolah</label>
+                            <label class="flex items-center gap-2 cursor-pointer select-none"><input type="checkbox" id="col_waktu" class="rounded border-slate-300 text-blue-600 cfg-cb" checked> Waktu Entry</label>
+                            <label class="flex items-center gap-2 cursor-pointer select-none"><input type="checkbox" id="col_hasil" class="rounded border-slate-300 text-blue-600 cfg-cb" checked> Waktu Final</label>
+                            <label class="flex items-center gap-2 cursor-pointer select-none"><input type="checkbox" id="col_ket" class="rounded border-slate-300 text-blue-600 cfg-cb" checked> Keterangan DQ</label>
+                        </div>
+                    </div>
+                </div>
+
             </div>
         </form>
     </div>
@@ -187,9 +219,17 @@ function downloadExport(type) {
     let baseUrl = type === 'canva' ? 'export_canva.php' : 'export_report.php';
     let params = `?event_id=${eventId}&ku=${encodeURIComponent(ku)}&team=${encodeURIComponent(team)}&limit=${limit}&rank_mode=${rankMode}`;
     
+    // Konfigurasi Checkbox Khusus Laporan
     if (type === 'report') {
         const format = document.getElementById('reportFormat').value;
         params += `&format=${format}`;
+        
+        const cfgs = ['cfg_event_no', 'cfg_date', 'cfg_event_name', 'cfg_group', 'cfg_gender', 'cfg_pool', 'cfg_round', 'cfg_show_records',
+                      'col_uid', 'col_lahir', 'col_ku', 'col_tim', 'col_waktu', 'col_hasil', 'col_ket'];
+        cfgs.forEach(id => {
+            const el = document.getElementById(id);
+            if (el && el.checked) params += `&${id}=1`;
+        });
     }
     
     // Buka di tab baru agar tidak mengganggu state halaman ini
