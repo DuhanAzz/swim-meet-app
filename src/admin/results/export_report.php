@@ -62,7 +62,7 @@ if (!function_exists('timeToMs')) {
 
 // 3. Tarik data entries
 $sql = "SELECT en.event_number, en.distance, en.stroke, en.jenis_kelamin, en.age_group as event_age_group,
-               s.nama_atlet, c.nama_klub, s.asal_sekolah, s.tanggal_lahir,
+               s.uid, s.nama_atlet, c.nama_klub, s.asal_sekolah, s.tanggal_lahir,
                ee.entry_time,
                es.time_final, es.is_dq_final, es.dq_reason_final
         FROM event_numbers en
@@ -163,7 +163,7 @@ if ($format === 'csv') {
     header('Expires: 0');
 
     $output = fopen('php://output', 'w');
-    fputcsv($output, ['Acara_KU', 'Rank', 'Nama_Atlet', 'Klub_Sekolah', 'Waktu_Daftar', 'Waktu_Final', 'Keterangan']);
+    fputcsv($output, ['Acara_KU', 'Rank', 'UID', 'Nama_Atlet', 'Klub_Sekolah', 'Waktu_Daftar', 'Waktu_Final', 'Keterangan']);
 
     foreach ($finalGroups as $groupName => $rows) {
         foreach ($rows as $atlet) {
@@ -172,6 +172,7 @@ if ($format === 'csv') {
             fputcsv($output, [
                 $groupName,
                 $rankLabel,
+                $atlet['uid'],
                 strtoupper($atlet['nama_atlet']),
                 strtoupper($atlet['team_name']),
                 $atlet['entry_time'] ?: '-',
@@ -203,6 +204,7 @@ if ($format === 'csv') {
         
         echo '<tr style="background-color:#f1f5f9; font-weight:bold;">';
         echo '<td>Rank</td>';
+        echo '<td>UID</td>';
         echo '<td>Nama Atlet</td>';
         echo '<td>Klub / Sekolah</td>';
         echo '<td>Kelompok Umur</td>';
@@ -217,6 +219,7 @@ if ($format === 'csv') {
             
             echo '<tr>';
             echo '<td>' . $rankLabel . '</td>';
+            echo '<td>' . htmlspecialchars($atlet['uid']) . '</td>';
             echo '<td>' . strtoupper($atlet['nama_atlet']) . '</td>';
             echo '<td>' . strtoupper($atlet['team_name']) . '</td>';
             echo '<td>' . strtoupper($atlet['real_ku']) . '</td>';
@@ -225,7 +228,7 @@ if ($format === 'csv') {
             echo '<td>' . $ket . '</td>';
             echo '</tr>';
         }
-        echo '<tr><th colspan="7"></th></tr>'; // Spasi antar acara
+        echo '<tr><th colspan="8"></th></tr>'; // Spasi antar acara
     }
     echo '</table>';
     exit;
@@ -277,11 +280,12 @@ if ($format === 'csv') {
                 <table>
                     <thead>
                         <tr>
-                            <td colspan="6" class="acara-header"><?= htmlspecialchars($groupName) ?></td>
+                            <td colspan="7" class="acara-header"><?= htmlspecialchars($groupName) ?></td>
                         </tr>
                         <tr>
                             <th width="5%" class="text-center">Rank</th>
-                            <th width="35%">Nama Atlet</th>
+                            <th width="10%" class="text-center">UID</th>
+                            <th width="25%">Nama Atlet</th>
                             <th width="25%">Tim / Sekolah</th>
                             <th width="10%" class="text-center">Entry</th>
                             <th width="10%" class="text-center">Final</th>
@@ -297,6 +301,7 @@ if ($format === 'csv') {
                             ?>
                             <tr>
                                 <td class="text-center <?= $isDQ ? 'text-red' : '' ?>"><?= $rankLabel ?></td>
+                                <td class="text-center"><?= htmlspecialchars($atlet['uid']) ?></td>
                                 <td><?= htmlspecialchars(strtoupper($atlet['nama_atlet'])) ?></td>
                                 <td><?= htmlspecialchars(strtoupper($atlet['team_name'])) ?></td>
                                 <td class="text-center"><?= htmlspecialchars($atlet['entry_time'] ?: '-') ?></td>

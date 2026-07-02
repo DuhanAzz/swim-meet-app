@@ -57,7 +57,7 @@ if (!function_exists('timeToMs')) {
 
 // 3. Tarik data entries
 $sql = "SELECT en.event_number, en.distance, en.stroke, en.jenis_kelamin, en.age_group as event_age_group,
-               s.nama_atlet, c.nama_klub, s.asal_sekolah, s.tanggal_lahir,
+               s.uid, s.nama_atlet, c.nama_klub, s.asal_sekolah, s.tanggal_lahir,
                es.time_final, es.is_dq_final, es.dq_reason_final
         FROM event_numbers en
         JOIN event_entries ee ON en.id = ee.category_id
@@ -148,6 +148,7 @@ foreach ($groupedResults as $groupName => &$rows) {
         }
         
         $finalOutput[] = [
+            'UID' => $atlet['uid'],
             'Nama_Atlet' => strtoupper($atlet['nama_atlet']),
             'Klub_Sekolah' => strtoupper($atlet['team_name']),
             'Nomor_Acara' => $atlet['event_number'],
@@ -170,7 +171,7 @@ header('Pragma: no-cache');
 header('Expires: 0');
 
 $output = fopen('php://output', 'w');
-fputcsv($output, ['Nama_Atlet', 'Klub_Sekolah', 'Nomor_Acara', 'Perlombaan', 'Kelompok_Umur', 'Gender', 'Waktu_Final', 'Peringkat']);
+fputcsv($output, ['UID', 'Nama_Atlet', 'Klub_Sekolah', 'Nomor_Acara', 'Perlombaan', 'Kelompok_Umur', 'Gender', 'Waktu_Final', 'Peringkat']);
 
 foreach ($finalOutput as $row) {
     fputcsv($output, $row);

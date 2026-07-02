@@ -10,8 +10,15 @@ if (!isset($_SESSION['role']) || ($_SESSION['role'] !== 'admin' && $_SESSION['ro
 }
 
 // 1. Ambil Semua Event Aktif
-$stmtEvents = $pdo->query("SELECT id, event_name, event_date_start, participation_type FROM events ORDER BY id DESC");
-$events = $stmtEvents->fetchAll(PDO::FETCH_ASSOC);
+if ($_SESSION['role'] === 'master') {
+    $stmtEvents = $pdo->query("SELECT id, event_name, event_date_start, participation_type FROM events ORDER BY id DESC");
+    $events = $stmtEvents->fetchAll(PDO::FETCH_ASSOC);
+} else {
+    $uid = $_SESSION['user_id'];
+    $stmtEvents = $pdo->prepare("SELECT id, event_name, event_date_start, participation_type FROM events WHERE user_id = ? ORDER BY id DESC");
+    $stmtEvents->execute([$uid]);
+    $events = $stmtEvents->fetchAll(PDO::FETCH_ASSOC);
+}
 
 // 2. Jika ada event yang dipilih via GET (untuk reload dropdowns)
 $selectedEventId = isset($_GET['event_id']) ? (int)$_GET['event_id'] : (isset($events[0]) ? $events[0]['id'] : 0);
