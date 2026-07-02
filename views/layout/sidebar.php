@@ -164,7 +164,7 @@ function isGroupActive($req, $keywords) {
          </div>
 
          <!-- GROUP 3: Hasil & Penghargaan -->
-         <?php $a3Active = isGroupActive($req, ['results/index', 'publish_result', 'medal_tally', 'best_swimmer']); ?>
+         <?php $a3Active = isGroupActive($req, ['results/index', 'publish_result', 'medal_tally', 'best_swimmer', 'manage_exports']); ?>
          <button onclick="toggleSidebarDropdown('dd-hasil')" class="<?= $a3Active ? $dropdownBtnActive : $dropdownBtnBase ?>">
             <div class="flex items-center">
                <span class="w-6 text-xl mr-3 text-center opacity-80">🏆</span>
@@ -177,6 +177,7 @@ function isGroupActive($req, $keywords) {
              <a href="<?= BASE_URL ?>/src/admin/results/publish_result.php" class="<?= (strpos($req,"publish_result")!==false) ? $childActiveLink : $childBaseLink ?>">Publikasi Hasil</a>
              <a href="<?= BASE_URL ?>/src/admin/results/medal_tally.php" class="<?= (strpos($req,"medal_tally")!==false) ? $childActiveLink : $childBaseLink ?>">Rekap Medali</a>
              <a href="<?= BASE_URL ?>/src/admin/results/best_swimmer.php" class="<?= (strpos($req,"best_swimmer")!==false) ? $childActiveLink : $childBaseLink ?>">Perenang Terbaik</a>
+             <a href="<?= BASE_URL ?>/src/admin/results/manage_exports.php" class="<?= (strpos($req,"manage_exports")!==false) ? $childActiveLink : $childBaseLink ?>">Ekspor & Laporan</a>
          </div>
 
       <?php endif; ?>
