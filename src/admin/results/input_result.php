@@ -35,7 +35,7 @@ function getTeamName($row, $type) {
 
 
 // AMBIL MASTER DATA DQ RULES UNTUK POPUP
-$stmtDq = $pdo->query("SELECT * FROM dq_rules ORDER BY CAST(SUBSTRING(pasal, 4) AS UNSIGNED) ASC, pasal ASC");
+$stmtDq = $pdo->query("SELECT * FROM dq_rules ORDER BY id ASC");
 $dq_rules_list = $stmtDq->fetchAll(PDO::FETCH_ASSOC);
 
 $stmtRace = $pdo->prepare("SELECT * FROM event_numbers WHERE id = ?");
