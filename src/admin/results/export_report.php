@@ -179,15 +179,15 @@ uksort($groupedResults, function($a, $b) {
 });
 
 $finalGroups = [];
-foreach ($groupedResults as $groupName => &$rows) {
-    usort($rows, function($a, $b) {
+foreach ($groupedResults as $groupKey => &$groupData) {
+    usort($groupData['rows'], function($a, $b) {
         if ($a['ms_sort'] == $b['ms_sort']) return 0;
         return ($a['ms_sort'] < $b['ms_sort']) ? -1 : 1;
     });
     
     $rank = 1; $real_rank = 1; $prev_time = null;
     $filteredRows = [];
-    foreach ($rows as &$atlet) {
+    foreach ($groupData['rows'] as &$atlet) {
         $isDQ = ($atlet['is_dq_final'] == 1);
         $isValid = (!$isDQ && !empty($atlet['time_final']) && $atlet['time_final'] != 'NT');
         $atlet['dynamic_rank'] = null;
@@ -207,10 +207,13 @@ foreach ($groupedResults as $groupName => &$rows) {
     }
     
     if (count($filteredRows) > 0) {
-        $finalGroups[$groupName] = $filteredRows;
+        $finalGroups[$groupKey] = [
+            'meta' => $groupData['meta'],
+            'rows' => $filteredRows
+        ];
     }
 }
-unset($rows);
+unset($groupData);
 
 // ==============================================================================
 // OUTPUT HANDLING
@@ -224,22 +227,35 @@ if ($format === 'csv') {
     header('Expires: 0');
 
     $output = fopen('php://output', 'w');
-    fputcsv($output, ['Acara_KU', 'Rank', 'UID', 'Nama_Atlet', 'Klub_Sekolah', 'Waktu_Daftar', 'Waktu_Final', 'Keterangan']);
+    
+    // Dynamic CSV Columns
+    $csvHeaders = ['Acara_KU', 'Rank'];
+    if ($col_uid) $csvHeaders[] = 'UID';
+    if ($col_lahir) $csvHeaders[] = 'Tahun_Lahir';
+    if ($col_ku) $csvHeaders[] = 'KU';
+    $csvHeaders[] = 'Nama_Atlet';
+    if ($col_tim) $csvHeaders[] = 'Klub_Sekolah';
+    if ($col_waktu) $csvHeaders[] = 'Waktu_Daftar';
+    if ($col_hasil) $csvHeaders[] = 'Waktu_Final';
+    if ($col_ket) $csvHeaders[] = 'Keterangan';
+    fputcsv($output, $csvHeaders);
 
-    foreach ($finalGroups as $groupName => $rows) {
-        foreach ($rows as $atlet) {
+    foreach ($finalGroups as $groupKey => $groupData) {
+        foreach ($groupData['rows'] as $atlet) {
             $rankLabel = ($atlet['is_dq_final'] == 1) ? 'DQ' : ($atlet['dynamic_rank'] ?: '-');
             $ket = ($atlet['is_dq_final'] == 1) ? ($atlet['dq_reason_final'] ?: 'DQ') : '';
-            fputcsv($output, [
-                $groupName,
-                $rankLabel,
-                $atlet['uid'],
-                strtoupper($atlet['nama_atlet']),
-                strtoupper($atlet['team_name']),
-                $atlet['entry_time'] ?: '-',
-                $atlet['time_final'] ?: '-',
-                $ket
-            ]);
+            
+            $rowArr = [$groupKey, $rankLabel];
+            if ($col_uid) $rowArr[] = $atlet['uid'];
+            if ($col_lahir) $rowArr[] = date('Y', strtotime($atlet['tanggal_lahir']));
+            if ($col_ku) $rowArr[] = strtoupper($atlet['real_ku']);
+            $rowArr[] = strtoupper($atlet['nama_atlet']);
+            if ($col_tim) $rowArr[] = strtoupper($atlet['team_name']);
+            if ($col_waktu) $rowArr[] = $atlet['entry_time'] ?: '-';
+            if ($col_hasil) $rowArr[] = $atlet['time_final'] ?: '-';
+            if ($col_ket) $rowArr[] = $ket;
+            
+            fputcsv($output, $rowArr);
         }
     }
     fclose($output);
@@ -253,43 +269,62 @@ if ($format === 'csv') {
     header("Expires: 0");
     
     echo '<table border="1" style="border-collapse:collapse; text-align:left;">';
-    echo '<tr><th colspan="7" style="font-size:20px; font-weight:bold; text-align:center;">LAPORAN RESMI HASIL PERTANDINGAN</th></tr>';
-    echo '<tr><th colspan="7" style="font-size:16px; font-weight:bold; text-align:center;">' . $eventName . '</th></tr>';
-    echo '<tr><th colspan="7" style="text-align:center;">' . $eventLoc . ' | ' . $eventDateStr . '</th></tr>';
-    echo '<tr><th colspan="7"></th></tr>'; // Spasi
+    echo '<tr><th colspan="8" style="font-size:20px; font-weight:bold; text-align:center;">LAPORAN RESMI HASIL PERTANDINGAN</th></tr>';
+    echo '<tr><th colspan="8" style="font-size:16px; font-weight:bold; text-align:center;">' . $eventName . '</th></tr>';
+    echo '<tr><th colspan="8" style="text-align:center;">' . $eventLoc . ' | ' . $eventDateStr . '</th></tr>';
+    echo '<tr><th colspan="8"></th></tr>'; 
     
-    foreach ($finalGroups as $groupName => $rows) {
+    foreach ($finalGroups as $groupKey => $groupData) {
+        // Render Header Lomba
+        $judulAcara = $groupData['meta']['judul'];
+        if ($cfg_event_no) $judulAcara = "ACARA #" . $groupData['meta']['nomor'] . " - " . $judulAcara;
+        
         echo '<tr style="background-color:#e2e8f0; font-weight:bold;">';
-        echo '<td colspan="7">' . $groupName . '</td>';
+        echo '<td colspan="8">' . $judulAcara . '</td>';
         echo '</tr>';
         
+        // Render Records
+        if ($cfg_show_records && !empty($groupData['meta']['records'])) {
+            foreach ($groupData['meta']['records'] as $rec) {
+                $lbl = strtoupper(str_replace('_', ' ', $rec['record_type']));
+                $loc = !empty($rec['location']) ? $rec['location'] : '-';
+                $yr = !empty($rec['record_year']) ? $rec['record_year'] : '-';
+                echo '<tr style="background-color:#f8fafc; font-size:11px;">';
+                echo '<td colspan="8">REKOR ' . $lbl . ': ' . strtoupper($rec['holder_name']) . ' (' . $loc . ' ' . $yr . ') - ' . $rec['record_time'] . '</td>';
+                echo '</tr>';
+            }
+        }
+        
+        // Render Column Headers
         echo '<tr style="background-color:#f1f5f9; font-weight:bold;">';
         echo '<td>Rank</td>';
-        echo '<td>UID</td>';
+        if ($col_uid) echo '<td>UID</td>';
         echo '<td>Nama Atlet</td>';
-        echo '<td>Klub / Sekolah</td>';
-        echo '<td>Kelompok Umur</td>';
-        echo '<td>Waktu Daftar</td>';
-        echo '<td>Waktu Final</td>';
-        echo '<td>Keterangan</td>';
+        if ($col_lahir) echo '<td>Tahun Lahir</td>';
+        if ($col_ku) echo '<td>Kelompok Umur</td>';
+        if ($col_tim) echo '<td>Klub / Sekolah</td>';
+        if ($col_waktu) echo '<td>Waktu Daftar</td>';
+        if ($col_hasil) echo '<td>Waktu Final</td>';
+        if ($col_ket) echo '<td>Keterangan</td>';
         echo '</tr>';
         
-        foreach ($rows as $atlet) {
+        foreach ($groupData['rows'] as $atlet) {
             $rankLabel = ($atlet['is_dq_final'] == 1) ? 'DQ' : ($atlet['dynamic_rank'] ?: '-');
             $ket = ($atlet['is_dq_final'] == 1) ? ($atlet['dq_reason_final'] ?: 'DQ') : '';
             
             echo '<tr>';
             echo '<td>' . $rankLabel . '</td>';
-            echo '<td>' . htmlspecialchars($atlet['uid']) . '</td>';
+            if ($col_uid) echo '<td>' . htmlspecialchars($atlet['uid']) . '</td>';
             echo '<td>' . strtoupper($atlet['nama_atlet']) . '</td>';
-            echo '<td>' . strtoupper($atlet['team_name']) . '</td>';
-            echo '<td>' . strtoupper($atlet['real_ku']) . '</td>';
-            echo '<td>' . ($atlet['entry_time'] ?: '-') . '</td>';
-            echo '<td>' . ($atlet['time_final'] ?: '-') . '</td>';
-            echo '<td>' . $ket . '</td>';
+            if ($col_lahir) echo '<td>' . date('Y', strtotime($atlet['tanggal_lahir'])) . '</td>';
+            if ($col_ku) echo '<td>' . strtoupper($atlet['real_ku']) . '</td>';
+            if ($col_tim) echo '<td>' . strtoupper($atlet['team_name']) . '</td>';
+            if ($col_waktu) echo '<td>' . ($atlet['entry_time'] ?: '-') . '</td>';
+            if ($col_hasil) echo '<td>' . ($atlet['time_final'] ?: '-') . '</td>';
+            if ($col_ket) echo '<td>' . $ket . '</td>';
             echo '</tr>';
         }
-        echo '<tr><th colspan="8"></th></tr>'; // Spasi antar acara
+        echo '<tr><th colspan="8"></th></tr>';
     }
     echo '</table>';
     exit;
@@ -308,10 +343,21 @@ if ($format === 'csv') {
             .header h1 { font-size: 16px; margin: 0 0 5px 0; text-transform: uppercase; }
             .header h2 { font-size: 14px; margin: 0 0 5px 0; }
             .header p { font-size: 11px; margin: 0; }
+            
             table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
             th, td { border: 1px solid #999; padding: 4px 6px; text-align: left; }
             th { background-color: #f1f5f9; font-weight: bold; }
-            .acara-header { background-color: #e2e8f0; font-weight: bold; font-size: 12px; }
+            
+            .event-header { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 2px solid #000; padding-bottom: 2px; margin-bottom: 5px; margin-top: 15px; }
+            .eh-number { font-size: 14pt; font-weight: 900; line-height: 1; }
+            .eh-date { font-size: 8pt; font-weight: bold; }
+            .eh-title { font-size: 11pt; font-weight: 800; text-transform: uppercase; text-align: center; flex: 1; }
+            
+            .event-records-container { border-bottom: 1px solid #000; padding: 4px 0; margin-bottom: 10px; font-size: 8pt; font-family: 'Arial Narrow', sans-serif; font-weight: bold; line-height: 1.3; }
+            .rec-row { display: flex; justify-content: flex-start; text-transform: uppercase; }
+            .rec-label { width: 140px; font-weight: 900; color: #000; }
+            .rec-details { flex: 1; color: #000; }
+            
             .text-center { text-align: center; }
             .text-red { color: #dc2626; font-weight: bold; }
             @media print {
@@ -337,24 +383,53 @@ if ($format === 'csv') {
         <?php if(empty($finalGroups)): ?>
             <p class="text-center">Tidak ada data yang sesuai dengan filter yang dipilih.</p>
         <?php else: ?>
-            <?php foreach ($finalGroups as $groupName => $rows): ?>
+            <?php foreach ($finalGroups as $groupKey => $groupData): ?>
+                
+                <div class="event-header">
+                    <div style="width: 150px;">
+                        <?php if($cfg_event_no): ?><div class="eh-number">ACARA #<?= $groupData['meta']['nomor'] ?></div><?php endif; ?>
+                        <?php if($cfg_date): ?><div class="eh-date"><?= $eventDateStr ?></div><?php endif; ?>
+                    </div>
+                    <div class="eh-title">
+                        <?= htmlspecialchars($groupData['meta']['judul']) ?>
+                    </div>
+                    <div style="width: 150px; text-align: right;"></div>
+                </div>
+
+                <?php if ($cfg_show_records && !empty($groupData['meta']['records'])): ?>
+                    <div class="event-records-container">
+                        <?php foreach($groupData['meta']['records'] as $rec): 
+                            $lbl = strtoupper(str_replace('_', ' ', $rec['record_type']));
+                            if($lbl === 'REKORNAS') $lbl = 'REKOR NAS';
+                        ?>
+                            <div class="rec-row">
+                                <div class="rec-label"><?= $lbl ?></div>
+                                <div class="rec-details">
+                                    <?= strtoupper($rec['holder_name']) ?> 
+                                    <?= !empty($rec['location']) ? '('.$rec['location'].' '.($rec['record_year']?:'').')' : '' ?> 
+                                    - <?= $rec['record_time'] ?>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                <?php endif; ?>
+
                 <table>
                     <thead>
                         <tr>
-                            <td colspan="7" class="acara-header"><?= htmlspecialchars($groupName) ?></td>
-                        </tr>
-                        <tr>
                             <th width="5%" class="text-center">Rank</th>
-                            <th width="10%" class="text-center">UID</th>
-                            <th width="25%">Nama Atlet</th>
-                            <th width="25%">Tim / Sekolah</th>
-                            <th width="10%" class="text-center">Entry</th>
-                            <th width="10%" class="text-center">Final</th>
-                            <th width="15%">Keterangan</th>
+                            <?php if($col_uid): ?><th width="10%" class="text-center">UID</th><?php endif; ?>
+                            <th>Nama Atlet</th>
+                            <?php if($col_lahir): ?><th width="8%" class="text-center">Lahir</th><?php endif; ?>
+                            <?php if($col_ku): ?><th width="8%" class="text-center">KU</th><?php endif; ?>
+                            <?php if($col_tim): ?><th width="20%">Tim / Sekolah</th><?php endif; ?>
+                            <?php if($col_waktu): ?><th width="8%" class="text-center">Entry</th><?php endif; ?>
+                            <?php if($col_hasil): ?><th width="8%" class="text-center">Final</th><?php endif; ?>
+                            <?php if($col_ket): ?><th width="12%">Ket</th><?php endif; ?>
                         </tr>
                     </thead>
                     <tbody>
-                        <?php foreach ($rows as $atlet): ?>
+                        <?php foreach ($groupData['rows'] as $atlet): ?>
                             <?php 
                                 $isDQ = ($atlet['is_dq_final'] == 1);
                                 $rankLabel = $isDQ ? 'DQ' : ($atlet['dynamic_rank'] ?: '-');
@@ -362,12 +437,14 @@ if ($format === 'csv') {
                             ?>
                             <tr>
                                 <td class="text-center <?= $isDQ ? 'text-red' : '' ?>"><?= $rankLabel ?></td>
-                                <td class="text-center"><?= htmlspecialchars($atlet['uid']) ?></td>
+                                <?php if($col_uid): ?><td class="text-center"><?= htmlspecialchars($atlet['uid']) ?></td><?php endif; ?>
                                 <td><?= htmlspecialchars(strtoupper($atlet['nama_atlet'])) ?></td>
-                                <td><?= htmlspecialchars(strtoupper($atlet['team_name'])) ?></td>
-                                <td class="text-center"><?= htmlspecialchars($atlet['entry_time'] ?: '-') ?></td>
-                                <td class="text-center <?= $isDQ ? 'text-red' : '' ?>"><?= htmlspecialchars($atlet['time_final'] ?: '-') ?></td>
-                                <td class="<?= $isDQ ? 'text-red' : '' ?>"><?= htmlspecialchars($ket) ?></td>
+                                <?php if($col_lahir): ?><td class="text-center"><?= date('Y', strtotime($atlet['tanggal_lahir'])) ?></td><?php endif; ?>
+                                <?php if($col_ku): ?><td class="text-center"><?= htmlspecialchars(strtoupper($atlet['real_ku'])) ?></td><?php endif; ?>
+                                <?php if($col_tim): ?><td><?= htmlspecialchars(strtoupper($atlet['team_name'])) ?></td><?php endif; ?>
+                                <?php if($col_waktu): ?><td class="text-center"><?= htmlspecialchars($atlet['entry_time'] ?: '-') ?></td><?php endif; ?>
+                                <?php if($col_hasil): ?><td class="text-center <?= $isDQ ? 'text-red' : '' ?>"><?= htmlspecialchars($atlet['time_final'] ?: '-') ?></td><?php endif; ?>
+                                <?php if($col_ket): ?><td class="<?= $isDQ ? 'text-red' : '' ?>"><?= htmlspecialchars($ket) ?></td><?php endif; ?>
                             </tr>
                         <?php endforeach; ?>
                     </tbody>
