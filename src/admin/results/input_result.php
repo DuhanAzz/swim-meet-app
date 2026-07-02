@@ -12,8 +12,9 @@ $cat_id = $_GET['category_id'] ?? null;
 if (!$cat_id) { header("Location: index.php"); exit; }
 
 if (isset($_GET['mode'])) { $_SESSION['ranking_mode_' . $cat_id] = $_GET['mode']; }
-$currentMode = $_SESSION['ranking_mode_' . $cat_id] ?? 'split'; 
-
+$stmtMode = $pdo->prepare("SELECT rank_mode FROM event_numbers WHERE id = ?");
+$stmtMode->execute([$cat_id]);
+$currentMode = $stmtMode->fetchColumn() ?: 'split';
 function timeToMs($time) {
     $time = trim($time);
     if (empty($time) || $time == 'NT' || $time == '99:99.99' || $time == '-') return 9999999999; 
@@ -134,8 +135,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         // 2. Proses Input Manual Biasa
         $entries = $_POST['entries'] ?? [];
-        $rankModePost = $_POST['rank_mode_input'] ?? $_SESSION['ranking_mode_' . $cat_id] ?? 'split'; 
-        $_SESSION['ranking_mode_' . $cat_id] = $rankModePost;
+        // Jika dari formResult, gunakan rank_mode_input. Jika dari upload TXT, pertahankan $currentMode dari DB.
+        $rankModePost = $_POST['rank_mode_input'] ?? $currentMode; 
+        
+        $pdo->prepare("UPDATE event_numbers SET rank_mode = ? WHERE id = ?")->execute([$rankModePost, $cat_id]);
         $currentMode = $rankModePost;
 
         $stmtUpd = $pdo->prepare("UPDATE event_seeding SET time_final = ?, is_dq_final = ?, dq_reason_final = ? WHERE entry_id = ?");

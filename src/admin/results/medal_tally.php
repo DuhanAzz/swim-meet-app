@@ -114,7 +114,7 @@ if ($mode == 'athlete' && $filter_gender !== 'all') {
 $whereSql = implode(" AND ", $whereClauses);
 
 $sqlRaw = "SELECT 
-            en.event_number, en.age_group as event_age_group,
+            en.event_number, en.age_group as event_age_group, en.rank_mode,
             s.id as swimmer_id, s.uid, s.nama_atlet, s.jenis_kelamin, s.tanggal_lahir,
             $teamColumn as team_name,
             es.time_final, es.is_dq_final, es.rank_final
@@ -129,20 +129,6 @@ $stmt = $pdo->prepare($sqlRaw);
 $stmt->execute($params);
 $allEntries = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-// 1. Auto-deteksi Split Mode per Event
-$modePerAcara = [];
-foreach($allEntries as $r) {
-    if(!isset($modePerAcara[$r['event_number']])) {
-        $modePerAcara[$r['event_number']] = [
-             'rank1_count' => 0, 
-             'is_gabungan' => (stripos($r['event_age_group'], 'GABUNG') !== false || strpos($r['event_age_group'], ',') !== false || strpos($r['event_age_group'], '/') !== false)
-        ];
-    }
-    if($r['rank_final'] == 1) {
-        $modePerAcara[$r['event_number']]['rank1_count']++;
-    }
-}
-
 // 2. Kelompokkan dan Sortir untuk mendapatkan Ranking Dinamis
 $eventsGrouped = [];
 foreach($allEntries as $r) {
@@ -150,13 +136,10 @@ foreach($allEntries as $r) {
     if ($r['is_dq_final'] == 1) { $r['ms_sort'] = 9999999999 + 100; }
     elseif (!empty($r['time_final']) && $r['time_final'] != 'NT') { $r['ms_sort'] = timeToMs($r['time_final']); }
     
-    $m = $modePerAcara[$r['event_number']];
-    $isSplit = false;
-    if ($m['is_gabungan']) {
-        if ($m['rank1_count'] > 1) { $isSplit = true; } 
-        elseif ($m['rank1_count'] == 1) { $isSplit = false; } 
-        else { $isSplit = true; } // Default Split jika belum disimpan
-    }
+    $isSplit = ($r['rank_mode'] === 'split');
+    
+    $is_gabungan = (stripos($r['event_age_group'], 'GABUNG') !== false || strpos($r['event_age_group'], ',') !== false || strpos($r['event_age_group'], '/') !== false);
+
     
     $groupKey = $isSplit ? getKUNameTally($r['tanggal_lahir'], $eventYear, $available_kus) : 'OVERALL';
     $eventsGrouped[$r['event_number']][$groupKey][] = $r;
