@@ -78,6 +78,20 @@ if (!function_exists('timeToMs')) {
     }
 }
 
+if (!function_exists('formatTimeDisplay')) {
+    function formatTimeDisplay($time) {
+        $time = trim($time);
+        if (empty($time) || $time == 'NT' || $time == '99:99.99' || $time == '-') return $time;
+        $parts = preg_split('/[:.]/', $time);
+        $menit = 0; $detik = 0; $ms = 0;
+        if (count($parts) == 3) { $menit = (int)$parts[0]; $detik = (int)$parts[1]; $ms = (int)$parts[2]; } 
+        elseif (count($parts) == 2) { $detik = (int)$parts[0]; $ms = (int)$parts[1]; } 
+        elseif (count($parts) == 1) { $detik = (int)$parts[0]; }
+        return sprintf("%02d:%02d:%02d", $menit, $detik, $ms);
+    }
+}
+
+
 // 3. Tarik data entries
 $sql = "SELECT en.event_number, en.distance, en.stroke, en.jenis_kelamin, en.age_group as event_age_group,
                s.uid, s.nama_atlet, c.nama_klub, s.asal_sekolah, s.tanggal_lahir,
@@ -260,8 +274,8 @@ if ($format === 'csv') {
             if ($col_ku) $rowArr[] = strtoupper($atlet['real_ku']);
             $rowArr[] = strtoupper($atlet['nama_atlet']);
             if ($col_tim) $rowArr[] = strtoupper($atlet['team_name']);
-            if ($col_waktu) $rowArr[] = $atlet['entry_time'] ?: '-';
-            if ($col_hasil) $rowArr[] = $atlet['time_final'] ?: '-';
+            if ($col_waktu) $rowArr[] = $atlet['entry_time'] ? formatTimeDisplay($atlet['entry_time']) : '-';
+            if ($col_hasil) $rowArr[] = $atlet['time_final'] ? formatTimeDisplay($atlet['time_final']) : '-';
             if ($col_ket) $rowArr[] = $ket;
             
             fputcsv($output, $rowArr);
@@ -328,8 +342,8 @@ if ($format === 'csv') {
             if ($col_lahir) echo '<td>' . date('Y', strtotime($atlet['tanggal_lahir'])) . '</td>';
             if ($col_ku) echo '<td>' . strtoupper($atlet['real_ku']) . '</td>';
             if ($col_tim) echo '<td>' . strtoupper($atlet['team_name']) . '</td>';
-            if ($col_waktu) echo '<td>' . ($atlet['entry_time'] ?: '-') . '</td>';
-            if ($col_hasil) echo '<td>' . ($atlet['time_final'] ?: '-') . '</td>';
+            if ($col_waktu) echo '<td>' . ($atlet['entry_time'] ? formatTimeDisplay($atlet['entry_time']) : '-') . '</td>';
+            if ($col_hasil) echo '<td>' . ($atlet['time_final'] ? formatTimeDisplay($atlet['time_final']) : '-') . '</td>';
             if ($col_ket) echo '<td>' . $ket . '</td>';
             echo '</tr>';
         }
@@ -451,8 +465,8 @@ if ($format === 'csv') {
                                 <?php if($col_lahir): ?><td class="text-center"><?= date('Y', strtotime($atlet['tanggal_lahir'])) ?></td><?php endif; ?>
                                 <?php if($col_ku): ?><td class="text-center"><?= htmlspecialchars(strtoupper($atlet['real_ku'])) ?></td><?php endif; ?>
                                 <?php if($col_tim): ?><td><?= htmlspecialchars(strtoupper($atlet['team_name'])) ?></td><?php endif; ?>
-                                <?php if($col_waktu): ?><td class="text-center"><?= htmlspecialchars($atlet['entry_time'] ?: '-') ?></td><?php endif; ?>
-                                <?php if($col_hasil): ?><td class="text-center <?= $isDQ ? 'text-red' : '' ?>"><?= htmlspecialchars($atlet['time_final'] ?: '-') ?></td><?php endif; ?>
+                                <?php if($col_waktu): ?><td class="text-center"><?= htmlspecialchars($atlet['entry_time'] ? formatTimeDisplay($atlet['entry_time']) : '-') ?></td><?php endif; ?>
+                                <?php if($col_hasil): ?><td class="text-center <?= $isDQ ? 'text-red' : '' ?>"><?= htmlspecialchars($atlet['time_final'] ? formatTimeDisplay($atlet['time_final']) : '-') ?></td><?php endif; ?>
                                 <?php if($col_ket): ?><td class="<?= $isDQ ? 'text-red' : '' ?>"><?= htmlspecialchars($ket) ?></td><?php endif; ?>
                             </tr>
                         <?php endforeach; ?>

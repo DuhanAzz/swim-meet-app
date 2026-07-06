@@ -55,6 +55,19 @@ if (!function_exists('timeToMs')) {
     }
 }
 
+if (!function_exists('formatTimeDisplay')) {
+    function formatTimeDisplay($time) {
+        $time = trim($time);
+        if (empty($time) || $time == 'NT' || $time == '99:99.99' || $time == '-') return $time;
+        $parts = preg_split('/[:.]/', $time);
+        $menit = 0; $detik = 0; $ms = 0;
+        if (count($parts) == 3) { $menit = (int)$parts[0]; $detik = (int)$parts[1]; $ms = (int)$parts[2]; } 
+        elseif (count($parts) == 2) { $detik = (int)$parts[0]; $ms = (int)$parts[1]; } 
+        elseif (count($parts) == 1) { $detik = (int)$parts[0]; }
+        return sprintf("%02d:%02d:%02d", $menit, $detik, $ms);
+    }
+}
+
 // 3. Tarik data entries
 $sql = "SELECT en.event_number, en.distance, en.stroke, en.jenis_kelamin, en.age_group as event_age_group,
                s.uid, s.nama_atlet, c.nama_klub, s.asal_sekolah, s.tanggal_lahir,
@@ -161,7 +174,7 @@ foreach ($groupedResults as $groupName => &$rows) {
             'Perlombaan' => strtoupper($atlet['distance'] . "M " . $atlet['stroke'] . " " . $atlet['jenis_kelamin']),
             'Kelompok_Umur' => strtoupper($atlet['real_ku']),
             'Gender' => strtoupper($atlet['jenis_kelamin']),
-            'Waktu_Final' => $atlet['time_final'] ?: '-',
+            'Waktu_Final' => $timeFinal ? formatTimeDisplay($timeFinal) : '-',
             'Peringkat' => $rankLabel
         ];
     }
