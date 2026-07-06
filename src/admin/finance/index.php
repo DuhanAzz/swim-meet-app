@@ -67,13 +67,28 @@ $totalSemua = $totalLunas + $totalPending;
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         .glass-panel { background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.2); }
+        
+        @media print {
+            body { background: white !important; }
+            .no-print { display: none !important; }
+            aside { display: none !important; }
+            .md\:ml-64 { margin-left: 0 !important; }
+            .glass-panel { border: none !important; box-shadow: none !important; }
+            .shadow-lg, .shadow-sm { box-shadow: none !important; }
+            .bg-gradient-to-br { background: white !important; color: black !important; border: 1px solid #ccc; }
+            .text-white { color: black !important; }
+            .text-emerald-100, .text-amber-100, .text-blue-100 { color: #555 !important; }
+            .absolute { display: none !important; }
+        }
     </style>
 </head>
 <body class="bg-slate-50 font-sans text-slate-800">
 
-    <?php include __DIR__ . '/../../../views/layout/sidebar.php'; ?>
+    <div class="no-print">
+        <?php include __DIR__ . '/../../../views/layout/sidebar.php'; ?>
+    </div>
 
-    <div class="ml-0 md:ml-64 p-8 pt-24 md:pt-8 transition-all duration-300 min-h-screen">
+    <div class="ml-0 md:ml-64 p-8 pt-24 md:pt-8 transition-all duration-300 min-h-screen print:p-0 print:pt-0">
         
         <!-- Header -->
         <div class="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -81,9 +96,14 @@ $totalSemua = $totalLunas + $totalPending;
                 <h1 class="text-3xl font-black text-slate-900 tracking-tight">Rekap Keuangan</h1>
                 <p class="text-slate-500 mt-1">Kelola dan pantau transaksi dari event <strong><?= htmlspecialchars($event['event_name']) ?></strong></p>
             </div>
-            <a href="<?= BASE_URL ?>/src/admin/dashboard.php" class="px-5 py-2.5 bg-white border border-slate-200 text-slate-700 rounded-xl hover:bg-slate-50 hover:border-slate-300 font-bold shadow-sm transition-all flex items-center gap-2">
-                <i class="fas fa-arrow-left"></i> Kembali ke Dashboard
-            </a>
+            <div class="flex gap-2 no-print">
+                <button onclick="window.print()" class="px-5 py-2.5 bg-blue-600 border border-blue-700 text-white rounded-xl hover:bg-blue-700 font-bold shadow-sm transition-all flex items-center gap-2">
+                    <i class="fas fa-print"></i> Cetak Laporan
+                </button>
+                <a href="<?= BASE_URL ?>/src/admin/dashboard.php" class="px-5 py-2.5 bg-white border border-slate-200 text-slate-700 rounded-xl hover:bg-slate-50 hover:border-slate-300 font-bold shadow-sm transition-all flex items-center gap-2">
+                    <i class="fas fa-arrow-left"></i> Kembali
+                </a>
+            </div>
         </div>
 
         <!-- Summary Cards -->
