@@ -131,7 +131,8 @@ foreach ($results as $r) {
     $teamName = $isSchool ? ($r['asal_sekolah'] ?? '-') : ($r['nama_klub'] ?? '-');
     if ($filter_team !== 'ALL' && $teamName !== $filter_team) continue;
 
-    $judulAcara = "ACARA #" . $r['event_number'] . " - " . $r['distance'] . "M " . strtoupper($r['stroke']) . " " . strtoupper($r['jenis_kelamin']);
+    $genderLabel = (in_array(strtoupper($r['jenis_kelamin']), ['L', 'MALE', 'MAN', 'PUTRA'])) ? 'PUTRA' : 'PUTRI';
+    $judulAcara = "ACARA #" . $r['event_number'] . " - " . $r['distance'] . "M " . strtoupper($r['stroke']) . " " . $genderLabel;
     
     $r['real_ku'] = $realKU;
     $r['team_name'] = $teamName;
@@ -142,7 +143,6 @@ foreach ($results as $r) {
         $poolLabel = (stripos($event['pool_type']??'', '25m') !== false || stripos($event['pool_type']??'', 'SCM') !== false) ? 'SCM' : 'LCM';
         
         $cleanStroke = trim(str_ireplace(['Gaya', 'GAYA'], '', $r['stroke']));
-        $genderLabel = (in_array($r['jenis_kelamin'], ['L','Male','Man'])) ? 'PUTRA' : 'PUTRI';
         
         $judulParts = [];
         if ($cfg_event_name) $judulParts[] = $r['distance']."M ".strtoupper($cleanStroke); 

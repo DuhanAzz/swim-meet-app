@@ -166,14 +166,17 @@ foreach ($groupedResults as $groupName => &$rows) {
             $rankLabel = 'Peserta'; // NT (No Time)
         }
         
+        // Format Gender
+        $genderLabel = (in_array(strtoupper($atlet['jenis_kelamin']), ['L', 'MALE', 'MAN', 'PUTRA'])) ? 'PUTRA' : 'PUTRI';
+
         $finalOutput[] = [
             'UID' => $atlet['uid'],
             'Nama_Atlet' => strtoupper($atlet['nama_atlet']),
             'Klub_Sekolah' => strtoupper($atlet['team_name']),
             'Nomor_Acara' => $atlet['event_number'],
-            'Perlombaan' => strtoupper($atlet['distance'] . "M " . $atlet['stroke'] . " " . $atlet['jenis_kelamin']),
+            'Perlombaan' => strtoupper($atlet['distance'] . "M " . $atlet['stroke'] . " " . $genderLabel),
             'Kelompok_Umur' => strtoupper($atlet['real_ku']),
-            'Gender' => strtoupper($atlet['jenis_kelamin']),
+            'Gender' => $genderLabel,
             'Waktu_Final' => $timeFinal ? formatTimeDisplay($timeFinal) : '-',
             'Peringkat' => $rankLabel
         ];
