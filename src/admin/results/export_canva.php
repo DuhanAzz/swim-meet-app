@@ -64,7 +64,7 @@ if (!function_exists('formatTimeDisplay')) {
         if (count($parts) == 3) { $menit = (int)$parts[0]; $detik = (int)$parts[1]; $ms = (int)$parts[2]; } 
         elseif (count($parts) == 2) { $detik = (int)$parts[0]; $ms = (int)$parts[1]; } 
         elseif (count($parts) == 1) { $detik = (int)$parts[0]; }
-        return sprintf("%02d:%02d:%02d", $menit, $detik, $ms);
+        return sprintf("%02d.%02d.%02d", $menit, $detik, $ms);
     }
 }
 
