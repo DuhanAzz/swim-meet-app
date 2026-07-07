@@ -47,7 +47,7 @@ if ($cc['hasil']) $activeColumnsCount++;
 // 1. INFO EVENT & 1 NOMOR LOMBA SAJA
 $sqlInfo = "SELECT en.*, 
             e.id as parent_event_id, e.event_name, e.event_location, e.event_city, e.event_date_start, e.event_date_end, 
-            e.lane_count, e.used_lanes, e.logo_left, e.logo_right, e.participation_type, e.pool_type
+            e.lane_count, e.used_lanes, e.record_package_id, e.logo_left, e.logo_right, e.participation_type, e.pool_type
             FROM event_numbers en
             JOIN events e ON en.event_id = e.id 
             WHERE en.id = ?";
