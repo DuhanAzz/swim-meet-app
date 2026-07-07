@@ -74,6 +74,19 @@ $eventDate  = $raceInfo['event_date_start'];
 $logoLeft   = !empty($raceInfo['logo_left']) ? BASE_URL . '/public/' . ltrim($raceInfo['logo_left'], '/') : null;
 $logoRight  = !empty($raceInfo['logo_right']) ? BASE_URL . '/public/' . ltrim($raceInfo['logo_right'], '/') : null;
 $totalLane  = (int)($raceInfo['lane_count'] ?? 8);
+
+$activeLanes = [];
+if (!empty($raceInfo['used_lanes'])) {
+    $activeLanes = explode(',', $raceInfo['used_lanes']);
+    $activeLanes = array_map('trim', $activeLanes);
+    $activeLanes = array_map('intval', $activeLanes);
+    sort($activeLanes);
+} else {
+    for ($i = 1; $i <= $totalLane; $i++) {
+        $activeLanes[] = $i;
+    }
+}
+
 $partType   = $raceInfo['participation_type'] ?? 'club';
 $rawPool = $raceInfo['pool_type'] ?? '50m'; 
 $poolLabel = ($rawPool === '25m') ? 'SCM' : 'LCM';
@@ -435,7 +448,7 @@ if ($showScheduleAuto) {
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            <?php for($ln=1; $ln<=$totalLane; $ln++): $s = $lanes[$ln] ?? null; ?>
+                                            <?php foreach($activeLanes as $ln): $s = $lanes[$ln] ?? null; ?>
                                             <tr>
                                                 <td class="col-ln"><?= $ln ?></td>
                                                 <?php if($s): ?>

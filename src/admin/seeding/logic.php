@@ -40,21 +40,30 @@ function timeToMs($timeStr) {
 
 
 // =====================================================
-// 🎯 FUNGSI URUTAN LANE (ZIG-ZAG STANDARD)
+// 🎯 FUNGSI URUTAN LANE (ZIG-ZAG DINAMIS BERDASARKAN LINTASAN AKTIF)
 // =====================================================
-function getLaneOrder($total_lane) {
-    $center = ceil($total_lane / 2);
-    $lanes = [$center];
+function getLaneOrder($activeLanes) {
+    if (empty($activeLanes)) return [];
+    
+    // Pastikan array terurut nilainya dan indexnya berurutan dari 0
+    sort($activeLanes);
+    $activeLanes = array_values($activeLanes);
+    $total_lane = count($activeLanes);
+    
+    $centerIdx = (int)ceil($total_lane / 2) - 1; // Index untuk center (0-based)
+    
+    // Lane pertama selalu yang di tengah
+    $lanes = [$activeLanes[$centerIdx]];
 
     for ($i = 1; count($lanes) < $total_lane; $i++) {
         if ($i % 2 == 1) {
-            $next = $center + ceil($i / 2);
+            $nextIdx = $centerIdx + (int)ceil($i / 2);
         } else {
-            $next = $center - ($i / 2);
+            $nextIdx = $centerIdx - (int)($i / 2);
         }
 
-        if ($next >= 1 && $next <= $total_lane) {
-            $lanes[] = $next;
+        if (isset($activeLanes[$nextIdx])) {
+            $lanes[] = $activeLanes[$nextIdx];
         }
     }
 
@@ -66,10 +75,10 @@ try {
     $pdo->beginTransaction();
 
     // =====================================================
-    // 1. AMBIL INFO EVENT
+    // 1. AMBIL INFO EVENT & LINTASAN AKTIF
     // =====================================================
     $stmtCheck = $pdo->prepare("
-        SELECT en.id, en.age_group, e.lane_count 
+        SELECT en.id, en.age_group, e.lane_count, e.used_lanes 
         FROM event_numbers en
         JOIN events e ON en.event_id = e.id
         WHERE en.id = ?
@@ -80,9 +89,24 @@ try {
     if (!$info) throw new Exception("Data nomor lomba tidak valid");
 
     $LANE_COUNT = !empty($info['lane_count']) ? (int)$info['lane_count'] : 8;
+    
+    // Logika active lanes
+    $activeLanes = [];
+    if (!empty($info['used_lanes'])) {
+        $activeLanes = explode(',', $info['used_lanes']);
+        // Bersihkan dan jadikan integer
+        $activeLanes = array_map('trim', $activeLanes);
+        $activeLanes = array_map('intval', $activeLanes);
+    } else {
+        // Fallback default 1 to lane_count
+        for ($i = 1; $i <= $LANE_COUNT; $i++) {
+            $activeLanes[] = $i;
+        }
+    }
 
-    if ($LANE_COUNT <= 0) {
-        throw new Exception("Lane count tidak valid");
+    $active_lane_count = count($activeLanes);
+    if ($active_lane_count <= 0) {
+        throw new Exception("Tidak ada lintasan aktif untuk event ini");
     }
 
     $isOpenCategory = (stripos($info['age_group'], 'OPEN') !== false);
@@ -90,7 +114,7 @@ try {
     // =====================================================
     // 2. GENERATE LANE PRIORITY DINAMIS
     // =====================================================
-    $lanePriority = getLaneOrder($LANE_COUNT);
+    $lanePriority = getLaneOrder($activeLanes);
 
 
     // =====================================================
@@ -137,16 +161,17 @@ try {
         // =====================================================
         // 🚀 6. ALOKASI HEAT (STANDARD SEEDING RENANG)
         // =====================================================
-        $totalHeats = ceil($totalSwimmers / $LANE_COUNT);
+        // Kapasitas setiap heat dibatasi oleh JUMLAH LINTASAN AKTIF
+        $totalHeats = ceil($totalSwimmers / $active_lane_count);
         
         $heatSizes = [];
         $remaining = $totalSwimmers;
         
         // Isi heat dari yang tercepat (index 0 = Heat Final) sampai yang terlambat
         for ($i = 0; $i < $totalHeats; $i++) {
-            if ($remaining >= $LANE_COUNT) {
-                $heatSizes[] = $LANE_COUNT; // Isi penuh heat yang cepat
-                $remaining -= $LANE_COUNT;
+            if ($remaining >= $active_lane_count) {
+                $heatSizes[] = $active_lane_count; // Isi penuh heat yang cepat
+                $remaining -= $active_lane_count;
             } else {
                 $heatSizes[] = $remaining; // Sisa perenang dibuang ke heat paling lambat
             }

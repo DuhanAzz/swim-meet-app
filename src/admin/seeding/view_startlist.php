@@ -45,7 +45,7 @@ if ($cc['hasil']) $activeColumnsCount++;
 // 1. INFO EVENT & 1 NOMOR LOMBA SAJA
 $sqlInfo = "SELECT en.*, 
             e.id as parent_event_id, e.event_name, e.event_location, e.event_city, e.event_date_start, e.event_date_end, 
-            e.lane_count, e.logo_left, e.logo_right, e.participation_type, e.pool_type
+            e.lane_count, e.used_lanes, e.logo_left, e.logo_right, e.participation_type, e.pool_type
             FROM event_numbers en
             JOIN events e ON en.event_id = e.id 
             WHERE en.id = ?";
@@ -63,6 +63,19 @@ $eventDate  = $raceInfo['event_date_start'];
 $logoLeft   = !empty($raceInfo['logo_left']) ? '../../../public/' . $raceInfo['logo_left'] : null;
 $logoRight  = !empty($raceInfo['logo_right']) ? '../../../public/' . $raceInfo['logo_right'] : null;
 $totalLane  = (int)($raceInfo['lane_count'] ?? 8);
+
+$activeLanes = [];
+if (!empty($raceInfo['used_lanes'])) {
+    $activeLanes = explode(',', $raceInfo['used_lanes']);
+    $activeLanes = array_map('trim', $activeLanes);
+    $activeLanes = array_map('intval', $activeLanes);
+    sort($activeLanes);
+} else {
+    for ($i = 1; $i <= $totalLane; $i++) {
+        $activeLanes[] = $i;
+    }
+}
+
 $partType   = $raceInfo['participation_type'] ?? 'club';
 $rawPool    = $raceInfo['pool_type'] ?? '50m'; 
 $poolLabel  = ($rawPool === '25m') ? 'SCM' : 'LCM';
@@ -312,7 +325,7 @@ foreach ($rawData as $row) {
                             </tr>
                         </thead>
                         <tbody>
-                            <?php for($ln=1; $ln<=$totalLane; $ln++): $s = $lanes[$ln] ?? null; ?>
+                            <?php foreach($activeLanes as $ln): $s = $lanes[$ln] ?? null; ?>
                             <tr>
                                 <td class="col-ln"><?= $ln ?></td>
                                 <?php if($s): ?>
