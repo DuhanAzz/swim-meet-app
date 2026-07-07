@@ -193,7 +193,7 @@ if (!empty($events)) {
                     <div class="flex flex-wrap md:flex-nowrap gap-3 relative z-10">
                         
                         <?php if($bukuAcara && file_exists(__DIR__ . '/../public/' . $bukuAcara['file_path'])): ?>
-                            <a href="<?= BASE_URL ?>/public/<?= htmlspecialchars($bukuAcara['file_path']) ?>" target="_blank" class="flex items-center gap-3 px-5 py-3 rounded-xl border-2 border-slate-100 hover:border-blue-500 hover:bg-blue-50 transition group/btn min-w-[160px]">
+                            <a href="<?= BASE_URL ?>/<?= htmlspecialchars($bukuAcara['file_path']) ?>" target="_blank" class="flex items-center gap-3 px-5 py-3 rounded-xl border-2 border-slate-100 hover:border-blue-500 hover:bg-blue-50 transition group/btn min-w-[160px]">
                                 <div class="bg-blue-100 text-blue-600 p-2.5 rounded-lg group-hover/btn:bg-blue-600 group-hover/btn:text-white transition text-lg">📋</div>
                                 <div class="text-left">
                                     <div class="text-[9px] text-slate-400 font-black uppercase tracking-widest">Download</div>
@@ -211,7 +211,7 @@ if (!empty($events)) {
                         <?php endif; ?>
 
                         <?php if($bukuHasil && file_exists(__DIR__ . '/../public/' . $bukuHasil['file_path'])): ?>
-                            <a href="<?= BASE_URL ?>/public/<?= htmlspecialchars($bukuHasil['file_path']) ?>" target="_blank" class="flex items-center gap-3 px-5 py-3 rounded-xl border-2 border-emerald-100 bg-emerald-50/50 hover:border-emerald-500 hover:bg-emerald-100 transition group/btn min-w-[160px]">
+                            <a href="<?= BASE_URL ?>/<?= htmlspecialchars($bukuHasil['file_path']) ?>" target="_blank" class="flex items-center gap-3 px-5 py-3 rounded-xl border-2 border-emerald-100 bg-emerald-50/50 hover:border-emerald-500 hover:bg-emerald-100 transition group/btn min-w-[160px]">
                                 <div class="bg-emerald-100 text-emerald-600 p-2.5 rounded-lg group-hover/btn:bg-emerald-600 group-hover/btn:text-white transition text-lg">📄</div>
                                 <div class="text-left">
                                     <div class="text-[9px] text-emerald-600 font-black uppercase tracking-widest">Download</div>

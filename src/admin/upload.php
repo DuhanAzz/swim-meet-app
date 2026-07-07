@@ -181,7 +181,7 @@ include __DIR__ . '/../../views/layout/sidebar.php';
                                 <tr class="hover:bg-slate-50 transition">
                                     <td class="px-6 py-4">
                                         <div class="font-black text-slate-800 uppercase text-xs"><?= htmlspecialchars($f['file_name']) ?></div>
-                                        <a href="../../public/<?= $f['file_path'] ?>" target="_blank" class="text-[10px] text-blue-600 font-bold hover:underline flex items-center gap-1 mt-1">
+                                        <a href="<?= BASE_URL ?>/<?= $f['file_path'] ?>" target="_blank" class="text-[10px] text-blue-600 font-bold hover:underline flex items-center gap-1 mt-1">
                                             VIEW FILE &raquo;
                                         </a>
                                     </td>
