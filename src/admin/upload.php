@@ -40,6 +40,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['file_upload'])) {
         // Siapkan Folder
         $targetDir = __DIR__ . "/../../public/uploads/documents/";
         if (!is_dir($targetDir)) mkdir($targetDir, 0755, true);
+        if (!is_writable($targetDir)) { @chmod($targetDir, 0755); if (!is_writable($targetDir)) throw new Exception("Error: Direktori upload documents tidak writeable oleh server."); }
 
         // Nama unik untuk file di server (menghindari duplikasi)
         $fileSaveName = "DOC_" . $category . "_" . time() . "_" . bin2hex(random_bytes(4)) . "." . $ext;
