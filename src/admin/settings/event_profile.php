@@ -64,6 +64,35 @@ if (isset($_GET['del_sponsor']) && $eventId > 0) {
     header("Location: event_profile.php?event_id=" . $eventId); exit;
 }
 
+// --- 2B. FITUR HAPUS GAMBAR UTAMA (Logo/Poster) ---
+if (isset($_GET['action']) && $_GET['action'] == 'delete_image' && isset($_GET['type']) && $eventId > 0) {
+    $type = $_GET['type'];
+    $allowedTypes = ['logo_left', 'logo_right', 'poster_image'];
+    
+    if (in_array($type, $allowedTypes)) {
+        // Fetch current image path
+        $stmt = $pdo->prepare("SELECT `$type` FROM events WHERE id = ? AND user_id = ?");
+        $stmt->execute([$eventId, $uid]);
+        $rowImg = $stmt->fetch();
+        
+        if ($rowImg && !empty($rowImg[$type])) {
+            $dbPath = $rowImg[$type];
+            $cleanPath = ltrim(preg_replace('/^(\.\.\/)+/', '', $dbPath), '/');
+            if (strpos($cleanPath, 'swim-meet/') === 0) $cleanPath = substr($cleanPath, 10);
+            $fullPath = $baseDir . "/public/" . $cleanPath;
+            
+            if (file_exists($fullPath)) unlink($fullPath);
+            
+            $pdo->prepare("UPDATE events SET `$type` = NULL WHERE id = ? AND user_id = ?")->execute([$eventId, $uid]);
+            
+            $_SESSION['swal_type'] = "success";
+            $namaLabel = strtoupper(str_replace('_', ' ', $type));
+            $_SESSION['swal_msg']  = "Gambar $namaLabel berhasil dihapus";
+        }
+    }
+    header("Location: event_profile.php?event_id=" . $eventId); exit;
+}
+
 // --- 3. HANDLE SIMPAN DATA (POST) ---
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     // --- DEBUGGING SEMENTARA ---
@@ -379,9 +408,12 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                         <p class="text-[9px] text-amber-600 mb-3 font-medium">Poster yang akan tampil di halaman utama / explore lomba.</p>
                         <div class="flex items-center gap-4">
                             <?php if(!empty($row['poster_image'])): ?>
-                                <a href="<?= getUrlPreview($row['poster_image']) ?>" target="_blank" class="shrink-0 h-16 w-16 bg-slate-100 rounded-xl border border-slate-200 overflow-hidden flex items-center justify-center">
-                                    <img src="<?= getUrlPreview($row['poster_image']) ?>" class="max-h-full max-w-full object-cover">
-                                </a>
+                                <div class="flex flex-col items-center gap-2">
+                                    <a href="<?= getUrlPreview($row['poster_image']) ?>" target="_blank" class="shrink-0 h-16 w-16 bg-slate-100 rounded-xl border border-slate-200 overflow-hidden flex items-center justify-center">
+                                        <img src="<?= getUrlPreview($row['poster_image']) ?>" class="max-h-full max-w-full object-cover">
+                                    </a>
+                                    <a href="?event_id=<?= $eventId ?>&action=delete_image&type=poster_image" onclick="return confirm('Apakah Anda yakin ingin menghapus gambar ini?');" class="bg-red-600 hover:bg-red-700 text-white text-[9px] px-2 py-1 rounded-md font-bold text-center w-full block">Hapus</a>
+                                </div>
                             <?php endif; ?>
                             <input type="file" name="poster_file" accept="image/*" class="block w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-amber-100 file:text-amber-800 hover:file:bg-amber-200 transition">
                         </div>
@@ -479,7 +511,10 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                     <p class="text-[10px] font-bold text-slate-400 uppercase mb-2">Logo Kiri (Utama)</p>
                     <div class="flex items-center gap-3">
                         <?php if(!empty($row['logo_left'])): ?>
-                            <img src="<?= getUrlPreview($row['logo_left']) ?>" class="h-12 w-12 object-contain bg-slate-50 rounded-lg border">
+                            <div class="flex flex-col items-center gap-1">
+                                <img src="<?= getUrlPreview($row['logo_left']) ?>" class="h-12 w-12 object-contain bg-slate-50 rounded-lg border">
+                                <a href="?event_id=<?= $eventId ?>&action=delete_image&type=logo_left" onclick="return confirm('Apakah Anda yakin ingin menghapus gambar ini?');" class="bg-red-600 hover:bg-red-700 text-white text-[9px] px-2 py-0.5 rounded flex-shrink-0 font-bold block text-center w-full">Hapus</a>
+                            </div>
                         <?php endif; ?>
                         <input type="file" name="logo_left" class="block w-full text-[10px] text-slate-500 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-[10px] file:font-bold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
                     </div>
@@ -489,7 +524,10 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                     <p class="text-[10px] font-bold text-slate-400 uppercase mb-2">Logo Kanan</p>
                     <div class="flex items-center gap-3">
                         <?php if(!empty($row['logo_right'])): ?>
-                            <img src="<?= getUrlPreview($row['logo_right']) ?>" class="h-12 w-12 object-contain bg-slate-50 rounded-lg border">
+                            <div class="flex flex-col items-center gap-1">
+                                <img src="<?= getUrlPreview($row['logo_right']) ?>" class="h-12 w-12 object-contain bg-slate-50 rounded-lg border">
+                                <a href="?event_id=<?= $eventId ?>&action=delete_image&type=logo_right" onclick="return confirm('Apakah Anda yakin ingin menghapus gambar ini?');" class="bg-red-600 hover:bg-red-700 text-white text-[9px] px-2 py-0.5 rounded flex-shrink-0 font-bold block text-center w-full">Hapus</a>
+                            </div>
                         <?php endif; ?>
                         <input type="file" name="logo_right" class="block w-full text-[10px] text-slate-500 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-[10px] file:font-bold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
                     </div>
