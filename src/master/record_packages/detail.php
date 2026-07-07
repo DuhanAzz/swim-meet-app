@@ -70,12 +70,12 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                         <?php else: foreach($records as $r): ?>
                             <tr class="hover:bg-slate-50 transition">
                                 <td class="p-4 font-bold text-slate-900"><?= $r['distance'] ?>M <?= htmlspecialchars($r['stroke']) ?></td>
-                                <td class="p-4"><span class="px-2 py-1 text-[10px] font-bold rounded-md <?= ($r['jenis_kelamin']=='L' || $r['jenis_kelamin']=='M')?'bg-sky-100 text-sky-700':'bg-rose-100 text-rose-700' ?>"><?= ($r['jenis_kelamin']=='M')?'PUTRA':(($r['jenis_kelamin']=='F')?'PUTRI':$r['jenis_kelamin']) ?></span></td>
+                                <td class="p-4"><span class="px-2 py-1 text-[10px] font-bold rounded-md <?= ($r['jenis_kelamin']=='L' || $r['jenis_kelamin']=='M')?'bg-sky-100 text-sky-700':'bg-rose-100 text-rose-700' ?>"><?= ($r['jenis_kelamin']=='L' || $r['jenis_kelamin']=='M')?'PUTRA':(($r['jenis_kelamin']=='P' || $r['jenis_kelamin']=='F')?'PUTRI':$r['jenis_kelamin']) ?></span></td>
                                 <td class="p-4 text-slate-700 font-semibold"><?= htmlspecialchars($r['age_group']) ?></td>
                                 <td class="p-4 font-bold text-slate-900 uppercase"><?= htmlspecialchars($r['holder_name']) ?></td>
                                 <td class="p-4 text-center font-mono font-black text-emerald-600 text-base"><?= htmlspecialchars($r['record_time']) ?></td>
                                 <td class="p-4">
-                                    <div class="text-xs font-bold text-blue-700 uppercase"><?= htmlspecialchars($r['event_name'] ?: 'SUMBER EKSTERNAL (CSV)') ?></div>
+                                    <div class="text-xs font-bold text-blue-700 uppercase"><?= htmlspecialchars($r['event_name'] ?: $package['package_name']) ?></div>
                                     <div class="text-[10px] text-slate-500">Tahun: <?= $r['event_year'] ?: date('Y') ?></div>
                                 </td>
                             </tr>
