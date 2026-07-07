@@ -265,6 +265,27 @@ foreach ($rawData as $row) {
                         $stmtRec = $pdo->prepare("SELECT record_type, holder_name, record_time, location, record_year FROM master_records WHERE distance = ? AND stroke = ? AND jenis_kelamin = ? AND (age_group = ? OR record_type = 'rekornas') ORDER BY record_type ASC, id ASC");
                         $stmtRec->execute([$raceInfo['distance'], $raceInfo['stroke'], $raceInfo['jenis_kelamin'], $raceInfo['age_group']]);
                         $records = $stmtRec->fetchAll(PDO::FETCH_ASSOC);
+
+                        // 2. Ambil Rekor Acuan (Dari event_historical_records) jika event ini punya acuan rekor
+                        if (!empty($raceInfo['record_package_id'])) {
+                            $stmtPkg = $pdo->prepare("
+                                SELECT 'rekor_event' as record_type, ehr.holder_name, ehr.record_time, 
+                                       e.event_city as location, 
+                                       COALESCE(YEAR(e.event_date_start), ehr.event_year) as record_year 
+                                FROM event_historical_records ehr 
+                                LEFT JOIN events e ON ehr.source_event_id = e.id
+                                WHERE ehr.package_id = ? AND ehr.distance = ? AND ehr.stroke = ? AND ehr.jenis_kelamin = ? AND ehr.age_group = ?
+                            ");
+                            $stmtPkg->execute([
+                                $raceInfo['record_package_id'], 
+                                $raceInfo['distance'], 
+                                $raceInfo['stroke'], 
+                                $raceInfo['jenis_kelamin'], 
+                                $raceInfo['age_group']
+                            ]);
+                            $pkgRecords = $stmtPkg->fetchAll(PDO::FETCH_ASSOC);
+                            $records = array_merge($records, $pkgRecords);
+                        }
                         
                         if(!empty($records)):
                             ?>

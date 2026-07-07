@@ -380,7 +380,7 @@ if ($showScheduleAuto) {
                                         // 2. Ambil Rekor Acuan (Dari event_historical_records)
                                         if (!empty($raceInfo['record_package_id'])) {
                                             $stmtPkg = $pdo->prepare("
-                                                SELECT 'rekor_event' as record_type, ehr.holder_name, ehr.record_time, e.event_city as location, YEAR(e.event_date_start) as record_year 
+                                                SELECT 'rekor_event' as record_type, ehr.holder_name, ehr.record_time, e.event_city as location, COALESCE(YEAR(e.event_date_start), ehr.event_year) as record_year 
                                                 FROM event_historical_records ehr 
                                                 LEFT JOIN events e ON ehr.source_event_id = e.id
                                                 WHERE ehr.package_id = ? AND ehr.distance = ? AND ehr.stroke = ? AND ehr.jenis_kelamin = ? AND ehr.age_group = ?
