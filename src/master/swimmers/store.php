@@ -57,6 +57,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
     // --- UPLOAD FOTO ---
     $fotoName = null;
+    if (isset($_FILES['foto']) && $_FILES['foto']['error'] !== UPLOAD_ERR_OK && $_FILES['foto']['error'] !== UPLOAD_ERR_NO_FILE) {
+        die("Error Code PHP Upload (foto): " . $_FILES['foto']['error']);
+    }
+
     if (isset($_FILES['foto']) && $_FILES['foto']['error'] === UPLOAD_ERR_OK) {
         // Validasi ukuran maksimal 2MB
         if ($_FILES['foto']['size'] > 2 * 1024 * 1024) {
@@ -66,7 +70,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         if (in_array($ext, ['jpg', 'jpeg', 'png'])) {
             $newName = time() . '_' . $club_id . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
             $dest = __DIR__ . '/../../../public/uploads/swimmers/' . $newName;
-            if (!is_dir(dirname($dest))) mkdir(dirname($dest), 0755, true);
+            $uploadDir = dirname($dest);
+            if (!is_dir($uploadDir)) mkdir($uploadDir, 0755, true);
+            if (!is_writable($uploadDir)) { @chmod($uploadDir, 0755); if (!is_writable($uploadDir)) die("ERROR: Folder $uploadDir tidak writeable."); }
+
             if (move_uploaded_file($_FILES['foto']['tmp_name'], $dest)) {
                 chmod($dest, 0644); // Amankan file
                 $fotoName = $newName;

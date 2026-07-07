@@ -66,13 +66,30 @@ if (isset($_GET['del_sponsor']) && $eventId > 0) {
 
 // --- 3. HANDLE SIMPAN DATA (POST) ---
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
+    // --- DEBUGGING SEMENTARA ---
+    $filesToCheck = ['logo_left', 'logo_right', 'poster_file', 'juknis_file', 'form_file'];
+    foreach ($filesToCheck as $fk) {
+        if (isset($_FILES[$fk]) && $_FILES[$fk]['error'] !== UPLOAD_ERR_OK && $_FILES[$fk]['error'] !== UPLOAD_ERR_NO_FILE) {
+            die("Error Code PHP Upload ($fk): " . $_FILES[$fk]['error']);
+        }
+    }
+    if (isset($_FILES['sponsor_files']['error'][0]) && $_FILES['sponsor_files']['error'][0] !== UPLOAD_ERR_OK && $_FILES['sponsor_files']['error'][0] !== UPLOAD_ERR_NO_FILE) {
+        die("Error Code PHP Upload (sponsor_files): " . $_FILES['sponsor_files']['error'][0]);
+    }
+    // ---------------------------
+
     try {
         $pdo->beginTransaction();
         
         // Buat folder secara paksa jika belum terbentuk (0755 untuk keamanan shared hosting)
         if (!is_dir($targetDir)) mkdir($targetDir, 0755, true);
+        if (!is_writable($targetDir)) { @chmod($targetDir, 0755); if(!is_writable($targetDir)) die("Error: Direktori logos tidak writeable."); }
+        
         if (!is_dir($posterDir)) mkdir($posterDir, 0755, true);
+        if (!is_writable($posterDir)) { @chmod($posterDir, 0755); if(!is_writable($posterDir)) die("Error: Direktori posters tidak writeable."); }
+        
         if (!is_dir($docDir)) mkdir($docDir, 0755, true);
+        if (!is_writable($docDir)) { @chmod($docDir, 0755); if(!is_writable($docDir)) die("Error: Direktori documents tidak writeable."); }
 
         // MAPPING INPUT
         $eventName   = $_POST['nama_event'] ?? '';
@@ -117,7 +134,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             if (in_array($ext, ['jpg', 'jpeg', 'png'])) {
                 $fn = "LOGO_L_" . $eventId . "_" . time() . "_" . bin2hex(random_bytes(4)) . "." . $ext;
                 if(compressImage($_FILES['logo_left']['tmp_name'], $targetDir . $fn, 80, 2)) {
-                    $pdo->prepare("UPDATE events SET logo_left = ? WHERE id = ?")->execute(["/uploads/logos/" . $fn, $eventId]);
+                    $pdo->prepare("UPDATE events SET logo_left = ? WHERE id = ?")->execute(["uploads/logos/" . $fn, $eventId]);
                 }
             } else {
                 throw new Exception("Ekstensi logo kiri tidak valid. Gunakan JPG/PNG.");
@@ -128,7 +145,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             if (in_array($ext, ['jpg', 'jpeg', 'png'])) {
                 $fn = "LOGO_R_" . $eventId . "_" . time() . "_" . bin2hex(random_bytes(4)) . "." . $ext;
                 if(compressImage($_FILES['logo_right']['tmp_name'], $targetDir . $fn, 80, 2)) {
-                    $pdo->prepare("UPDATE events SET logo_right = ? WHERE id = ?")->execute(["/uploads/logos/" . $fn, $eventId]);
+                    $pdo->prepare("UPDATE events SET logo_right = ? WHERE id = ?")->execute(["uploads/logos/" . $fn, $eventId]);
                 }
             } else {
                 throw new Exception("Ekstensi logo kanan tidak valid. Gunakan JPG/PNG.");
@@ -145,7 +162,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     if (in_array($ext, ['jpg', 'jpeg', 'png'])) {
                         $newFileName = "SPONSOR_" . $eventId . "_" . time() . "_" . bin2hex(random_bytes(4)) . "." . $ext;
                         if(compressImage($_FILES['sponsor_files']['tmp_name'][$i], $targetDir . $newFileName, 80, 2)) {
-                            $stmtSponsor->execute([$eventId, "/uploads/logos/" . $newFileName]);
+                            $stmtSponsor->execute([$eventId, "uploads/logos/" . $newFileName]);
                         }
                     }
                 }
@@ -158,7 +175,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             if (in_array($ext, ['jpg', 'jpeg', 'png'])) {
                 $fn = "POSTER_" . $eventId . "_" . time() . "_" . bin2hex(random_bytes(4)) . "." . $ext;
                 if(compressImage($_FILES['poster_file']['tmp_name'], $posterDir . $fn, 80, 2)) {
-                    $pdo->prepare("UPDATE events SET poster_image = ? WHERE id = ?")->execute(["/uploads/posters/" . $fn, $eventId]);
+                    $pdo->prepare("UPDATE events SET poster_image = ? WHERE id = ?")->execute(["uploads/posters/" . $fn, $eventId]);
                 }
             } else {
                 throw new Exception("Ekstensi poster tidak valid. Gunakan JPG/PNG.");
@@ -182,7 +199,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 
                 if(move_uploaded_file($_FILES[$fileInput]['tmp_name'], $docDir . $fn)) {
                     chmod($docDir . $fn, 0644); // Amankan file
-                    $filePath = "/uploads/documents/" . $fn;
+                    $filePath = "uploads/documents/" . $fn;
                     $judulFile = $judulPrefix . " " . $eventName;
                     
                     $stmtCek = $pdo->prepare("SELECT id FROM documents WHERE event_id = ? AND kategori = ?");
