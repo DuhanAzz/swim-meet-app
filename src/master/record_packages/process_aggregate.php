@@ -50,8 +50,19 @@ try {
 
     if ($creationMethod === 'csv') {
         // --- LOGIKA PARSING CSV ---
-        if (!isset($_FILES['csv_file']) || $_FILES['csv_file']['error'] !== UPLOAD_ERR_OK) {
-            throw new Exception("File CSV gagal diunggah atau tidak ditemukan.");
+        if (!isset($_FILES['csv_file'])) {
+            throw new Exception("File CSV gagal diunggah (form data hilang, pastikan enctype form sudah benar).");
+        }
+        
+        if ($_FILES['csv_file']['error'] !== UPLOAD_ERR_OK) {
+            $errCode = $_FILES['csv_file']['error'];
+            if ($errCode == UPLOAD_ERR_NO_FILE) {
+                throw new Exception("Anda belum memilih file CSV untuk diunggah.");
+            } elseif ($errCode == UPLOAD_ERR_INI_SIZE) {
+                throw new Exception("Ukuran file CSV terlalu besar.");
+            } else {
+                throw new Exception("Error saat mengunggah file CSV (Kode Error: $errCode).");
+            }
         }
         $ext = strtolower(pathinfo($_FILES['csv_file']['name'], PATHINFO_EXTENSION));
         if ($ext !== 'csv') {
