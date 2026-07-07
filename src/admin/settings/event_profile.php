@@ -37,11 +37,10 @@ if ($eventId == 0) {
     if ($lastEvent) $eventId = $lastEvent['id'];
 }
 
-// 🍏 JURUS AMAN MACOS: Deteksi folder root fisik
-$baseDir = dirname(dirname(dirname(__DIR__))); 
-$targetDir = $baseDir . "/public/uploads/logos/";
-$posterDir = $baseDir . "/public/uploads/posters/";
-$docDir    = $baseDir . "/public/uploads/documents/";
+// Menggunakan absolute path yang presisi naik 3 tingkat ke root
+$targetDir = __DIR__ . "/../../../public/uploads/logos/";
+$posterDir = __DIR__ . "/../../../public/uploads/posters/";
+$docDir    = __DIR__ . "/../../../public/uploads/documents/";
 
 // --- 2. FITUR HAPUS SPONSOR ---
 if (isset($_GET['del_sponsor']) && $eventId > 0) {
@@ -54,7 +53,7 @@ if (isset($_GET['del_sponsor']) && $eventId > 0) {
         // Bersihkan path untuk menghapus file fisik
         $cleanPath = ltrim(preg_replace('/^(\.\.\/)+/', '', $img['image_path']), '/');
         if (strpos($cleanPath, 'swim-meet/') === 0) $cleanPath = substr($cleanPath, 10);
-        $fullPath = $baseDir . "/" . $cleanPath;
+        $fullPath = __DIR__ . "/../../../" . $cleanPath;
         
         if (file_exists($fullPath)) unlink($fullPath); 
         $pdo->prepare("DELETE FROM event_sponsors WHERE id = ?")->execute([$sponsorId]);
@@ -79,7 +78,7 @@ if (isset($_GET['action']) && $_GET['action'] == 'delete_image' && isset($_GET['
             $dbPath = $rowImg[$type];
             $cleanPath = ltrim(preg_replace('/^(\.\.\/)+/', '', $dbPath), '/');
             if (strpos($cleanPath, 'swim-meet/') === 0) $cleanPath = substr($cleanPath, 10);
-            $fullPath = $baseDir . "/public/" . $cleanPath;
+            $fullPath = __DIR__ . "/../../../public/" . $cleanPath;
             
             if (file_exists($fullPath)) unlink($fullPath);
             
@@ -225,9 +224,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 }
 
                 $fn = $kategori . "_" . $eventId . "_" . time() . "_" . bin2hex(random_bytes(4)) . "." . $ext;
+                $dest = $docDir . $fn;
                 
-                if(move_uploaded_file($_FILES[$fileInput]['tmp_name'], $docDir . $fn)) {
-                    chmod($docDir . $fn, 0644); // Amankan file
+                if(move_uploaded_file($_FILES[$fileInput]['tmp_name'], $dest)) {
+                    chmod($dest, 0644); // Amankan file
                     $filePath = "uploads/documents/" . $fn;
                     $judulFile = $judulPrefix . " " . $eventName;
                     
@@ -241,7 +241,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                         $pdo->prepare("INSERT INTO documents (user_id, event_id, judul_file, file_path, kategori) VALUES (?, ?, ?, ?, ?)")->execute([$uid, $eventId, $judulFile, $filePath, $kategori]);
                     }
                 } else {
-                    throw new Exception("Gagal mengupload dokumen $kategori.");
+                    die("Gagal memindahkan file dokumen ke target fisik: " . $dest);
                 }
             }
         }

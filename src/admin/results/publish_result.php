@@ -55,9 +55,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['upload_doc'])) {
             $uploadMsg = "<div class='mb-6 p-4 bg-red-100 text-red-800 rounded-xl font-bold text-sm border border-red-200'>❌ Ukuran file PDF terlalu besar untuk server Hostinger!</div>";
         } elseif ($_FILES['dokumen']['error'] === UPLOAD_ERR_OK) {
             
-            // 🍏 JURUS AMAN MACOS: Deteksi folder root langsung dari posisi file ini
-            $baseDir = dirname(dirname(dirname(__DIR__))); // Keluar ke folder 'swim-meet'
-            $uploadDir = $baseDir . '/public/uploads/documents/';
+            // Menggunakan absolute path yang presisi naik 3 tingkat ke root
+            $uploadDir = __DIR__ . '/../../../public/uploads/documents/';
             
             // Buat folder secara paksa jika belum terbentuk
             if (!is_dir($uploadDir)) mkdir($uploadDir, 0755, true);
@@ -83,7 +82,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['upload_doc'])) {
                 
                 $uploadMsg = "<div class='mb-6 p-4 bg-emerald-100 text-emerald-800 rounded-xl font-bold text-sm border border-emerald-200'>✅ Dokumen berhasil diunggah!</div>";
             } else {
-                $uploadMsg = "<div class='mb-6 p-4 bg-red-100 text-red-800 rounded-xl font-bold text-sm border border-red-200'>❌ Gagal memindahkan file. Pastikan folder writeable.</div>";
+                die("Gagal memindahkan file ke target fisik: " . $dest);
             }
         }
     }
