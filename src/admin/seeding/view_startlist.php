@@ -278,7 +278,7 @@ foreach ($rawData as $row) {
                                 LEFT JOIN events e ON ehr.source_event_id = e.id
                                 WHERE ehr.package_id = ? 
                                   AND ehr.distance = ? 
-                                  AND LOWER(TRIM(ehr.stroke)) = LOWER(TRIM(?)) 
+                                  AND REPLACE(REPLACE(REPLACE(LOWER(ehr.stroke), 'gaya', ''), ' ', ''), '-', '') = REPLACE(REPLACE(REPLACE(LOWER(?), 'gaya', ''), ' ', ''), '-', '') 
                                   AND LOWER(TRIM(ehr.jenis_kelamin)) = LOWER(TRIM(?)) 
                                   AND LOWER(TRIM(ehr.age_group)) = LOWER(TRIM(?))
                             ");
