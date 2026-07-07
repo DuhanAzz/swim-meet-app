@@ -130,13 +130,6 @@ function isGroupActive($req, $keywords) {
       <?php endif; ?>
 
       <?php if($role == 'admin'): ?>
-         <div class="px-8 mt-8 mb-2 text-[10px] font-black text-slate-600 uppercase tracking-widest">Finance</div>
-         <a href="<?= BASE_URL ?>/src/admin/finance/index.php" class="<?= (strpos($req,"finance")!==false) ? $activeLink : $baseLink ?>">
-            <span class="w-6 text-xl mr-3 text-center opacity-80">💰</span>
-            <span class="font-bold text-[11px] tracking-widest uppercase">Rekap Keuangan</span>
-         </a>
-
-         <div class="px-8 mt-8 mb-2 text-[10px] font-black text-slate-600 uppercase tracking-widest">Event Control</div>
          
          <!-- GROUP 1: Setup Kejuaraan -->
          <?php $a1Active = isGroupActive($req, ['event_profile', 'events/index']); ?>
