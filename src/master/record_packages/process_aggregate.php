@@ -12,11 +12,12 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     header("Location: index.php"); exit;
 }
 
-// --- 🚀 AUTO-UPDATE DATABASE: Izinkan source_event_id bernilai NULL untuk data dari CSV ---
+// --- 🚀 AUTO-UPDATE DATABASE: Izinkan source_event_id bernilai NULL & Tambah event_year ---
 try {
     $pdo->exec("ALTER TABLE event_historical_records MODIFY COLUMN source_event_id INT NULL");
+    $pdo->exec("ALTER TABLE event_historical_records ADD COLUMN event_year INT NULL AFTER package_id");
 } catch (PDOException $e) {
-    // Abaikan jika tabel tidak ada atau error izin
+    // Abaikan jika sudah ada atau error izin
 }
 
 $packageName = trim($_POST['package_name'] ?? '');
@@ -88,26 +89,39 @@ try {
         $currentGender = '';
         $currentAgeGroup = '';
         $inEventBlock = false;
+        
+        $csvYear = date('Y'); // Default tahun saat ini
+        $rowCount = 0;
 
         while (($row = fgetcsv($fileHandle, 1000, ",")) !== FALSE) {
+            $rowCount++;
+            // Ekstrak tahun dari baris-baris pertama (misal baris 1-3)
+            if ($rowCount <= 3) {
+                foreach ($row as $col) {
+                    if (preg_match('/^20[0-9]{2}$/', trim($col))) {
+                        $csvYear = trim($col);
+                    }
+                }
+            }
+
             // Kolom teks biasanya ada di index 1 jika format ",Acara..."
             $cell = trim($row[1] ?? ($row[0] ?? ''));
             
             // 1. Deteksi Baris Header Acara
-            if (stripos($cell, 'Acara') !== false && preg_match('/(\d+)\s*M\s*Gaya\s*([A-Za-z]+)\s*(Putra|Putri)\s*(.+)/i', $cell, $matches)) {
+            if (stripos($cell, 'Acara') !== false && preg_match('/(\d+)\s*M\s*Gaya\s*([A-Za-z\- ]+)\s*(Putra|Putri)\s*(.+)/i', $cell, $matches)) {
                 $currentDistance = $matches[1]; // misal: 100
                 $strokeRaw = strtoupper(trim($matches[2])); // misal: DADA
                 
                 // Normalisasi Gaya
-                if ($strokeRaw == 'BEBAS') $currentStroke = 'Bebas';
-                elseif ($strokeRaw == 'DADA') $currentStroke = 'Dada';
-                elseif ($strokeRaw == 'KUPU' || $strokeRaw == 'KUPU-KUPU') $currentStroke = 'Kupu-kupu';
-                elseif ($strokeRaw == 'PUNGGUNG') $currentStroke = 'Punggung';
-                elseif ($strokeRaw == 'GANTI') $currentStroke = 'Ganti Ganti';
+                if (strpos($strokeRaw, 'BEBAS') !== false) $currentStroke = 'Bebas';
+                elseif (strpos($strokeRaw, 'DADA') !== false) $currentStroke = 'Dada';
+                elseif (strpos($strokeRaw, 'KUPU') !== false) $currentStroke = 'Kupu-kupu';
+                elseif (strpos($strokeRaw, 'PUNGGUNG') !== false) $currentStroke = 'Punggung';
+                elseif (strpos($strokeRaw, 'GANTI') !== false) $currentStroke = 'Ganti Ganti';
                 else $currentStroke = ucfirst(strtolower($strokeRaw));
 
                 $genderRaw = strtoupper(trim($matches[3]));
-                $currentGender = ($genderRaw == 'PUTRA') ? 'M' : 'F';
+                $currentGender = ($genderRaw == 'PUTRA') ? 'L' : 'P';
                 
                 $currentAgeGroup = strtoupper(trim($matches[4])); // misal: SD, SMP
 
@@ -204,13 +218,14 @@ try {
 
     // 5. Insert agregasi ke event_historical_records
     $sqlInsert = "INSERT INTO event_historical_records 
-        (package_id, source_event_id, distance, stroke, jenis_kelamin, age_group, holder_name, record_time, record_time_ms) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        (package_id, event_year, source_event_id, distance, stroke, jenis_kelamin, age_group, holder_name, record_time, record_time_ms) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
     $stmtInsert = $pdo->prepare($sqlInsert);
 
     foreach ($bestRecords as $rec) {
         $stmtInsert->execute([
             $packageId,
+            $creationMethod === 'csv' ? $csvYear : NULL,
             $rec['source_event_id'] ?? NULL,
             $rec['distance'],
             $rec['stroke'],
