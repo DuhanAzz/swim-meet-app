@@ -96,9 +96,9 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                                 <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 13h3a3 3 0 0 0 0-6h-.025A5.56 5.56 0 0 0 16 6.5 5.5 5.5 0 0 0 5.207 5.021C5.137 5.017 5.071 5 5 5a4 4 0 0 0 0 8h2.167M10 15V6m0 0L8 8m2-2 2 2"/>
                             </svg>
                             <p id="dropzone-text" class="mb-2 text-sm text-slate-500 font-bold"><span class="font-black text-blue-600">Klik untuk upload</span> atau drag and drop</p>
-                            <p class="text-xs text-slate-400 uppercase tracking-widest">HANYA FILE .CSV</p>
+                            <p class="text-xs text-slate-400 uppercase tracking-widest">HANYA FILE .CSV (BISA PILIH LEBIH DARI 1)</p>
                         </div>
-                        <input id="dropzone-file" type="file" name="csv_file" accept=".csv" class="hidden" />
+                        <input id="dropzone-file" type="file" name="csv_file[]" accept=".csv" multiple class="hidden" />
                     </label>
                 </div>
                 <p class="text-xs text-slate-500 mt-3 font-medium bg-amber-50 p-3 rounded-lg border border-amber-100">ℹ️ <strong class="text-amber-800">Format Laporan:</strong> Pastikan format laporan bertingkat standar Meet Manager. Baris 'Acara' sebagai header blok, lalu tabel rank di bawahnya.</p>
@@ -140,9 +140,16 @@ function toggleMethod() {
 
 // Menampilkan nama file CSV yang dipilih
 document.getElementById('dropzone-file').addEventListener('change', function(e) {
-    const fileName = e.target.files[0]?.name;
-    if (fileName) {
-        document.getElementById('dropzone-text').innerHTML = `<span class="font-black text-emerald-600">File terpilih:</span> ${fileName}`;
+    const files = e.target.files;
+    if (files.length > 0) {
+        let fileNames = [];
+        for (let i = 0; i < files.length; i++) {
+            fileNames.push(files[i].name);
+        }
+        let displayText = fileNames.join(', ');
+        if (displayText.length > 60) displayText = displayText.substring(0, 60) + '...';
+        
+        document.getElementById('dropzone-text').innerHTML = `<span class="font-black text-emerald-600">${files.length} File terpilih:</span> ${displayText}`;
         document.getElementById('dropzone-container').classList.add('border-emerald-400', 'bg-emerald-50');
         document.getElementById('dropzone-container').classList.remove('border-slate-300', 'bg-slate-50');
     }
