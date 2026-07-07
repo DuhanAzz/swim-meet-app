@@ -21,6 +21,11 @@ try {
         $pdo->exec("ALTER TABLE event_numbers ADD COLUMN is_published TINYINT(1) DEFAULT 0 AFTER event_id");
     }
 
+    $stmtCekLanes = $pdo->query("SHOW COLUMNS FROM events LIKE 'used_lanes'");
+    if ($stmtCekLanes->rowCount() == 0) {
+        $pdo->exec("ALTER TABLE events ADD COLUMN used_lanes VARCHAR(100) NULL AFTER lane_count");
+    }
+
     $pdo->exec("ALTER TABLE documents MODIFY COLUMN kategori ENUM('buku_acara','buku_hasil','lainnya','JUKNIS','FORMULIR')");
 } catch (PDOException $e) {
     error_log("Gagal auto-update DB: " . $e->getMessage()); 
@@ -131,6 +136,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $partType    = $_POST['participation_type'] ?? 'club';
         $status      = $_POST['status'] ?? 'upcoming'; 
         
+        $usedLanesArr = $_POST['used_lanes'] ?? [];
+        $usedLanes    = !empty($usedLanesArr) ? implode(',', $usedLanesArr) : NULL;
+        
         $bankName    = $_POST['bank_name'] ?? '';
         $bankRek     = $_POST['bank_account_number'] ?? '';
         $bankAtas    = $_POST['bank_account_name'] ?? '';
@@ -140,20 +148,20 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         if ($eventId == 0) {
             $sql = "INSERT INTO events (
                         user_id, event_name, event_location, event_city, event_date_start, event_date_end, 
-                        lane_count, pool_type, age_calculation_type, participation_type, event_status,
+                        lane_count, used_lanes, pool_type, age_calculation_type, participation_type, event_status,
                         bank_name, bank_account_number, bank_account_name, record_package_id
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"; 
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"; 
             $stmt = $pdo->prepare($sql);
-            $stmt->execute([$uid, $eventName, $eventLoc, $eventCity, $dateStart, $dateEnd, $laneCount, $poolType, $ageCalc, $partType, $status, $bankName, $bankRek, $bankAtas, $recordPackageId]);
+            $stmt->execute([$uid, $eventName, $eventLoc, $eventCity, $dateStart, $dateEnd, $laneCount, $usedLanes, $poolType, $ageCalc, $partType, $status, $bankName, $bankRek, $bankAtas, $recordPackageId]);
             $eventId = $pdo->lastInsertId(); 
         } else {
             $sql = "UPDATE events SET 
                     event_name = ?, event_location = ?, event_city = ?, event_date_start = ?, event_date_end = ?, 
-                    lane_count = ?, pool_type = ?, age_calculation_type = ?, participation_type = ?, event_status = ?,
+                    lane_count = ?, used_lanes = ?, pool_type = ?, age_calculation_type = ?, participation_type = ?, event_status = ?,
                     bank_name = ?, bank_account_number = ?, bank_account_name = ?, record_package_id = ?
                     WHERE user_id = ? AND id = ?"; 
             $stmt = $pdo->prepare($sql);
-            $stmt->execute([$eventName, $eventLoc, $eventCity, $dateStart, $dateEnd, $laneCount, $poolType, $ageCalc, $partType, $status, $bankName, $bankRek, $bankAtas, $recordPackageId, $uid, $eventId]);
+            $stmt->execute([$eventName, $eventLoc, $eventCity, $dateStart, $dateEnd, $laneCount, $usedLanes, $poolType, $ageCalc, $partType, $status, $bankName, $bankRek, $bankAtas, $recordPackageId, $uid, $eventId]);
         }
 
         // --- HANDLE UPLOAD LOGO & BRANDING ---
@@ -383,6 +391,26 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                             <option value="club" <?= $pp == 'club' ? 'selected' : '' ?>>Antar Club</option>
                             <option value="school" <?= $pp == 'school' ? 'selected' : '' ?>>Antar Sekolah</option>
                         </select>
+                    </div>
+                    <div class="md:col-span-2">
+                        <label class="text-[10px] font-bold text-indigo-400 uppercase mb-2 block">Lintasan Aktif (Digunakan)</label>
+                        <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mt-1">
+                            <?php 
+                            $savedLanes = (isset($row['used_lanes']) && $row['used_lanes'] !== null) ? explode(',', $row['used_lanes']) : null;
+                            for($i=0; $i<=9; $i++): 
+                                $checked = '';
+                                if ($savedLanes !== null) {
+                                    $checked = in_array((string)$i, $savedLanes) ? 'checked' : '';
+                                } else {
+                                    $checked = ($i >= 1 && $i <= 8) ? 'checked' : '';
+                                }
+                            ?>
+                            <label class="flex items-center gap-3 p-3 bg-white border border-indigo-100 rounded-xl cursor-pointer hover:bg-indigo-50 transition">
+                                <input type="checkbox" name="used_lanes[]" value="<?= $i ?>" <?= $checked ?> class="w-4 h-4 text-indigo-600 rounded border-indigo-300 focus:ring-indigo-500">
+                                <span class="text-xs font-bold text-indigo-900">Lintasan <?= $i ?></span>
+                            </label>
+                            <?php endfor; ?>
+                        </div>
                     </div>
                     <div class="md:col-span-2">
                         <label class="text-[10px] font-bold text-indigo-400 uppercase mb-2 block">Acuan Rekor Event (Pecah Rekor)</label>
