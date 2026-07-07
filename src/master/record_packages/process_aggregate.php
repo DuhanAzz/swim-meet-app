@@ -58,109 +58,109 @@ try {
 
     if ($creationMethod === 'csv') {
         // --- LOGIKA PARSING CSV ---
-        if (!isset($_FILES['csv_file'])) {
-            throw new Exception("File CSV gagal diunggah (form data hilang, pastikan enctype form sudah benar).");
-        }
-        
-        if ($_FILES['csv_file']['error'] !== UPLOAD_ERR_OK) {
-            $errCode = $_FILES['csv_file']['error'];
-            if ($errCode == UPLOAD_ERR_NO_FILE) {
-                throw new Exception("Anda belum memilih file CSV untuk diunggah.");
-            } elseif ($errCode == UPLOAD_ERR_INI_SIZE) {
-                throw new Exception("Ukuran file CSV terlalu besar.");
-            } else {
-                throw new Exception("Error saat mengunggah file CSV (Kode Error: $errCode).");
-            }
-        }
-        $ext = strtolower(pathinfo($_FILES['csv_file']['name'], PATHINFO_EXTENSION));
-        if ($ext !== 'csv') {
-            throw new Exception("Format file harus .csv");
+        if (!isset($_FILES['csv_file']) || !is_array($_FILES['csv_file']['name']) || count($_FILES['csv_file']['name']) == 0 || $_FILES['csv_file']['error'][0] === UPLOAD_ERR_NO_FILE) {
+            throw new Exception("Anda belum memilih file CSV untuk diunggah.");
         }
 
-        $fileHandle = fopen($_FILES['csv_file']['tmp_name'], 'r');
-        if (!$fileHandle) {
-            throw new Exception("Gagal membaca file CSV.");
-        }
-
-        $bestRecords = [];
-        // State variables
-        $currentDistance = '';
-        $currentStroke = '';
-        $currentGender = '';
-        $currentAgeGroup = '';
-        $inEventBlock = false;
-        
+        $bestRecordsDict = [];
         $csvYear = date('Y'); // Default tahun saat ini
-        $rowCount = 0;
-
-        while (($row = fgetcsv($fileHandle, 1000, ",")) !== FALSE) {
-            $rowCount++;
-            // Ekstrak tahun dari baris-baris pertama (misal baris 1-3)
-            if ($rowCount <= 3) {
-                foreach ($row as $col) {
-                    if (preg_match('/^20[0-9]{2}$/', trim($col))) {
-                        $csvYear = trim($col);
-                    }
-                }
-            }
-
-            // Kolom teks biasanya ada di index 1 jika format ",Acara..."
-            $cell = trim($row[1] ?? ($row[0] ?? ''));
-            
-            // 1. Deteksi Baris Header Acara
-            if (stripos($cell, 'Acara') !== false && preg_match('/(\d+)\s*M\s*Gaya\s*([A-Za-z\- ]+)\s*(Putra|Putri)\s*(.+)/i', $cell, $matches)) {
-                $currentDistance = $matches[1]; // misal: 100
-                $strokeRaw = strtoupper(trim($matches[2])); // misal: DADA
-                
-                // Normalisasi Gaya
-                if (strpos($strokeRaw, 'BEBAS') !== false) $currentStroke = 'Bebas';
-                elseif (strpos($strokeRaw, 'DADA') !== false) $currentStroke = 'Dada';
-                elseif (strpos($strokeRaw, 'KUPU') !== false) $currentStroke = 'Kupu-kupu';
-                elseif (strpos($strokeRaw, 'PUNGGUNG') !== false) $currentStroke = 'Punggung';
-                elseif (strpos($strokeRaw, 'GANTI') !== false) $currentStroke = 'Ganti Ganti';
-                else $currentStroke = ucfirst(strtolower($strokeRaw));
-
-                $genderRaw = strtoupper(trim($matches[3]));
-                $currentGender = ($genderRaw == 'PUTRA') ? 'L' : 'P';
-                
-                $currentAgeGroup = strtoupper(trim($matches[4])); // misal: SD, SMP
-
-                $inEventBlock = true;
+        $fileCount = count($_FILES['csv_file']['name']);
+        
+        for ($i = 0; $i < $fileCount; $i++) {
+            if ($_FILES['csv_file']['error'][$i] !== UPLOAD_ERR_OK) {
+                if ($_FILES['csv_file']['error'][$i] === UPLOAD_ERR_INI_SIZE) throw new Exception("Ukuran salah satu file CSV terlalu besar.");
                 continue;
             }
+            
+            $ext = strtolower(pathinfo($_FILES['csv_file']['name'][$i], PATHINFO_EXTENSION));
+            if ($ext !== 'csv') continue;
 
-            // 2. Jika dalam blok Acara dan menemukan Rank 1
-            if ($inEventBlock && (trim($row[1] ?? '') == '1' || trim($row[0] ?? '') == '1')) {
-                // Sesuai contoh: ,Rank,Nama Atlet,Sekolah,Prestasi,Hasil
-                // Index: 0=kosong, 1=Rank, 2=Nama, 3=Sekolah, 4=Prestasi, 5=Hasil
-                // Jika format berbeda (tanpa koma awal), bisa jadi geser indexnya. Kita buat dinamis
-                $rankIdx = (trim($row[1] ?? '') == '1') ? 1 : 0;
-                $namaAtlet = trim($row[$rankIdx + 1] ?? '');
-                $hasilWaktu = trim($row[$rankIdx + 4] ?? ''); // Sesuai urutan CSV
+            $fileHandle = fopen($_FILES['csv_file']['tmp_name'][$i], 'r');
+            if (!$fileHandle) continue;
 
-                if (!empty($namaAtlet) && !empty($hasilWaktu)) {
-                    $ms = timeToMs($hasilWaktu);
-                    
-                    $bestRecords[] = [
-                        'source_event_id' => NULL, // Tidak terikat ke event manapun karena dari CSV
-                        'distance' => $currentDistance,
-                        'stroke' => $currentStroke,
-                        'jenis_kelamin' => $currentGender,
-                        'age_group' => $currentAgeGroup,
-                        'nama_atlet' => $namaAtlet,
-                        'time_final' => $hasilWaktu,
-                        'time_final_ms' => $ms
-                    ];
+            // State variables
+            $currentDistance = '';
+            $currentStroke = '';
+            $currentGender = '';
+            $currentAgeGroup = '';
+            $inEventBlock = false;
+            $rowCount = 0;
+
+            while (($row = fgetcsv($fileHandle, 1000, ",")) !== FALSE) {
+                $rowCount++;
+                // Ekstrak tahun dari baris-baris pertama
+                if ($rowCount <= 3) {
+                    foreach ($row as $col) {
+                        if (preg_match('/^20[0-9]{2}$/', trim($col))) {
+                            $csvYear = trim($col);
+                        }
+                    }
                 }
+
+                $cell = trim($row[1] ?? ($row[0] ?? ''));
                 
-                // Setelah dapat rank 1, matikan block sampai ketemu acara berikutnya (opsional, tergantung asumsi ada rank 1 ganda/seri)
-                $inEventBlock = false;
+                // 1. Deteksi Baris Header Acara
+                if (stripos($cell, 'Acara') !== false && preg_match('/(\d+)\s*M\s*Gaya\s*([A-Za-z\- ]+)\s*(Putra|Putri)\s*(.+)/i', $cell, $matches)) {
+                    $currentDistance = $matches[1]; // misal: 100
+                    $strokeRaw = strtoupper(trim($matches[2])); // misal: DADA
+                    
+                    if (strpos($strokeRaw, 'BEBAS') !== false) $currentStroke = 'Bebas';
+                    elseif (strpos($strokeRaw, 'DADA') !== false) $currentStroke = 'Dada';
+                    elseif (strpos($strokeRaw, 'KUPU') !== false) $currentStroke = 'Kupu-kupu';
+                    elseif (strpos($strokeRaw, 'PUNGGUNG') !== false) $currentStroke = 'Punggung';
+                    elseif (strpos($strokeRaw, 'GANTI') !== false) $currentStroke = 'Ganti Ganti';
+                    else $currentStroke = ucfirst(strtolower($strokeRaw));
+
+                    $genderRaw = strtoupper(trim($matches[3]));
+                    $currentGender = ($genderRaw == 'PUTRA') ? 'L' : 'P';
+                    
+                    $currentAgeGroup = strtoupper(trim($matches[4])); // misal: SD, SMP
+
+                    $inEventBlock = true;
+                    continue;
+                }
+
+                // 2. Jika dalam blok Acara dan menemukan Rank 1
+                if ($inEventBlock && (trim($row[1] ?? '') == '1' || trim($row[0] ?? '') == '1')) {
+                    $rankIdx = (trim($row[1] ?? '') == '1') ? 1 : 0;
+                    $namaAtlet = trim($row[$rankIdx + 1] ?? '');
+                    $hasilWaktu = trim($row[$rankIdx + 4] ?? '');
+
+                    if (!empty($namaAtlet) && !empty($hasilWaktu)) {
+                        $ms = timeToMs($hasilWaktu);
+                        $key = $currentDistance . '_' . $currentStroke . '_' . $currentGender . '_' . $currentAgeGroup;
+                        
+                        $newRec = [
+                            'source_event_id' => NULL,
+                            'distance' => $currentDistance,
+                            'stroke' => $currentStroke,
+                            'jenis_kelamin' => $currentGender,
+                            'age_group' => $currentAgeGroup,
+                            'nama_atlet' => $namaAtlet,
+                            'time_final' => $hasilWaktu,
+                            'time_final_ms' => $ms
+                        ];
+                        
+                        // Filter agregasi antar CSV
+                        if (!isset($bestRecordsDict[$key])) {
+                            $bestRecordsDict[$key] = $newRec;
+                        } else {
+                            if ($ms < $bestRecordsDict[$key]['time_final_ms']) {
+                                $bestRecordsDict[$key] = $newRec;
+                            }
+                        }
+                    }
+                    
+                    $inEventBlock = false;
+                }
             }
+            fclose($fileHandle);
         }
-        fclose($fileHandle);
+        
+        $bestRecords = array_values($bestRecordsDict);
 
         if (empty($bestRecords)) {
-            throw new Exception("Tidak ada rekor Rank 1 yang berhasil diekstrak dari file CSV.");
+            throw new Exception("Tidak ada rekor Rank 1 yang berhasil diekstrak dari file CSV yang diunggah.");
         }
 
     } elseif ($creationMethod === 'aggregate') {
