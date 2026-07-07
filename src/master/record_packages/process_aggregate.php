@@ -12,6 +12,13 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     header("Location: index.php"); exit;
 }
 
+// --- 🚀 AUTO-UPDATE DATABASE: Izinkan source_event_id bernilai NULL untuk data dari CSV ---
+try {
+    $pdo->exec("ALTER TABLE event_historical_records MODIFY COLUMN source_event_id INT NULL");
+} catch (PDOException $e) {
+    // Abaikan jika tabel tidak ada atau error izin
+}
+
 $packageName = trim($_POST['package_name'] ?? '');
 $sourceIds = $_POST['source_event_ids'] ?? [];
 
