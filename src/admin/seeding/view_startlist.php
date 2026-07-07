@@ -291,6 +291,16 @@ foreach ($rawData as $row) {
                             ]);
                             $pkgRecords = $stmtPkg->fetchAll(PDO::FETCH_ASSOC);
                             $records = array_merge($records, $pkgRecords);
+
+                            // TEMPORARY DEBUG:
+                            $debugData = "PkgID: " . $raceInfo['record_package_id'] . "\n" .
+                                         "Dist: " . $raceInfo['distance'] . "\n" .
+                                         "Stroke: " . $raceInfo['stroke'] . "\n" .
+                                         "JK: " . $raceInfo['jenis_kelamin'] . "\n" .
+                                         "Age: " . $raceInfo['age_group'] . "\n" .
+                                         "PkgRecords: " . json_encode($pkgRecords) . "\n" .
+                                         "MasterRecords: " . json_encode($records);
+                            file_put_contents(__DIR__ . '/debug_records.txt', $debugData);
                         }
                         
                         if(!empty($records)):
