@@ -21,6 +21,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['file_upload'])) {
         $file = $_FILES['file_upload'];
 
         if ($file['error'] !== UPLOAD_ERR_OK) {
+            if ($file['error'] === UPLOAD_ERR_INI_SIZE) {
+                throw new Exception("Ukuran file PDF terlalu besar untuk server Hostinger!");
+            }
             throw new Exception("Upload Gagal. Kode Error: " . $file['error']);
         }
 

@@ -50,36 +50,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['upload_doc'])) {
     $kategori = $_POST['kategori'];
     $judul_file = $_POST['judul_file'];
 
-    if (isset($_FILES['dokumen']) && $_FILES['dokumen']['error'] === UPLOAD_ERR_OK) {
-        
-        // 🍏 JURUS AMAN MACOS: Deteksi folder root langsung dari posisi file ini
-        $baseDir = dirname(dirname(dirname(__DIR__))); // Keluar ke folder 'swim-meet'
-        $uploadDir = $baseDir . '/uploads/documents/';
-        
-        // Buat folder secara paksa jika belum terbentuk
-        if (!file_exists($uploadDir)) {
-            mkdir($uploadDir, 0777, true);
-        }
-
-        $ext = pathinfo($_FILES['dokumen']['name'], PATHINFO_EXTENSION);
-        $filename = time() . '_' . rand(1000,9999) . '.' . $ext;
-        $dest = $uploadDir . $filename;
-        
-        // Jalur url yang disimpan ke database untuk kebutuhan tag <a href="...">
-        $db_path = '/uploads/documents/' . $filename; 
-
-        if (move_uploaded_file($_FILES['dokumen']['tmp_name'], $dest)) {
-            // Hapus dokumen lama untuk kategori yang sama agar tidak menumpuk
-            $stmtDel = $pdo->prepare("DELETE FROM documents WHERE event_id = ? AND kategori = ?");
-            $stmtDel->execute([$evId, $kategori]);
-
-            // Simpan dokumen baru
-            $stmtIns = $pdo->prepare("INSERT INTO documents (user_id, event_id, judul_file, file_path, kategori) VALUES (?, ?, ?, ?, ?)");
-            $stmtIns->execute([$uid, $evId, $judul_file, $db_path, $kategori]);
+    if (isset($_FILES['dokumen'])) {
+        if ($_FILES['dokumen']['error'] === UPLOAD_ERR_INI_SIZE) {
+            $uploadMsg = "<div class='mb-6 p-4 bg-red-100 text-red-800 rounded-xl font-bold text-sm border border-red-200'>❌ Ukuran file PDF terlalu besar untuk server Hostinger!</div>";
+        } elseif ($_FILES['dokumen']['error'] === UPLOAD_ERR_OK) {
             
-            $uploadMsg = "<div class='mb-6 p-4 bg-emerald-100 text-emerald-800 rounded-xl font-bold text-sm border border-emerald-200'>✅ Dokumen berhasil diunggah!</div>";
-        } else {
-            $uploadMsg = "<div class='mb-6 p-4 bg-red-100 text-red-800 rounded-xl font-bold text-sm border border-red-200'>❌ Gagal memindahkan file. Pastikan folder 'uploads' sudah dibuat di dalam 'swim-meet'.</div>";
+            // 🍏 JURUS AMAN MACOS: Deteksi folder root langsung dari posisi file ini
+            $baseDir = dirname(dirname(dirname(__DIR__))); // Keluar ke folder 'swim-meet'
+            $uploadDir = $baseDir . '/public/uploads/documents/';
+            
+            // Buat folder secara paksa jika belum terbentuk
+            if (!is_dir($uploadDir)) mkdir($uploadDir, 0755, true);
+            if (!is_writable($uploadDir)) @chmod($uploadDir, 0755);
+
+            $ext = pathinfo($_FILES['dokumen']['name'], PATHINFO_EXTENSION);
+            $filename = time() . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
+            $dest = $uploadDir . $filename;
+            
+            // Jalur url yang disimpan ke database untuk kebutuhan tag <a href="..."> (TANPA PUBLIC dan SLASH DI DEPAN)
+            $db_path = 'uploads/documents/' . $filename; 
+
+            if (move_uploaded_file($_FILES['dokumen']['tmp_name'], $dest)) {
+                chmod($dest, 0644); // Amankan file
+                
+                // Hapus dokumen lama untuk kategori yang sama agar tidak menumpuk
+                $stmtDel = $pdo->prepare("DELETE FROM documents WHERE event_id = ? AND kategori = ?");
+                $stmtDel->execute([$evId, $kategori]);
+
+                // Simpan dokumen baru
+                $stmtIns = $pdo->prepare("INSERT INTO documents (user_id, event_id, judul_file, file_path, kategori) VALUES (?, ?, ?, ?, ?)");
+                $stmtIns->execute([$uid, $evId, $judul_file, $db_path, $kategori]);
+                
+                $uploadMsg = "<div class='mb-6 p-4 bg-emerald-100 text-emerald-800 rounded-xl font-bold text-sm border border-emerald-200'>✅ Dokumen berhasil diunggah!</div>";
+            } else {
+                $uploadMsg = "<div class='mb-6 p-4 bg-red-100 text-red-800 rounded-xl font-bold text-sm border border-red-200'>❌ Gagal memindahkan file. Pastikan folder writeable.</div>";
+            }
         }
     }
 }
