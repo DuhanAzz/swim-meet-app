@@ -463,7 +463,7 @@ if ($showScheduleAuto) {
                                                     <td colspan="<?= ($activeColumnsCount - 1) ?>" style="color:#aaa; font-style:italic; padding-left:10px;">&lt;Kosong&gt;</td>
                                                 <?php endif; ?>
                                             </tr>
-                                            <?php endfor; ?>
+                                            <?php endforeach; ?>
                                         </tbody>
                                     </table>
                                 <?php endforeach; ?>
