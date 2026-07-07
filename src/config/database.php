@@ -87,7 +87,7 @@ function writeLog($pdo, $userId, $action, $targetId, $desc) {
 /**
  * Fungsi untuk upload dan compress gambar (HD dengan ukuran optimal)
  */
-function compressImage($source, $destination, $quality = 80, $maxSizeMb = 3) {
+function compressImage($source, $destination, $quality = 80, $maxSizeMb = 2) {
     // Cek batas ukuran
     $filesize = filesize($source);
     if ($filesize > ($maxSizeMb * 1024 * 1024)) {
@@ -114,5 +114,11 @@ function compressImage($source, $destination, $quality = 80, $maxSizeMb = 3) {
         // Jika format lain (seperti webp, gif), pindahkan saja tanpa kompresi
         move_uploaded_file($source, $destination);
     }
+    
+    // Amankan file untuk shared hosting
+    if (file_exists($destination)) {
+        chmod($destination, 0644);
+    }
+
     return true;
 }

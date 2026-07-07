@@ -58,14 +58,21 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     // --- UPLOAD FOTO ---
     $fotoName = null;
     if (isset($_FILES['foto']) && $_FILES['foto']['error'] === UPLOAD_ERR_OK) {
+        // Validasi ukuran maksimal 2MB
+        if ($_FILES['foto']['size'] > 2 * 1024 * 1024) {
+            die("ERROR: Ukuran foto terlalu besar. Maksimal 2MB.");
+        }
         $ext = strtolower(pathinfo($_FILES['foto']['name'], PATHINFO_EXTENSION));
-        if (in_array($ext, ['jpg', 'jpeg', 'png', 'gif'])) {
-            $newName = time() . '_' . $club_id . '_' . uniqid() . '.' . $ext;
+        if (in_array($ext, ['jpg', 'jpeg', 'png'])) {
+            $newName = time() . '_' . $club_id . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
             $dest = __DIR__ . '/../../../public/uploads/swimmers/' . $newName;
             if (!is_dir(dirname($dest))) mkdir(dirname($dest), 0755, true);
             if (move_uploaded_file($_FILES['foto']['tmp_name'], $dest)) {
+                chmod($dest, 0644); // Amankan file
                 $fotoName = $newName;
             }
+        } else {
+            die("ERROR: Format foto tidak didukung. Gunakan JPG/PNG.");
         }
     }
 

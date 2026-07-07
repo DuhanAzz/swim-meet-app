@@ -31,15 +31,21 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['file_upload'])) {
         if (!in_array($ext, $allowed)) {
             throw new Exception("Format tidak diizinkan. Gunakan PDF, Word, Excel, atau Gambar.");
         }
+        
+        // Validasi Ukuran (Max 5MB)
+        if ($file['size'] > 5 * 1024 * 1024) {
+            throw new Exception("Ukuran file terlalu besar. Maksimal 5MB.");
+        }
 
         // Siapkan Folder
         $targetDir = __DIR__ . "/../../public/uploads/documents/";
-        if (!is_dir($targetDir)) mkdir($targetDir, 0777, true);
+        if (!is_dir($targetDir)) mkdir($targetDir, 0755, true);
 
         // Nama unik untuk file di server (menghindari duplikasi)
-        $fileSaveName = "DOC_" . $category . "_" . time() . "_" . $uid . "." . $ext;
+        $fileSaveName = "DOC_" . $category . "_" . time() . "_" . bin2hex(random_bytes(4)) . "." . $ext;
         
         if (move_uploaded_file($file['tmp_name'], $targetDir . $fileSaveName)) {
+            chmod($targetDir . $fileSaveName, 0644); // Amankan file
             $dbPath = "uploads/documents/" . $fileSaveName;
             
             // Simpan ke Database
