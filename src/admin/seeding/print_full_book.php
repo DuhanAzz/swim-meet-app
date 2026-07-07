@@ -17,7 +17,8 @@ $pc = [
     'show_gender'     => $isSubmitted ? isset($_REQUEST['cfg_gender']) : true,
     'show_pool'       => $isSubmitted ? isset($_REQUEST['cfg_pool']) : true,
     'show_round'      => $isSubmitted ? isset($_REQUEST['cfg_round']) : true,
-    'show_records'    => $isSubmitted ? isset($_REQUEST['cfg_show_records']) : true
+    'show_records'    => $isSubmitted ? isset($_REQUEST['cfg_show_records']) : true,
+    'show_event_records' => $isSubmitted ? isset($_REQUEST['cfg_show_event_records']) : true
 ];
 
 $cc = [
@@ -378,12 +379,16 @@ if ($showScheduleAuto) {
                                         $records = array_merge($records, $stmtRec->fetchAll(PDO::FETCH_ASSOC));
 
                                         // 2. Ambil Rekor Acuan (Dari event_historical_records)
-                                        if (!empty($raceInfo['record_package_id'])) {
+                                        if ($pc['show_event_records'] && !empty($raceInfo['record_package_id'])) {
                                             $stmtPkg = $pdo->prepare("
                                                 SELECT 'rekor_event' as record_type, ehr.holder_name, ehr.record_time, e.event_city as location, COALESCE(YEAR(e.event_date_start), ehr.event_year) as record_year 
                                                 FROM event_historical_records ehr 
                                                 LEFT JOIN events e ON ehr.source_event_id = e.id
-                                                WHERE ehr.package_id = ? AND ehr.distance = ? AND ehr.stroke = ? AND ehr.jenis_kelamin = ? AND ehr.age_group = ?
+                                                WHERE ehr.package_id = ? 
+                                                  AND ehr.distance = ? 
+                                                  AND LOWER(TRIM(ehr.stroke)) = LOWER(TRIM(?)) 
+                                                  AND LOWER(TRIM(ehr.jenis_kelamin)) = LOWER(TRIM(?)) 
+                                                  AND LOWER(TRIM(ehr.age_group)) = LOWER(TRIM(?))
                                             ");
                                             $stmtPkg->execute([$raceInfo['record_package_id'], $data['meta']['distance'], $data['meta']['stroke'], $data['meta']['jenis_kelamin'], $data['meta']['age_group']]);
                                             $records = array_merge($records, $stmtPkg->fetchAll(PDO::FETCH_ASSOC));

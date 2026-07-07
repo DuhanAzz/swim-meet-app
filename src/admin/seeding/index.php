@@ -126,7 +126,8 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                         <label class="flex items-center gap-2 cursor-pointer select-none"><input type="checkbox" name="cfg_gender" value="1" class="rounded border-slate-300 text-blue-600 config-cb" checked> Jenis Kelamin</label>
                         <label class="flex items-center gap-2 cursor-pointer select-none"><input type="checkbox" name="cfg_pool" value="1" class="rounded border-slate-300 text-blue-600 config-cb" checked> Tipe Kolam</label>
                         <label class="flex items-center gap-2 cursor-pointer select-none"><input type="checkbox" name="cfg_round" value="1" class="rounded border-slate-300 text-blue-600 config-cb" checked> Babak (FINAL)</label>
-                        <label class="flex items-center gap-2 cursor-pointer select-none text-amber-700 font-extrabold"><input type="checkbox" name="cfg_show_records" value="1" class="rounded border-amber-300 text-amber-600 config-cb" checked> Tampilkan Rekor</label>
+                        <label class="flex items-center gap-2 cursor-pointer select-none text-amber-700 font-extrabold"><input type="checkbox" name="cfg_show_records" value="1" class="rounded border-amber-300 text-amber-600 config-cb" checked> Tampilkan Rekor NAS</label>
+                        <label class="flex items-center gap-2 cursor-pointer select-none text-indigo-700 font-extrabold"><input type="checkbox" name="cfg_show_event_records" value="1" class="rounded border-indigo-300 text-indigo-600 config-cb" checked> Tampilkan Rekor Event</label>
                     </div>
                 </div>
 

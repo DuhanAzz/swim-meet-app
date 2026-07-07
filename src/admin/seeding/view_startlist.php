@@ -11,18 +11,20 @@ $target_id = $_GET['category_id'] ?? ($_GET['event_id'] ?? null);
 if (!$target_id) die("<div style='padding:20px; text-align:center;'>Error: Parameter ID Nomor Lomba tidak ditemukan.</div>");
 
 // DETEKSI KONFIGURASI DARI URL (Suntikan dari index.php)
+$isSubmitted = !empty($_GET);
 $hasConfig = false;
 foreach($_GET as $k => $v) if(strpos($k, 'cfg_') === 0 || strpos($k, 'col_') === 0) $hasConfig = true;
 
 $pc = [
-    'show_event_no'   => $hasConfig ? isset($_GET['cfg_event_no']) : true,
-    'show_date'       => $hasConfig ? isset($_GET['cfg_date']) : true,
-    'show_event_name' => $hasConfig ? isset($_GET['cfg_event_name']) : true,
-    'show_group'      => $hasConfig ? isset($_GET['cfg_group']) : true,
-    'show_gender'     => $hasConfig ? isset($_GET['cfg_gender']) : true,
-    'show_pool'       => $hasConfig ? isset($_GET['cfg_pool']) : true,
-    'show_round'      => $hasConfig ? isset($_GET['cfg_round']) : true,
-    'show_records'    => $hasConfig ? isset($_GET['cfg_show_records']) : true
+    'show_event_no'   => $isSubmitted ? isset($_GET['cfg_event_no']) : true,
+    'show_date'       => $isSubmitted ? isset($_GET['cfg_date']) : true,
+    'show_event_name' => $isSubmitted ? isset($_GET['cfg_event_name']) : true,
+    'show_group'      => $isSubmitted ? isset($_GET['cfg_group']) : true,
+    'show_gender'     => $isSubmitted ? isset($_GET['cfg_gender']) : true,
+    'show_pool'       => $isSubmitted ? isset($_GET['cfg_pool']) : true,
+    'show_round'      => $isSubmitted ? isset($_GET['cfg_round']) : true,
+    'show_records'    => $isSubmitted ? isset($_GET['cfg_show_records']) : true,
+    'show_event_records' => $isSubmitted ? isset($_GET['cfg_show_event_records']) : true
 ];
 
 $cc = [
@@ -267,14 +269,18 @@ foreach ($rawData as $row) {
                         $records = $stmtRec->fetchAll(PDO::FETCH_ASSOC);
 
                         // 2. Ambil Rekor Acuan (Dari event_historical_records) jika event ini punya acuan rekor
-                        if (!empty($raceInfo['record_package_id'])) {
+                        if ($pc['show_event_records'] && !empty($raceInfo['record_package_id'])) {
                             $stmtPkg = $pdo->prepare("
                                 SELECT 'rekor_event' as record_type, ehr.holder_name, ehr.record_time, 
                                        e.event_city as location, 
                                        COALESCE(YEAR(e.event_date_start), ehr.event_year) as record_year 
                                 FROM event_historical_records ehr 
                                 LEFT JOIN events e ON ehr.source_event_id = e.id
-                                WHERE ehr.package_id = ? AND ehr.distance = ? AND ehr.stroke = ? AND ehr.jenis_kelamin = ? AND ehr.age_group = ?
+                                WHERE ehr.package_id = ? 
+                                  AND ehr.distance = ? 
+                                  AND LOWER(TRIM(ehr.stroke)) = LOWER(TRIM(?)) 
+                                  AND LOWER(TRIM(ehr.jenis_kelamin)) = LOWER(TRIM(?)) 
+                                  AND LOWER(TRIM(ehr.age_group)) = LOWER(TRIM(?))
                             ");
                             $stmtPkg->execute([
                                 $raceInfo['record_package_id'], 
