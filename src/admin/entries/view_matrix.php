@@ -110,7 +110,7 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                             <?php foreach($headers as $dist => $styles): foreach($styles as $style => $v): 
                                 $matchId = null;
                                 foreach($categories as $cat) {
-                                    if($cat['distance'] == $dist && $cat['style'] == $style && ($cat['gender'] == $s['jenis_kelamin'] || $cat['gender'] == 'Mixed')) { 
+                                    if($cat['distance'] == $dist && $cat['style'] == $style && ($cat['gender'] == $s['jenis_kelamin'] || $cat['gender'] == 'Campuran')) { 
                                         $matchId = $cat['id']; break; 
                                     }
                                 }

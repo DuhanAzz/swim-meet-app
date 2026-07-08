@@ -75,7 +75,7 @@ $sqlSwimmers = "
             ORDER BY ar.created_at DESC LIMIT 1) as magic_time
     FROM swimmers s 
     WHERE s.user_id = ? 
-    AND (s.jenis_kelamin = ? OR ? = 'Mixed') -- Handle Mixed Relay jika ada
+    AND (s.jenis_kelamin = ? OR ? = 'Campuran') -- Handle Mixed Relay jika ada
     ORDER BY s.nama_atlet ASC
 ";
 

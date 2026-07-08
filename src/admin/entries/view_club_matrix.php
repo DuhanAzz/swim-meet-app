@@ -63,7 +63,7 @@ foreach($stmtEntries->fetchAll() as $row) { $saved[$row['swimmer_id']][$row['cat
                 <?php foreach($headers as $dist => $styles): foreach($styles as $style => $v): 
                     $matchId = null;
                     foreach($categories as $cat) {
-                        if($cat['distance'] == $dist && $cat['style'] == $style && ($cat['gender'] == $s['jenis_kelamin'] || $cat['gender'] == 'Mixed')) { $matchId = $cat['id']; break; }
+                        if($cat['distance'] == $dist && $cat['style'] == $style && ($cat['gender'] == $s['jenis_kelamin'] || $cat['gender'] == 'Campuran')) { $matchId = $cat['id']; break; }
                     }
                     $val = $saved[$s['id']][$matchId] ?? '';
                 ?>

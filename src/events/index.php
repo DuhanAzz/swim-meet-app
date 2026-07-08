@@ -326,7 +326,7 @@ function togglePricingMode(mode) {
                                         <div class="px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-500 peer-checked:bg-pink-500 peer-checked:text-white transition">Putri</div>
                                     </label>
                                     <label class="cursor-pointer">
-                                        <input type="radio" name="jenis_kelamin" value="Mixed" class="peer sr-only">
+                                        <input type="radio" name="jenis_kelamin" value="Campuran" class="peer sr-only">
                                         <div class="px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-500 peer-checked:bg-purple-600 peer-checked:text-white transition">Mixed</div>
                                     </label>
                                 </div>
