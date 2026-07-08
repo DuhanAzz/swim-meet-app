@@ -93,20 +93,36 @@ if (!function_exists('formatTimeDisplay')) {
 
 
 // 3. Tarik data entries
-$sql = "SELECT en.event_number, en.distance, en.stroke, en.jenis_kelamin, en.age_group as event_age_group,
-               s.uid, s.nama_atlet, c.nama_klub, s.asal_sekolah, s.tanggal_lahir,
-               ee.entry_time,
-               es.time_final, es.is_dq_final, es.dq_reason_final
-        FROM event_numbers en
-        JOIN event_entries ee ON en.id = ee.category_id
-        JOIN event_seeding es ON ee.id = es.entry_id
-        JOIN swimmers s ON ee.swimmer_id = s.id
-        LEFT JOIN clubs c ON ee.club_id = c.id
-        WHERE en.event_id = ? 
-          AND (es.time_final IS NOT NULL OR es.is_dq_final = 1)";
+$sql = "
+SELECT * FROM (
+    SELECT en.event_number, en.distance, en.stroke, en.jenis_kelamin, en.age_group as event_age_group,
+           s.uid, s.nama_atlet, c.nama_klub, s.asal_sekolah, s.tanggal_lahir,
+           ee.entry_time,
+           es.time_final, es.is_dq_final, es.dq_reason_final
+    FROM event_numbers en
+    JOIN event_entries ee ON en.id = ee.category_id
+    JOIN event_seeding es ON ee.id = es.entry_id
+    JOIN swimmers s ON ee.swimmer_id = s.id
+    LEFT JOIN clubs c ON ee.club_id = c.id
+    WHERE en.event_id = ? 
+      AND (es.time_final IS NOT NULL OR es.is_dq_final = 1) AND en.is_relay = 0
+      
+    UNION ALL
+
+    SELECT en.event_number, en.distance, en.stroke, en.jenis_kelamin, en.age_group as event_age_group,
+           NULL as uid, re.team_name as nama_atlet, c.nama_klub, NULL as asal_sekolah, '0000-00-00' as tanggal_lahir,
+           re.seed_time as entry_time,
+           es.time_final, es.is_dq_final, es.dq_reason_final
+    FROM event_numbers en
+    JOIN relay_entries re ON en.id = re.category_id
+    JOIN event_seeding es ON re.id = es.entry_id
+    LEFT JOIN clubs c ON re.club_id = c.id
+    WHERE en.event_id = ? 
+      AND (es.time_final IS NOT NULL OR es.is_dq_final = 1) AND en.is_relay = 1
+) AS combined";
           
 $stmtRes = $pdo->prepare($sql);
-$stmtRes->execute([$event_id]);
+$stmtRes->execute([$event_id, $event_id]);
 $results = $stmtRes->fetchAll(PDO::FETCH_ASSOC);
 
 // 4. Kelompokkan dan Kalkulasi Ranking (Dynamic Re-Ranking)

@@ -101,16 +101,40 @@ try {
             $extraPrice = (float)($eventData['extra_price'] ?? 0);
             $data['subtotal'] = ($count <= $limit) ? $basePrice : ($basePrice + (($count - $limit) * $extraPrice));
         } else {
-            $defaultPrice = (float)($eventData['price_per_item'] ?? 0);
             $sub = 0;
             foreach($data['items'] as $item) {
-                $sub += ($item['item_price'] > 0) ? (float)$item['item_price'] : $defaultPrice;
+                $sub += (float)$item['item_price'];
             }
             $data['subtotal'] = $sub;
         }
         $totalTagihan += $data['subtotal'];
     }
     unset($data);
+
+    // AMBIL RELAY ENTRIES
+    $relayEntries = [];
+    $stmtClub = $pdo->prepare("SELECT id FROM clubs WHERE user_id = ?");
+    $stmtClub->execute([$targetUserId]);
+    $clubId = $stmtClub->fetchColumn();
+
+    if ($clubId) {
+        $sqlRelay = "
+            SELECT 
+                re.id as relay_id, re.team_name, re.seed_time,
+                en.distance, en.stroke, en.age_group, en.price as item_price, en.jenis_kelamin
+            FROM relay_entries re
+            JOIN event_numbers en ON re.category_id = en.id
+            WHERE re.club_id = ? AND re.event_id = ?
+            ORDER BY re.team_name ASC, en.distance ASC
+        ";
+        $stmtRelay = $pdo->prepare($sqlRelay);
+        $stmtRelay->execute([$clubId, $eventId]);
+        $relayEntries = $stmtRelay->fetchAll(PDO::FETCH_ASSOC);
+
+        foreach($relayEntries as $re) {
+            $totalTagihan += (float)$re['item_price'];
+        }
+    }
 } catch (Exception $e) { echo "Error Database: " . $e->getMessage(); exit; }
 
 include __DIR__ . '/../../../views/layout/topbar.php'; 
@@ -257,6 +281,39 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                         </div>
                     </div>
                 <?php endforeach; ?>
+                </div>
+            <?php endif; ?>
+
+            <?php if(!empty($relayEntries)): ?>
+                <div class="mt-8 space-y-6">
+                    <h3 class="text-sm font-black uppercase text-indigo-900 tracking-widest border-b border-slate-200 pb-2">Tim Estafet (Relay)</h3>
+                    <div class="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm card-atlet">
+                        <div class="divide-y divide-slate-50">
+                            <?php foreach($relayEntries as $re): ?>
+                                <div class="px-4 py-4 flex justify-between items-center hover:bg-indigo-50/30 transition-colors card-row">
+                                    <div class="flex items-center gap-3">
+                                        <div class="w-8 h-8 rounded-full bg-indigo-500 text-white flex items-center justify-center text-[10px] font-black shadow-sm">R</div>
+                                        <div class="flex flex-col">
+                                            <span class="text-xs font-black text-slate-800 uppercase">
+                                                <?= htmlspecialchars($re['team_name']) ?>
+                                            </span>
+                                            <span class="text-[10px] text-slate-500 font-bold mt-0.5 uppercase">
+                                                <?= $re['distance'] ?>M <?= strtoupper($re['stroke']) ?> • KU <?= $re['age_group'] ?>
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <div class="text-right">
+                                        <span class="block font-mono font-bold text-sm text-indigo-600">
+                                            Rp <?= number_format($re['item_price'], 0, ',', '.') ?>
+                                        </span>
+                                        <span class="font-mono text-[10px] font-bold text-slate-400">
+                                            <?= $re['seed_time'] ? htmlspecialchars($re['seed_time']) : 'NT' ?>
+                                        </span>
+                                    </div>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
                 </div>
             <?php endif; ?>
         </div>

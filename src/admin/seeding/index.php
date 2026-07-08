@@ -22,12 +22,15 @@ $events = [];
 $error_msg = null;
 try {
     $sql = "SELECT en.*, 
-            (SELECT COUNT(ee.id) FROM event_entries ee WHERE ee.category_id = en.id AND ee.event_id = ?) as total_athletes
+            IF(en.is_relay = 1, 
+                (SELECT COUNT(re.id) FROM relay_entries re WHERE re.category_id = en.id AND re.event_id = ?),
+                (SELECT COUNT(ee.id) FROM event_entries ee WHERE ee.category_id = en.id AND ee.event_id = ?)
+            ) as total_athletes
             FROM event_numbers en 
             WHERE en.event_id = ? 
             ORDER BY CAST(en.event_number AS UNSIGNED) ASC";
     $stmt = $pdo->prepare($sql);
-    $stmt->execute([$targetEventId, $targetEventId]);
+    $stmt->execute([$targetEventId, $targetEventId, $targetEventId]);
     $events = $stmt->fetchAll(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {
     $error_msg = "Database Error: " . $e->getMessage();
@@ -182,8 +185,8 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                     <div class="flex-1 text-center md:text-left">
                         <div class="inline-flex items-center gap-2 mb-1">
                             <span class="px-2 py-1 rounded-md <?= $bg ?> <?= $txt ?> text-[9px] font-black uppercase tracking-widest border border-slate-100"><?= $icon ?> <?= $lbl ?></span>
-                            <span class="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded-md uppercase border border-slate-200"><?= htmlspecialchars($ev['distance'] ?? '0') ?>M <?= htmlspecialchars($ev['stroke'] ?? '-') ?></span>
-                            <span class="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-md uppercase border border-emerald-200">👥 <?= $ev['total_athletes'] ?> Atlet</span>
+                            <span class="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded-md uppercase border border-slate-200"><?= htmlspecialchars($ev['distance'] ?? '0') ?>M <?= htmlspecialchars($ev['stroke'] ?? '-') ?> <?= $ev['is_relay'] == 1 ? '(ESTAFET)' : '' ?></span>
+                            <span class="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-md uppercase border border-emerald-200">👥 <?= $ev['total_athletes'] ?> <?= $ev['is_relay'] == 1 ? 'Tim' : 'Atlet' ?></span>
                         </div>
                         <h3 class="text-xl font-black text-slate-800 uppercase italic tracking-tight"><?= htmlspecialchars($ev['event_name'] ?? 'Nomor Lomba') ?></h3>
                     </div>

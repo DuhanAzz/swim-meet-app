@@ -23,13 +23,15 @@ try {
     
     // Base Query: Menghitung dari tabel event_seeding (KOREKSI DISINI)
     $sql = "SELECT en.*, 
-            (SELECT COUNT(*) FROM event_entries ee 
-             JOIN event_seeding es ON ee.id = es.entry_id 
-             WHERE ee.category_id = en.id AND es.heat_prelim IS NOT NULL) as count_seeded,
+            IF(en.is_relay = 1,
+                (SELECT COUNT(*) FROM relay_entries re JOIN event_seeding es ON re.id = es.entry_id WHERE re.category_id = en.id AND es.heat_prelim IS NOT NULL),
+                (SELECT COUNT(*) FROM event_entries ee JOIN event_seeding es ON ee.id = es.entry_id WHERE ee.category_id = en.id AND es.heat_prelim IS NOT NULL)
+            ) as count_seeded,
              
-            (SELECT COUNT(*) FROM event_entries ee 
-             JOIN event_seeding es ON ee.id = es.entry_id 
-             WHERE ee.category_id = en.id AND (es.time_final IS NOT NULL OR es.is_dq_final = 1)) as total_finished
+            IF(en.is_relay = 1,
+                (SELECT COUNT(*) FROM relay_entries re JOIN event_seeding es ON re.id = es.entry_id WHERE re.category_id = en.id AND (es.time_final IS NOT NULL OR es.is_dq_final = 1)),
+                (SELECT COUNT(*) FROM event_entries ee JOIN event_seeding es ON ee.id = es.entry_id WHERE ee.category_id = en.id AND (es.time_final IS NOT NULL OR es.is_dq_final = 1))
+            ) as total_finished
                 
             FROM event_numbers en
             WHERE en.organizer_id = ?";

@@ -85,23 +85,37 @@ if (!function_exists('timeToMs')) {
 
 // === AMBIL DATA HASIL LOMBA KESELURUHAN ===
 // PERBAIKAN: Gunakan event_id dan panggil kolom rank_final, time_final secara akurat
-$sqlAll = "SELECT 
-            en.id as cat_id, en.event_number, en.distance, en.stroke, en.age_group, en.jenis_kelamin, 
-            es.rank_final, es.time_prelim as entry_time, es.time_final, es.is_dq_final, es.dq_reason_final,
-            s.uid, s.nama_atlet, s.tanggal_lahir, c.nama_klub as club_name, s.asal_sekolah
-           FROM event_numbers en
-           JOIN event_entries ee ON ee.category_id = en.id
-           JOIN event_seeding es ON ee.id = es.entry_id
-           JOIN swimmers s ON ee.swimmer_id = s.id
-           LEFT JOIN clubs c ON ee.club_id = c.id
-        WHERE (es.time_final IS NOT NULL OR es.is_dq_final = 1)
-           AND en.event_id = ?
-           ORDER BY CAST(en.event_number AS UNSIGNED) ASC, 
-                    CASE WHEN es.rank_final IS NULL THEN 9999 ELSE es.rank_final END ASC";
+$sqlAll = "
+SELECT * FROM (
+    SELECT 
+        en.id as cat_id, en.event_number, en.distance, en.stroke, en.age_group, en.jenis_kelamin, 
+        es.rank_final, es.time_prelim as entry_time, es.time_final, es.is_dq_final, es.dq_reason_final,
+        s.uid, s.nama_atlet, s.tanggal_lahir, c.nama_klub as club_name, s.asal_sekolah
+    FROM event_numbers en
+    JOIN event_entries ee ON ee.category_id = en.id
+    JOIN event_seeding es ON ee.id = es.entry_id
+    JOIN swimmers s ON ee.swimmer_id = s.id
+    LEFT JOIN clubs c ON ee.club_id = c.id
+    WHERE (es.time_final IS NOT NULL OR es.is_dq_final = 1) AND en.event_id = ? AND en.is_relay = 0
+
+    UNION ALL
+
+    SELECT 
+        en.id as cat_id, en.event_number, en.distance, en.stroke, en.age_group, en.jenis_kelamin, 
+        es.rank_final, es.time_prelim as entry_time, es.time_final, es.is_dq_final, es.dq_reason_final,
+        NULL as uid, re.team_name as nama_atlet, '0000-00-00' as tanggal_lahir, c.nama_klub as club_name, NULL as asal_sekolah
+    FROM event_numbers en
+    JOIN relay_entries re ON re.category_id = en.id
+    JOIN event_seeding es ON re.id = es.entry_id
+    LEFT JOIN clubs c ON re.club_id = c.id
+    WHERE (es.time_final IS NOT NULL OR es.is_dq_final = 1) AND en.event_id = ? AND en.is_relay = 1
+) AS combined
+ORDER BY CAST(event_number AS UNSIGNED) ASC, 
+         CASE WHEN rank_final IS NULL THEN 9999 ELSE rank_final END ASC";
 
 $stmtAll = $pdo->prepare($sqlAll);
 // PERBAIKAN: Lempar $eventId, BUKAN user_id
-$stmtAll->execute([$eventId]);
+$stmtAll->execute([$eventId, $eventId]);
 $rawData = $stmtAll->fetchAll(PDO::FETCH_ASSOC);
 
 $fullResults = [];

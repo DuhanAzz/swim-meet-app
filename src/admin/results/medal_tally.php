@@ -112,21 +112,54 @@ if ($mode == 'athlete' && $filter_gender !== 'all') {
 }
 
 $whereSql = implode(" AND ", $whereClauses);
+$whereSqlRelay = str_replace("s.jenis_kelamin", "en.jenis_kelamin", $whereSql);
 
-$sqlRaw = "SELECT 
-            en.event_number, en.age_group as event_age_group, en.rank_mode,
-            s.id as swimmer_id, s.uid, s.nama_atlet, s.jenis_kelamin, s.tanggal_lahir,
-            $teamColumn as team_name,
-            es.time_final, es.is_dq_final, es.rank_final
-        FROM event_entries ee
-        JOIN event_seeding es ON ee.id = es.entry_id
-        JOIN swimmers s ON ee.swimmer_id = s.id
-        JOIN event_numbers en ON ee.category_id = en.id
-        LEFT JOIN clubs c ON ee.club_id = c.id
-        WHERE $whereSql";
+if ($mode == 'athlete') {
+    $sqlRaw = "SELECT 
+                en.event_number, en.age_group as event_age_group, en.rank_mode,
+                s.id as swimmer_id, s.uid, s.nama_atlet, s.jenis_kelamin, s.tanggal_lahir,
+                $teamColumn as team_name,
+                es.time_final, es.is_dq_final, es.rank_final
+            FROM event_entries ee
+            JOIN event_seeding es ON ee.id = es.entry_id
+            JOIN swimmers s ON ee.swimmer_id = s.id
+            JOIN event_numbers en ON ee.category_id = en.id
+            LEFT JOIN clubs c ON ee.club_id = c.id
+            WHERE $whereSql AND en.is_relay = 0";
+    $paramsAll = $params;
+} else {
+    $sqlRaw = "
+        SELECT * FROM (
+            SELECT 
+                en.event_number, en.age_group as event_age_group, en.rank_mode,
+                s.id as swimmer_id, s.uid, s.nama_atlet, s.jenis_kelamin, s.tanggal_lahir,
+                $teamColumn as team_name,
+                es.time_final, es.is_dq_final, es.rank_final
+            FROM event_entries ee
+            JOIN event_seeding es ON ee.id = es.entry_id
+            JOIN swimmers s ON ee.swimmer_id = s.id
+            JOIN event_numbers en ON ee.category_id = en.id
+            LEFT JOIN clubs c ON ee.club_id = c.id
+            WHERE $whereSql AND en.is_relay = 0
+
+            UNION ALL
+
+            SELECT 
+                en.event_number, en.age_group as event_age_group, en.rank_mode,
+                NULL as swimmer_id, NULL as uid, re.team_name as nama_atlet, en.jenis_kelamin as jenis_kelamin, '0000-00-00' as tanggal_lahir,
+                c.nama_klub as team_name,
+                es.time_final, es.is_dq_final, es.rank_final
+            FROM relay_entries re
+            JOIN event_seeding es ON re.id = es.entry_id
+            JOIN event_numbers en ON re.category_id = en.id
+            LEFT JOIN clubs c ON re.club_id = c.id
+            WHERE $whereSqlRelay AND en.is_relay = 1
+        ) combined";
+    $paramsAll = array_merge($params, $params);
+}
 
 $stmt = $pdo->prepare($sqlRaw);
-$stmt->execute($params);
+$stmt->execute($paramsAll);
 $allEntries = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 // 2. Kelompokkan dan Sortir untuk mendapatkan Ranking Dinamis

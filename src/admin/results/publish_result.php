@@ -109,10 +109,10 @@ if ($eventId > 0) {
 $raceList = [];
 if ($eventId > 0) {
     $sql = "SELECT en.*, 
-            (SELECT COUNT(*) FROM event_entries ee 
-             JOIN event_seeding es ON ee.id = es.entry_id 
-             WHERE ee.category_id = en.id 
-             AND (es.time_final IS NOT NULL OR es.is_dq_final = 1)) as count_results
+            IF(en.is_relay = 1,
+                (SELECT COUNT(*) FROM relay_entries re JOIN event_seeding es ON re.id = es.entry_id WHERE re.category_id = en.id AND (es.time_final IS NOT NULL OR es.is_dq_final = 1)),
+                (SELECT COUNT(*) FROM event_entries ee JOIN event_seeding es ON ee.id = es.entry_id WHERE ee.category_id = en.id AND (es.time_final IS NOT NULL OR es.is_dq_final = 1))
+            ) as count_results
             FROM event_numbers en 
             WHERE en.event_id = ? ORDER BY CAST(en.event_number AS UNSIGNED) ASC";
     $stmtRace = $pdo->prepare($sql);

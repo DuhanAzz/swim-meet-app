@@ -22,7 +22,16 @@ if (!$eventData) {
 
 $namaEvent = $eventData['event_name'] ?? "Event";
 
+// 2.5 AMBIL ID CLUB
+$stmtC = $pdo->prepare("SELECT id FROM clubs WHERE user_id = ? LIMIT 1");
+$stmtC->execute([$uid]);
+$clubRow = $stmtC->fetch(PDO::FETCH_ASSOC);
+$clubId = $clubRow['id'] ?? null;
+
 // 3. HITUNG TOTAL TAGIHAN (LIVE)
+$totalTagihan = 0;
+
+// Tagihan Individu
 $stmtSum = $pdo->prepare("
     SELECT SUM(en.price) 
     FROM event_entries ee 
@@ -30,7 +39,19 @@ $stmtSum = $pdo->prepare("
     WHERE ee.user_id = ? AND ee.event_id = ?
 ");
 $stmtSum->execute([$uid, $targetEventId]);
-$totalTagihan = $stmtSum->fetchColumn() ?: 0;
+$totalTagihan += ($stmtSum->fetchColumn() ?: 0);
+
+// Tagihan Estafet
+if ($clubId) {
+    $stmtSumRelay = $pdo->prepare("
+        SELECT SUM(en.price)
+        FROM relay_entries re
+        JOIN event_numbers en ON re.category_id = en.id
+        WHERE re.club_id = ? AND re.event_id = ?
+    ");
+    $stmtSumRelay->execute([$clubId, $targetEventId]);
+    $totalTagihan += ($stmtSumRelay->fetchColumn() ?: 0);
+}
 
 // 4. AUTO-SYNC KE TABEL PAYMENTS (INI KUNCI PENYELESAIAN MASALAHNYA 🚀)
 $paymentStatus = 'Unpaid';
@@ -78,6 +99,20 @@ $stmtDetail = $pdo->prepare("
 $stmtDetail->execute([$uid, $targetEventId]);
 $details = $stmtDetail->fetchAll(PDO::FETCH_ASSOC);
 
+// 5.5 AMBIL RINCIAN ESTAFET (UNTUK TAMPILAN)
+$relayDetails = [];
+if ($clubId) {
+    $stmtRelayDetail = $pdo->prepare("
+        SELECT re.team_name, en.distance, en.stroke, en.price, re.seed_time
+        FROM relay_entries re
+        JOIN event_numbers en ON re.category_id = en.id
+        WHERE re.club_id = ? AND re.event_id = ?
+        ORDER BY re.team_name ASC
+    ");
+    $stmtRelayDetail->execute([$clubId, $targetEventId]);
+    $relayDetails = $stmtRelayDetail->fetchAll(PDO::FETCH_ASSOC);
+}
+
 // 6. HANDLE UPLOAD BUKTI BAYAR
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['bukti_transfer'])) {
     $uploadDir = __DIR__ . '/../../../public/uploads/payments/';
@@ -116,8 +151,8 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                     <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-6"><?= htmlspecialchars($namaEvent) ?></p>
 
                     <div class="space-y-3 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
-                        <?php if(empty($details)): ?>
-                            <p class="text-center py-10 text-slate-400 text-xs italic font-bold">Belum ada atlet yang didaftarkan.</p>
+                        <?php if(empty($details) && empty($relayDetails)): ?>
+                            <p class="text-center py-10 text-slate-400 text-xs italic font-bold">Belum ada peserta yang didaftarkan.</p>
                         <?php else: ?>
                             <?php foreach($details as $d): ?>
                             <div class="flex justify-between items-center p-4 bg-slate-50 rounded-2xl border border-slate-100 hover:border-blue-200 transition">
@@ -128,6 +163,19 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                                 <div class="text-right">
                                     <p class="text-xs font-black text-slate-800">Rp <?= number_format($d['price'], 0, ',', '.') ?></p>
                                     <p class="text-[9px] font-bold text-slate-400">Time: <span class="font-mono"><?= $d['entry_time'] ?: 'NT' ?></span></p>
+                                </div>
+                            </div>
+                            <?php endforeach; ?>
+
+                            <?php foreach($relayDetails as $r): ?>
+                            <div class="flex justify-between items-center p-4 bg-indigo-50 rounded-2xl border border-indigo-100 hover:border-indigo-300 transition">
+                                <div>
+                                    <p class="text-[10px] font-black text-indigo-600 uppercase mb-0.5">[ESTAFET] <?= htmlspecialchars($r['team_name'] ?? '') ?></p>
+                                    <p class="text-xs font-bold text-slate-700 uppercase italic"><?= $r['distance'] ?>m <?= $r['stroke'] ?></p>
+                                </div>
+                                <div class="text-right">
+                                    <p class="text-xs font-black text-slate-800">Rp <?= number_format($r['price'], 0, ',', '.') ?></p>
+                                    <p class="text-[9px] font-bold text-slate-400">Time: <span class="font-mono"><?= $r['seed_time'] ?: 'NT' ?></span></p>
                                 </div>
                             </div>
                             <?php endforeach; ?>

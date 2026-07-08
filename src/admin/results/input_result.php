@@ -162,11 +162,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmtUpd->execute([$time, $is_dq, $reason, $id]);
         }
 
-        $stmtAll = $pdo->prepare("
-            SELECT ee.id, es.time_final as final_time, es.is_dq_final as is_dq, s.tanggal_lahir
-            FROM event_entries ee JOIN event_seeding es ON ee.id = es.entry_id JOIN swimmers s ON ee.swimmer_id = s.id 
-            WHERE ee.category_id = ?
-        ");
+        $isRelay = isset($raceInfo['is_relay']) && $raceInfo['is_relay'] == 1;
+        if ($isRelay) {
+            $stmtAll = $pdo->prepare("
+                SELECT re.id, es.time_final as final_time, es.is_dq_final as is_dq, '0000-00-00' as tanggal_lahir
+                FROM relay_entries re JOIN event_seeding es ON re.id = es.entry_id 
+                WHERE re.category_id = ?
+            ");
+        } else {
+            $stmtAll = $pdo->prepare("
+                SELECT ee.id, es.time_final as final_time, es.is_dq_final as is_dq, s.tanggal_lahir
+                FROM event_entries ee JOIN event_seeding es ON ee.id = es.entry_id JOIN swimmers s ON ee.swimmer_id = s.id 
+                WHERE ee.category_id = ?
+            ");
+        }
         $stmtAll->execute([$cat_id]);
         $allSwimmers = $stmtAll->fetchAll(PDO::FETCH_ASSOC);
 
@@ -241,10 +250,20 @@ $stmtSpon->execute([$eventId]);
 $sponsors = $stmtSpon->fetchAll(PDO::FETCH_COLUMN);
 
 try {
-    $sql = "SELECT ee.id, es.heat_prelim as heat, es.lane_prelim as lane, es.time_final as final_time, es.is_dq_final as is_dq, es.dq_reason_final as dq_reason, es.time_prelim as entry_time,
-            s.uid, s.nama_atlet, s.tanggal_lahir, s.asal_sekolah, c.nama_klub as club_name
-            FROM event_entries ee JOIN event_seeding es ON ee.id = es.entry_id JOIN swimmers s ON ee.swimmer_id = s.id LEFT JOIN clubs c ON ee.club_id = c.id 
-            WHERE ee.category_id = ? AND es.heat_prelim IS NOT NULL ORDER BY es.heat_prelim ASC, es.lane_prelim ASC";
+    $isRelay = isset($raceInfo['is_relay']) && $raceInfo['is_relay'] == 1;
+    if ($isRelay) {
+        $sql = "SELECT re.id, es.heat_prelim as heat, es.lane_prelim as lane, es.time_final as final_time, es.is_dq_final as is_dq, es.dq_reason_final as dq_reason, es.time_prelim as entry_time,
+                NULL as uid, re.team_name as nama_atlet, '0000-00-00' as tanggal_lahir, NULL as asal_sekolah, c.nama_klub as club_name
+                FROM relay_entries re 
+                JOIN event_seeding es ON re.id = es.entry_id 
+                LEFT JOIN clubs c ON re.club_id = c.id 
+                WHERE re.category_id = ? AND es.heat_prelim IS NOT NULL ORDER BY es.heat_prelim ASC, es.lane_prelim ASC";
+    } else {
+        $sql = "SELECT ee.id, es.heat_prelim as heat, es.lane_prelim as lane, es.time_final as final_time, es.is_dq_final as is_dq, es.dq_reason_final as dq_reason, es.time_prelim as entry_time,
+                s.uid, s.nama_atlet, s.tanggal_lahir, s.asal_sekolah, c.nama_klub as club_name
+                FROM event_entries ee JOIN event_seeding es ON ee.id = es.entry_id JOIN swimmers s ON ee.swimmer_id = s.id LEFT JOIN clubs c ON ee.club_id = c.id 
+                WHERE ee.category_id = ? AND es.heat_prelim IS NOT NULL ORDER BY es.heat_prelim ASC, es.lane_prelim ASC";
+    }
     $stmt = $pdo->prepare($sql);
     $stmt->execute([$cat_id]);
     $raw_data = $stmt->fetchAll(PDO::FETCH_ASSOC);

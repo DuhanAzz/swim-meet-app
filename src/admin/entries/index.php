@@ -54,7 +54,10 @@ try {
                 u.id as club_id,
                 u.nama_lengkap,
                 u.email,
-                (SELECT COUNT(*) FROM event_entries WHERE user_id = u.id AND event_id = p.event_id) as total_entries
+                (
+                    (SELECT COUNT(*) FROM event_entries WHERE user_id = u.id AND event_id = p.event_id) +
+                    COALESCE((SELECT COUNT(*) FROM relay_entries re JOIN clubs c ON re.club_id = c.id WHERE c.user_id = u.id AND re.event_id = p.event_id), 0)
+                ) as total_entries
             FROM payments p
             JOIN users u ON p.user_id = u.id
             WHERE p.event_id = ? 

@@ -88,7 +88,7 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
         <?php unset($_SESSION['toast']); ?>
     <?php endif; ?>
 
-    <div class="flex justify-between items-center mb-8 bg-white p-6 rounded-3xl shadow-sm border border-slate-200">
+    <div class="flex justify-between items-center mb-6 bg-white p-6 rounded-3xl shadow-sm border border-slate-200">
         <div>
             <h1 class="text-3xl font-black text-slate-800 uppercase italic leading-none">Pendaftaran Estafet</h1>
             <p class="text-xs font-bold text-slate-400 uppercase tracking-widest mt-2"><?= htmlspecialchars($eventData['event_name']) ?></p>
@@ -103,6 +103,8 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
         </div>
     </div>
 
+
+
     <?php if (empty($relayCategories)): ?>
         <div class="bg-white p-16 text-center rounded-3xl border-2 border-dashed border-slate-200 shadow-sm">
             <div class="text-6xl mb-4 opacity-30">🏃‍♂️</div>
@@ -111,7 +113,7 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
         </div>
     <?php else: ?>
         
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+        <div class="space-y-6">
             <?php foreach ($relayCategories as $cat): 
                 $cid = $cat['id'];
                 $catName = htmlspecialchars($cat['distance'] . "M " . $cat['stroke']);
@@ -120,7 +122,10 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                 
                 $badgeBg = $catGender == 'PUTRA' ? 'bg-blue-100 text-blue-700' : ($catGender == 'PUTRI' ? 'bg-pink-100 text-pink-700' : 'bg-purple-100 text-purple-700');
             ?>
-            <div class="bg-white rounded-[2rem] p-6 shadow-sm border border-slate-200 flex flex-col hover:shadow-lg transition duration-300">
+            <div class="bg-white rounded-[2rem] p-6 shadow-sm border border-slate-200 hover:shadow-lg transition duration-300">
+                <div class="grid grid-cols-1 md:grid-cols-12 gap-8">
+                    <!-- KOLOM KIRI: INFO LOMBA & DAFTAR TIM -->
+                    <div class="<?= $isLocked ? 'md:col-span-12' : 'md:col-span-7' ?> flex flex-col">
                 
                 <div class="flex justify-between items-start mb-6 border-b border-slate-100 pb-4">
                     <div>
@@ -158,28 +163,27 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                                 </div>
                             <?php endforeach; ?>
                         </div>
-                    <?php else: ?>
-                        <div class="bg-slate-50 border border-slate-200 rounded-xl p-6 text-center mb-6">
-                            <p class="text-slate-400 font-bold text-xs uppercase tracking-widest">Belum ada tim terdaftar</p>
-                        </div>
                     <?php endif; ?>
                 </div>
 
-                <?php if (!$isLocked): ?>
-                <div class="mt-auto bg-blue-50 rounded-2xl p-5 border border-blue-100">
-                    <h4 class="text-[10px] font-black uppercase text-blue-600 tracking-widest mb-3">➕ Tambah Tim Baru</h4>
-                    <form method="POST" class="flex gap-3">
-                        <input type="hidden" name="action" value="add_relay">
-                        <input type="hidden" name="category_id" value="<?= $cid ?>">
-                        <div class="flex-1">
-                            <input type="text" name="team_name" placeholder="Nama Tim (Misal: Tim A)" required class="w-full text-xs font-bold text-slate-700 px-3 py-2.5 rounded-lg border border-slate-200 focus:border-blue-500 outline-none uppercase mb-2">
-                            <input type="text" name="seed_time" placeholder="Entry Time (Misal: 01.30.00)" oninput="handleTimeInput(this)" maxlength="8" class="w-full text-xs font-bold text-slate-700 px-3 py-2.5 rounded-lg border border-slate-200 focus:border-blue-500 outline-none text-center font-mono placeholder:font-sans">
-                        </div>
-                        <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-black text-[10px] uppercase tracking-widest px-4 rounded-lg transition shadow-md whitespace-nowrap h-full">Daftar</button>
-                    </form>
-                </div>
-                <?php endif; ?>
+                    </div>
 
+                    <!-- KOLOM KANAN: FORM TAMBAH TIM -->
+                    <?php if (!$isLocked): ?>
+                    <div class="md:col-span-5 flex flex-col">
+                        <div class="bg-blue-50 rounded-2xl p-6 border border-blue-100 h-full flex flex-col justify-center">
+                            <h4 class="text-xs font-black uppercase text-blue-600 tracking-widest mb-6">➕ Tambah Tim Baru</h4>
+                            <form method="POST" class="flex flex-col gap-4">
+                                <input type="hidden" name="action" value="add_relay">
+                                <input type="hidden" name="category_id" value="<?= $cid ?>">
+                                <input type="text" name="team_name" placeholder="Nama Tim (Misal: Tim A)" required class="w-full text-sm font-bold text-slate-700 px-4 py-3 rounded-xl border border-slate-200 focus:border-blue-500 outline-none uppercase shadow-sm">
+                                <input type="text" name="seed_time" placeholder="Entry Time (Misal: 01.30.00)" oninput="handleTimeInput(this)" maxlength="8" class="w-full text-sm font-bold text-slate-700 px-4 py-3 rounded-xl border border-slate-200 focus:border-blue-500 outline-none text-center font-mono placeholder:font-sans shadow-sm">
+                                <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-black text-sm uppercase tracking-widest py-4 rounded-xl transition shadow-lg mt-2">Daftar</button>
+                            </form>
+                        </div>
+                    </div>
+                    <?php endif; ?>
+                </div>
             </div>
             <?php endforeach; ?>
         </div>

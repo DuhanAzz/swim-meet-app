@@ -45,12 +45,24 @@ if ($selectedEventId > 0) {
 $teams = [];
 if ($selectedEventId > 0) {
     if ($isSchool) {
-        $stmtTeam = $pdo->prepare("SELECT DISTINCT s.asal_sekolah as team_name FROM event_entries ee JOIN swimmers s ON ee.swimmer_id = s.id WHERE ee.event_id = ? AND s.asal_sekolah != '' ORDER BY s.asal_sekolah ASC");
-        $stmtTeam->execute([$selectedEventId]);
+        $stmtTeam = $pdo->prepare("
+            SELECT team_name FROM (
+                SELECT s.asal_sekolah as team_name FROM event_entries ee JOIN swimmers s ON ee.swimmer_id = s.id WHERE ee.event_id = ? AND s.asal_sekolah != ''
+                UNION
+                SELECT c.nama_klub as team_name FROM relay_entries re JOIN clubs c ON re.club_id = c.id WHERE re.event_id = ?
+            ) t ORDER BY team_name ASC
+        ");
+        $stmtTeam->execute([$selectedEventId, $selectedEventId]);
         while($r = $stmtTeam->fetch(PDO::FETCH_ASSOC)) { $teams[] = $r['team_name']; }
     } else {
-        $stmtTeam = $pdo->prepare("SELECT DISTINCT c.nama_klub as team_name FROM event_entries ee JOIN clubs c ON ee.club_id = c.id WHERE ee.event_id = ? ORDER BY c.nama_klub ASC");
-        $stmtTeam->execute([$selectedEventId]);
+        $stmtTeam = $pdo->prepare("
+            SELECT team_name FROM (
+                SELECT c.nama_klub as team_name FROM event_entries ee JOIN clubs c ON ee.club_id = c.id WHERE ee.event_id = ?
+                UNION
+                SELECT c.nama_klub as team_name FROM relay_entries re JOIN clubs c ON re.club_id = c.id WHERE re.event_id = ?
+            ) t ORDER BY team_name ASC
+        ");
+        $stmtTeam->execute([$selectedEventId, $selectedEventId]);
         while($r = $stmtTeam->fetch(PDO::FETCH_ASSOC)) { $teams[] = $r['team_name']; }
     }
 }
