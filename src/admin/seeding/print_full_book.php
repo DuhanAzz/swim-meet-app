@@ -127,19 +127,38 @@ if (!function_exists('getTeamName')) {
     }
 }
 
-$sqlAll = "SELECT en.id as cat_id, en.event_number, en.distance, en.stroke, en.age_group, en.jenis_kelamin, en.schedule_date, en.schedule_time,
+$sqlAll = "(
+            SELECT en.id as cat_id, en.event_number, en.distance, en.stroke, en.age_group, en.jenis_kelamin, en.schedule_date, en.schedule_time, en.is_relay,
             es.heat_prelim as heat_no, es.lane_prelim as lane_no, es.time_prelim as entry_time,
-            s.uid, s.nama_atlet, s.tanggal_lahir, c.nama_klub as club_name, s.asal_sekolah
+            s.uid, s.nama_atlet, s.tanggal_lahir, c.nama_klub as club_name, s.asal_sekolah,
+            '' as team_name, '' as n1, '' as n2, '' as n3, '' as n4
            FROM event_numbers en
            JOIN event_entries ee ON ee.category_id = en.id
            JOIN event_seeding es ON es.entry_id = ee.id
            JOIN swimmers s ON ee.swimmer_id = s.id
            LEFT JOIN clubs c ON ee.club_id = c.id
-           WHERE en.event_id = ? 
-           ORDER BY CAST(en.event_number AS UNSIGNED) ASC, es.heat_prelim ASC, es.lane_prelim ASC";
+           WHERE en.event_id = ? AND (en.is_relay = 0 OR en.is_relay IS NULL)
+           )
+           UNION ALL
+           (
+            SELECT en.id as cat_id, en.event_number, en.distance, en.stroke, en.age_group, en.jenis_kelamin, en.schedule_date, en.schedule_time, en.is_relay,
+            es.heat_prelim as heat_no, es.lane_prelim as lane_no, es.time_prelim as entry_time,
+            NULL as uid, '' as nama_atlet, NULL as tanggal_lahir, c.nama_klub as club_name, '' as asal_sekolah,
+            re.team_name, s1.nama_atlet as n1, s2.nama_atlet as n2, s3.nama_atlet as n3, s4.nama_atlet as n4
+           FROM event_numbers en
+           JOIN relay_entries re ON re.category_id = en.id
+           JOIN event_seeding es ON es.entry_id = re.id
+           LEFT JOIN clubs c ON re.club_id = c.id
+           LEFT JOIN swimmers s1 ON re.swimmer_1_id = s1.id
+           LEFT JOIN swimmers s2 ON re.swimmer_2_id = s2.id
+           LEFT JOIN swimmers s3 ON re.swimmer_3_id = s3.id
+           LEFT JOIN swimmers s4 ON re.swimmer_4_id = s4.id
+           WHERE en.event_id = ? AND en.is_relay = 1
+           )
+           ORDER BY CAST(event_number AS UNSIGNED) ASC, heat_no ASC, lane_no ASC";
 
 $stmtAll = $pdo->prepare($sqlAll);
-$stmtAll->execute([$eventId]);
+$stmtAll->execute([$eventId, $eventId]);
 $rawData = $stmtAll->fetchAll(PDO::FETCH_ASSOC);
 
 $fullBook = [];
@@ -181,7 +200,8 @@ foreach($rawData as $row) {
                 'distance' => $row['distance'],
                 'stroke' => $row['stroke'],
                 'jenis_kelamin' => $row['jenis_kelamin'],
-                'age_group' => $row['age_group']
+                'age_group' => $row['age_group'],
+                'is_relay' => $row['is_relay'] ?? 0
             ],
             'heats' => []
         ];
@@ -458,9 +478,21 @@ if ($showScheduleAuto) {
                                                 <td class="col-ln"><?= $ln ?></td>
                                                 <?php if($s): ?>
                                                     <?php if($cc['uid']): ?><td class="col-uid"><?= htmlspecialchars($s['uid'] ?? '-') ?></td><?php endif; ?>
-                                                    <td class="col-nama"><?= htmlspecialchars($s['nama_atlet']) ?></td>
-                                                    <?php if($cc['lahir']): ?><td class="col-lahir"><?= ($s['tanggal_lahir'] && $s['tanggal_lahir']!='0000-00-00') ? date('Y', strtotime($s['tanggal_lahir'])) : '-' ?></td><?php endif; ?>
-                                                    <?php if($cc['ku']): ?><td class="col-ku"><?= getKUName($s['tanggal_lahir'], $eventYear, $ageGroups) ?></td><?php endif; ?>
+                                                    <td class="col-nama">
+                                                    <?php if(isset($data['meta']['is_relay']) && $data['meta']['is_relay'] == 1): ?>
+                                                        <span style="font-size:8.5pt;"><strong><?= htmlspecialchars($s['club_name'] ?? 'Klub') ?> - <?= htmlspecialchars($s['team_name'] ?? 'Tim') ?></strong></span><br>
+                                                        <span style="font-size:7pt; font-weight:normal; color:#444; line-height:1;">
+                                                            1. <?= htmlspecialchars($s['n1'] ?? '(Belum Diatur)') ?>, 
+                                                            2. <?= htmlspecialchars($s['n2'] ?? '(Belum Diatur)') ?><br>
+                                                            3. <?= htmlspecialchars($s['n3'] ?? '(Belum Diatur)') ?>, 
+                                                            4. <?= htmlspecialchars($s['n4'] ?? '(Belum Diatur)') ?>
+                                                        </span>
+                                                    <?php else: ?>
+                                                        <?= htmlspecialchars($s['nama_atlet'] ?? '') ?>
+                                                    <?php endif; ?>
+                                                    </td>
+                                                    <?php if($cc['lahir']): ?><td class="col-lahir"><?= (!empty($s['tanggal_lahir']) && $s['tanggal_lahir']!='0000-00-00') ? date('Y', strtotime($s['tanggal_lahir'])) : '-' ?></td><?php endif; ?>
+                                                    <?php if($cc['ku']): ?><td class="col-ku"><?= !empty($s['tanggal_lahir']) ? getKUName($s['tanggal_lahir'], $eventYear, $ageGroups) : '-' ?></td><?php endif; ?>
                                                     <?php if($cc['tim']): ?><td class="col-tim"><?= htmlspecialchars(getTeamName($s, $partType)) ?></td><?php endif; ?>
                                                     <?php if($cc['waktu']): ?><td class="col-waktu"><?= (!$s['entry_time'] || $s['entry_time']=='99.99.99') ? 'NT' : $s['entry_time'] ?></td><?php endif; ?>
                                                     <?php if($cc['hasil']): ?><td class="col-hasil">[.......]</td><?php endif; ?>

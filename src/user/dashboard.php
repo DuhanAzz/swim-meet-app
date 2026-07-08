@@ -39,6 +39,10 @@ $stmtNoUid = $pdo->prepare("SELECT COUNT(*) FROM swimmers WHERE user_id = ? AND 
 $stmtNoUid->execute([$uid]);
 $missingUid = $stmtNoUid->fetchColumn();
 
+// 6. DETEKSI EVENT ESTAFET AKTIF
+$stmtRelayEvent = $pdo->query("SELECT e.id FROM events e JOIN event_numbers en ON e.id = en.event_id WHERE en.is_relay = 1 AND e.event_status IN ('Active', 'Open', 'Upcoming', 'Registration') ORDER BY e.event_date_start ASC LIMIT 1");
+$activeRelayEventId = $stmtRelayEvent->fetchColumn();
+
 // --- LOAD VIEWS ---
 include __DIR__ . '/../../views/layout/topbar.php'; 
 include __DIR__ . '/../../views/layout/sidebar.php'; 
@@ -118,7 +122,7 @@ include __DIR__ . '/../../views/layout/sidebar.php';
     </div>
 
     <h3 class="font-black text-slate-800 uppercase text-sm tracking-tight mb-4 ml-2">Menu Cepat</h3>
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
 
         <a href="atlet/index.php" class="bg-gradient-to-br from-white to-slate-50 p-8 rounded-3xl shadow-sm border border-slate-200 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 group border-b-4 border-blue-400">
             <span class="w-16 h-16 bg-blue-100 text-blue-600 rounded-2xl flex items-center justify-center text-3xl mb-6 shadow-inner group-hover:scale-110 transition">📋</span>
@@ -126,11 +130,20 @@ include __DIR__ . '/../../views/layout/sidebar.php';
             <p class="text-xs text-slate-500 mt-2 font-medium">Input biodata perenang baru.</p>
         </a>
 
-        <a href="kompetisi/registration.php" class="bg-gradient-to-br from-white to-slate-50 p-8 rounded-3xl shadow-sm border border-slate-200 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 group border-b-4 border-purple-400">
+        <a href="kompetisi/explore.php" class="bg-gradient-to-br from-white to-slate-50 p-8 rounded-3xl shadow-sm border border-slate-200 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 group border-b-4 border-purple-400">
             <span class="w-16 h-16 bg-purple-100 text-purple-600 rounded-2xl flex items-center justify-center text-3xl mb-6 shadow-inner group-hover:scale-110 transition">🎯</span>
             <h4 class="font-black text-lg text-slate-800 uppercase italic">Daftar Lomba</h4>
             <p class="text-xs text-slate-500 mt-2 font-medium">Pilih nomor lomba per atlet.</p>
         </a>
+
+        <?php if($activeRelayEventId): ?>
+        <a href="kompetisi/relay_registration.php?event_id=<?= $activeRelayEventId ?>" class="bg-gradient-to-br from-white to-slate-50 p-8 rounded-3xl shadow-sm border border-slate-200 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 group border-b-4 border-pink-400 relative overflow-hidden">
+            <div class="absolute -right-6 top-3 bg-pink-500 text-white text-[9px] font-black uppercase px-8 py-1 rotate-45 tracking-widest shadow-lg">NEW</div>
+            <span class="w-16 h-16 bg-pink-100 text-pink-600 rounded-2xl flex items-center justify-center text-3xl mb-6 shadow-inner group-hover:scale-110 transition">🏃‍♂️</span>
+            <h4 class="font-black text-lg text-slate-800 uppercase italic leading-tight">Daftar Estafet</h4>
+            <p class="text-xs text-slate-500 mt-2 font-medium">Daftarkan tim beregu Anda.</p>
+        </a>
+        <?php endif; ?>
 
         <a href="pembayaran.php" class="bg-gradient-to-br from-white to-slate-50 p-8 rounded-3xl shadow-sm border border-slate-200 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 group border-b-4 border-orange-400">
             <span class="w-16 h-16 bg-orange-100 text-orange-600 rounded-2xl flex items-center justify-center text-3xl mb-6 shadow-inner group-hover:scale-110 transition">💳</span>

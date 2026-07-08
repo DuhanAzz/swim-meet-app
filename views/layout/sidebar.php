@@ -146,7 +146,7 @@ function isGroupActive($req, $keywords) {
          </div>
 
          <!-- GROUP 2: Operasional Lomba -->
-         <?php $a2Active = isGroupActive($req, ['entries', 'seeding/index', 'seeding/final']); ?>
+         <?php $a2Active = isGroupActive($req, ['entries', 'relay_management', 'seeding/index', 'seeding/final']); ?>
          <button onclick="toggleSidebarDropdown('dd-ops')" class="<?= $a2Active ? $dropdownBtnActive : $dropdownBtnBase ?>">
             <div class="flex items-center">
                <span class="w-6 text-xl mr-3 text-center opacity-80">🏃</span>
@@ -156,6 +156,7 @@ function isGroupActive($req, $keywords) {
          </button>
          <div id="dd-ops" class="bg-[#0b1120] py-2 <?= $a2Active ? '' : 'hidden' ?>">
              <a href="<?= BASE_URL ?>/src/admin/entries/index.php" class="<?= (strpos($req,"entries")!==false) ? $childActiveLink : $childBaseLink ?>">Verifikasi Entries</a>
+             <a href="<?= BASE_URL ?>/src/admin/relay_management.php" class="<?= (strpos($req,"relay_management")!==false) ? $childActiveLink : $childBaseLink ?> text-pink-400">Manajemen Estafet</a>
              <a href="<?= BASE_URL ?>/src/admin/seeding/index.php" class="<?= (strpos($req,"seeding/index")!==false) ? $childActiveLink : $childBaseLink ?>">Start List <?= ($adminMode == 'Babak Penyisihan') ? 'Penyisihan' : '' ?></a>
              <?php if($adminMode == 'Babak Penyisihan'): ?>
              <a href="<?= BASE_URL ?>/src/admin/seeding/final.php" class="<?= (strpos($req,"seeding/final")!==false) ? $childActiveLink : $childBaseLink ?> text-orange-400">Seeding Final</a>

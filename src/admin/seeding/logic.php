@@ -78,7 +78,7 @@ try {
     // 1. AMBIL INFO EVENT & LINTASAN AKTIF
     // =====================================================
     $stmtCheck = $pdo->prepare("
-        SELECT en.id, en.age_group, e.lane_count, e.used_lanes 
+        SELECT en.id, en.age_group, en.is_relay, e.lane_count, e.used_lanes 
         FROM event_numbers en
         JOIN events e ON en.event_id = e.id
         WHERE en.id = ?
@@ -120,12 +120,22 @@ try {
     // =====================================================
     // 3. AMBIL DATA ATLET
     // =====================================================
-    $stmt = $pdo->prepare("
-        SELECT ee.id, ee.entry_time, s.tanggal_lahir 
-        FROM event_entries ee
-        JOIN swimmers s ON ee.swimmer_id = s.id
-        WHERE ee.category_id = ?
-    ");
+    $isRelay = isset($info['is_relay']) && $info['is_relay'] == 1;
+
+    if ($isRelay) {
+        $stmt = $pdo->prepare("
+            SELECT id, seed_time as entry_time, NULL as tanggal_lahir 
+            FROM relay_entries 
+            WHERE category_id = ?
+        ");
+    } else {
+        $stmt = $pdo->prepare("
+            SELECT ee.id, ee.entry_time, s.tanggal_lahir 
+            FROM event_entries ee
+            JOIN swimmers s ON ee.swimmer_id = s.id
+            WHERE ee.category_id = ?
+        ");
+    }
     $stmt->execute([$eventId]);
     $swimmers = $stmt->fetchAll(PDO::FETCH_ASSOC);
 

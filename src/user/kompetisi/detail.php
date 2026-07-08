@@ -71,10 +71,21 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
             </div>
         </div>
 
-        <div class="mt-8 flex gap-4 relative z-10 border-t border-slate-100 pt-8">
+        <div class="mt-8 flex gap-4 relative z-10 border-t border-slate-100 pt-8 flex-wrap">
             <a href="registration.php?event_id=<?= $event_id ?>" class="bg-blue-600 hover:bg-blue-700 text-white font-black uppercase text-sm px-10 py-4 rounded-xl shadow-xl shadow-blue-200 hover:shadow-blue-300 hover:-translate-y-1 transition duration-300">
                 Mulai Pendaftaran Tim 🚀
             </a>
+            
+            <?php 
+            $hasRelay = false;
+            foreach($raceList as $r) { if(isset($r['is_relay']) && $r['is_relay'] == 1) { $hasRelay = true; break; } }
+            if($hasRelay):
+            ?>
+            <a href="relay_registration.php?event_id=<?= $event_id ?>" class="bg-pink-600 hover:bg-pink-700 text-white font-black uppercase text-sm px-10 py-4 rounded-xl shadow-xl shadow-pink-200 hover:shadow-pink-300 hover:-translate-y-1 transition duration-300 relative overflow-hidden">
+                <div class="absolute -right-4 -top-4 bg-white text-pink-600 text-[8px] font-black uppercase px-6 py-1.5 rotate-45 tracking-widest shadow-lg">NEW</div>
+                Daftar Estafet 🏃‍♂️
+            </a>
+            <?php endif; ?>
         </div>
     </div>
 

@@ -102,16 +102,19 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $labelJK = ($jk == 'L') ? 'PUTRA' : (($jk == 'P') ? 'PUTRI' : 'MIXED');
             $eventName = "$jarak M " . strtoupper($gaya) . " $labelJK - $poolLabel";
 
-            // Insert Database (Termasuk schedule_date & schedule_time)
+            // [BARU] Tangkap Is Relay
+            $is_relay = isset($_POST['is_relay']) ? 1 : 0;
+
+            // Insert Database (Termasuk schedule_date & schedule_time & is_relay)
             $sql = "INSERT INTO event_numbers 
                     (organizer_id, event_id, event_number, event_name, distance, stroke, jenis_kelamin, 
-                    age_group, age_min, age_max, selected_ku_ids, price, schedule_date, schedule_time, created_at) 
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())";
+                    age_group, age_min, age_max, selected_ku_ids, price, schedule_date, schedule_time, is_relay, created_at) 
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())";
             
             $stmt = $pdo->prepare($sql);
             $stmt->execute([
                 $adminId, $eventId, $nomor, $eventName, $jarak, $gaya, $jk, 
-                $ageGroupString, $globalMin, $globalMax, $selectedIdsString, $harga, $tgl, $jam
+                $ageGroupString, $globalMin, $globalMax, $selectedIdsString, $harga, $tgl, $jam, $is_relay
             ]);
 
             $_SESSION['toast'] = ['type' => 'success', 'msg' => "Nomor $nomor Berhasil Dibuat!"];
@@ -346,6 +349,16 @@ function togglePricingMode(mode) {
                         </div>
 
                         <div class="mb-6">
+                            <label class="flex items-center gap-3 cursor-pointer p-4 bg-indigo-50 border border-indigo-100 rounded-xl hover:bg-indigo-100 transition shadow-sm">
+                                <input type="checkbox" name="is_relay" value="1" class="w-5 h-5 rounded border-indigo-300 text-indigo-600 focus:ring-indigo-500 focus:ring-offset-0">
+                                <div>
+                                    <span class="block font-black text-sm text-indigo-900">Estafet (Relay Event)</span>
+                                    <span class="block text-[10px] text-indigo-600 font-medium">Tandai jika ini adalah perlombaan beregu (mis. 4x50m)</span>
+                                </div>
+                            </label>
+                        </div>
+
+                        <div class="mb-6">
                             <label class="block text-[9px] font-bold text-slate-400 uppercase mb-2">Pilih Kelompok Umur</label>
                             <?php if(empty($listKU)): ?>
                                 <div class="p-4 bg-red-50 text-red-600 text-xs font-bold rounded-xl border border-red-100 flex items-center gap-2">⚠️ Buat KU dulu!</div>
@@ -397,6 +410,11 @@ function togglePricingMode(mode) {
                                             <?= htmlspecialchars($ev['event_name']) ?>
                                         </h4>
                                         <div class="flex flex-wrap gap-2 mt-1 items-center">
+                                            <?php if($ev['is_relay']): ?>
+                                            <span class="text-[10px] font-black px-2 py-0.5 rounded bg-indigo-100 text-indigo-700 border border-indigo-200">
+                                                ESTAFET
+                                            </span>
+                                            <?php endif; ?>
                                             <span class="text-[10px] font-bold px-2 py-0.5 rounded <?= $bgBadge ?>">
                                                 <?= $ev['jenis_kelamin'] == 'L' ? 'PUTRA' : ($ev['jenis_kelamin'] == 'P' ? 'PUTRI' : 'MIXED') ?>
                                             </span>
