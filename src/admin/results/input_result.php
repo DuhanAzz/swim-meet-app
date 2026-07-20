@@ -86,6 +86,18 @@ $logoLeft   = getBase64Image($eventProfile['logo_left'] ?? '');
 $logoRight  = getBase64Image($eventProfile['logo_right'] ?? '');
 
 $total_lintasan = (int)($eventProfile['lane_count'] ?? 8);
+$activeLanes = [];
+if (!empty($eventProfile['used_lanes'])) {
+    $activeLanes = explode(',', $eventProfile['used_lanes']);
+    $activeLanes = array_map('trim', $activeLanes);
+    $activeLanes = array_map('intval', $activeLanes);
+    sort($activeLanes);
+} else {
+    for ($i = 1; $i <= $total_lintasan; $i++) {
+        $activeLanes[] = $i;
+    }
+}
+
 $pool_type    = strtoupper($eventProfile['pool_type'] ?? 'LCM');
 $poolSuffix   = ($pool_type == 'SCM') ? ' - SCM' : ' - LCM';
 $participationType = $eventProfile['participation_type'] ?? 'club';
@@ -263,7 +275,7 @@ if (isset($_GET['export_txt'])) {
     
     foreach($heats as $heatNo => $lanesData) {
         echo "HEAT " . $heatNo . "\r\n";
-        for($ln = 1; $ln <= $total_lintasan; $ln++) {
+        foreach ($activeLanes as $ln) {
             $s = $lanesData[$ln] ?? null;
             if ($s) {
                 $timeStr = !empty($s['final_time']) ? $s['final_time'] : "00:00.00";
@@ -470,7 +482,7 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                             </tr>
                         </thead>
                         <tbody>
-                            <?php for($ln = 1; $ln <= $total_lintasan; $ln++): $s = $lanesData[$ln] ?? null; ?>
+                            <?php foreach($activeLanes as $ln): $s = $lanesData[$ln] ?? null; ?>
                             <tr class="border-b hover:bg-slate-50">
                                 <td class="px-2 py-2 text-center font-bold"><?= $ln ?></td>
                                 <?php if($s): 
