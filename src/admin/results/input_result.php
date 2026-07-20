@@ -515,7 +515,7 @@ include __DIR__ . '/../../../views/layout/sidebar.php';
                                     <td colspan="5" class="px-2 py-2 text-slate-300 italic text-xs">&lt; KOSONG &gt;</td>
                                 <?php endif; ?>
                             </tr>
-                            <?php endfor; ?>
+                            <?php endforeach; ?>
                         </tbody>
                     </table>
                 </div>
